@@ -178,12 +178,25 @@ Goal: turn review strategy and quality into measurable product behavior.
   false-positive recurrence, citation validity, and quality delta.
 - Grade expected/forbidden relations, proof-path precision, unsupported-path
   rejection, traversal budgets, and graph context cost.
+- Add a model-facing `PromptEncoder` after typed graph and memory artifacts are
+  stable. Preserve raw diffs and documents as labeled text, keep compact JSON
+  as the structured default, and keep model outputs in JSON.
+- Benchmark compact JSON against strict TOON on representative evidence nodes,
+  edges, findings, citations, CI observations, file summaries, and memory
+  recall using each target model's exact tokenizer.
+- Select TOON only for uniform collections when input-token savings meet a
+  configurable threshold (10% by default) without reducing review accuracy,
+  schema fidelity, or latency. Validate semantic round trips and fall back
+  deterministically to compact JSON for unsupported shapes or encoding errors.
+- Emit a machine-readable encoding report containing the selected format,
+  token counts, savings, fallback reason, and quality comparison.
 - Land at least 24 deterministic logical scenarios.
 - Add a small tagged live-model subset using `openrouter/free` by default.
 - Add budgets and statistical tolerance for non-deterministic models.
 
 Exit: local and CI deterministic suites report strategy accuracy and lifecycle
-correctness; opt-in live eval reports finding metrics without gating on prose.
+correctness; opt-in live eval reports finding metrics without gating on prose;
+prompt-format changes require tokenizer-specific savings and quality evidence.
 
 ## Phase 10: GitHub/GitLab Parity And Product Surface
 
@@ -218,8 +231,9 @@ at least one complete controlled E2E passes on each provider.
 15. `feat(engine): add bounded hypothesis review loop`
 16. `refactor(tools): register governed capabilities`
 17. `test(eval): add adaptive review scenario harness`
-18. `test(scm): verify github and gitlab scenario parity`
-19. `docs(review): publish adaptive review operating model`
+18. `perf(prompt): add measured adaptive toon encoding`
+19. `test(scm): verify github and gitlab scenario parity`
+20. `docs(review): publish adaptive review operating model`
 
 ## Verification Gates
 
@@ -319,6 +333,9 @@ identity cannot be verified; optional enrichers fall back to baseline review.
 - New resolver tests are model-free and exact.
 - Agent-loop tests grade trajectories, progress, stop reasons, and escalation.
 - Real-model evals use normalized outcomes and repeated runs, not exact prose.
+- Prompt-encoding fixtures cover uniform, nested, sparse, empty, single-row,
+  delimiter-heavy, newline-heavy, and Unicode inputs; they verify semantic JSON
+  round trips, fallback behavior, exact token counts, and finding-quality parity.
 - GitHub/GitLab parity and provider E2E remain separate credentialed layers.
 
 ### Performance Review
@@ -331,6 +348,9 @@ identity cannot be verified; optional enrichers fall back to baseline review.
 - Parallel review workers share one plan and merge typed hypotheses before final
   validation to prevent duplicate comments and context multiplication.
 - Headroom reduces context but is never a correctness dependency.
+- Prompt serialization is selected per artifact and model. TOON is used only
+  when tokenizer-specific ablation clears the savings threshold and preserves
+  review quality; compact JSON is the deterministic fallback.
 
 ### Security Review
 
@@ -353,6 +373,7 @@ identity cannot be verified; optional enrichers fall back to baseline review.
 | Repository trust | Designed | Snapshot contract tests |
 | Policy composition | Designed | Legacy plan equivalence |
 | Evidence graph | Designed | Corpus equivalence and proof-path tests |
+| Prompt efficiency | Planned | JSON/TOON ablation after typed artifacts stabilize |
 | Agent loop | Designed | Typed trajectory tests |
 | Memory | Designed | Typed lifecycle, retrieval ablation, safe degradation |
 | Tools | Existing, fragmented | Registry migration after engine |

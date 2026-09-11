@@ -276,6 +276,12 @@ networks.
 - Optional code-intelligence tools are capability adapters, not mandatory
   infrastructure. Their outputs must attest repository, revision, tool version,
   and configuration before entering the graph.
+- A model-facing `PromptEncoder` projects typed context without changing its
+  semantics. Raw diffs and source documents remain labeled text; compact JSON
+  is the structured default. Strict TOON is eligible only for uniform
+  collections when the exact model tokenizer demonstrates a configurable
+  minimum saving (10% by default) with no quality regression. APIs,
+  persistence, webhooks, tool schemas, and model outputs remain JSON.
 - The orchestrator remains role-based. Plans select a semantic role or bounded
   quality tier, never credentials or unrestricted provider details.
 
@@ -443,6 +449,8 @@ References:
 - https://codeql.github.com/docs/writing-codeql-queries/creating-path-queries/
 - https://docs.joern.io/code-property-graph/
 - https://docs.oasis-open.org/sarif/sarif/v2.1.0/os/sarif-v2.1.0-os.html
+- https://github.com/toon-format/spec
+- https://github.com/toon-format/toon
 
 ## Non-Negotiable Invariants
 
@@ -456,6 +464,8 @@ References:
 - no inferred or memory-only path may confirm a finding;
 - idempotent provider publication and memory write authorization;
 - deterministic policy validation before any model call;
+- deterministic, tokenizer-aware prompt encoding with semantic validation and
+  compact-JSON fallback;
 - no secrets in plans, run artifacts, logs, prompts, or memory.
 
 ## Scope Decisions

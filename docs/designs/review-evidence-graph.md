@@ -112,6 +112,26 @@ ID is rehydrated, status-checked, scope-filtered, and then added as a supporting
 graph node. Superseded, contradicted, expired, missing, or cross-repository
 records are discarded before prompt construction.
 
+## Model-Facing Serialization
+
+The graph, run ledger, APIs, persistence, webhooks, and model outputs retain
+typed Go/JSON contracts. A separate `PromptEncoder` optimizes bounded model
+input projections:
+
+- raw patches, contracts, and design documents remain labeled text;
+- compact JSON is the default structured representation;
+- uniform arrays of evidence nodes, relations, findings, citations, file
+  summaries, tool observations, CI results, and memory recall may use strict
+  TOON;
+- TOON is selected only when the exact target-model tokenizer shows at least
+  the configured saving threshold (10% by default) and evaluation shows no loss
+  of review quality or schema fidelity;
+- encoded data must round-trip to the same JSON data model, with strict
+  validation and deterministic compact-JSON fallback.
+
+TOON is never a public or persisted contract. Nested, sparse, or irregular
+structures remain compact JSON when TOON provides no measured benefit.
+
 ## Optional Code Intelligence
 
 The default system remains language-agnostic and uses SCM metadata, paths,
@@ -137,6 +157,8 @@ selection. New deterministic fixtures cover:
 - cycles, duplicate edges, hub expansion, and budget exhaustion;
 - stale revisions, cross-repository leakage, malformed references, and replay;
 - rejected findings that become feedback without becoming conventions;
+- compact JSON versus TOON on varied shapes, exact tokenizers, semantic round
+  trips, fallback reasons, and finding-quality parity;
 - missing or unhealthy optional capabilities with baseline fallback.
 
 Quality evaluation measures evidence-path precision/recall, citation validity,
@@ -164,6 +186,8 @@ References:
 - https://codeql.github.com/docs/writing-codeql-queries/creating-path-queries/
 - https://docs.joern.io/code-property-graph/
 - https://help.getzep.com/graphiti/getting-started/overview
+- https://github.com/toon-format/spec
+- https://github.com/toon-format/toon
 
 ## Non-Negotiable Invariants
 
