@@ -73,14 +73,21 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 	effective := EffectivePolicy{
 		SchemaVersion:  2,
 		Methods:        append([]string(nil), config.Defaults.Methods...),
-		RequiredChecks: append([]string(nil), config.Defaults.RequiredChecks...),
+		RequiredChecks: stableUnion(config.Defaults.RequiredChecks, config.QualityGate.RequiredCoverage),
 		RiskFloor:      "none",
 		Publication: PublicationConstraintV2{
 			Mode:            config.Defaults.Publication,
 			ArtifactClasses: []string{"assessment", "comment", "check", "annotation", "code_quality"},
 		},
-		GateMode:      config.Defaults.GateMode,
-		QualityGate:   config.QualityGate,
+		GateMode: config.Defaults.GateMode,
+		QualityGate: QualityGateV2{
+			RuleIDs:          append([]string(nil), config.QualityGate.RuleIDs...),
+			RequiredCoverage: append([]string(nil), config.QualityGate.RequiredCoverage...),
+			MinSeverity:      config.QualityGate.MinSeverity,
+			MinStrength:      config.QualityGate.MinStrength,
+			BaselineMode:     config.QualityGate.BaselineMode,
+			ContextName:      config.QualityGate.ContextName,
+		},
 		AllowedTools:  allowed,
 		RequiredTools: append([]string(nil), config.Capabilities.Required...),
 		Limits:        config.Limits,
@@ -120,6 +127,7 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		effective.MatchedPacks = append(effective.MatchedPacks, pack.ID)
 		effective.Methods = stableUnion(effective.Methods, pack.Methods)
 		effective.RequiredChecks = stableUnion(effective.RequiredChecks, pack.Checks)
+		effective.QualityGate.RequiredCoverage = stableUnion(effective.QualityGate.RequiredCoverage, pack.Checks)
 		if riskRank(pack.RiskFloor) > riskRank(effective.RiskFloor) {
 			effective.RiskFloor = pack.RiskFloor
 		}
@@ -130,6 +138,8 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 			ExplanationEntry{Field: "risk_floor", Value: effective.RiskFloor, Source: "packs/" + pack.ID, Reason: "maximum applicable risk floor", Precedence: pack.Priority},
 		)
 	}
+	// Gate coverage is mandatory and cannot be removed through delegation.
+	effective.RequiredChecks = stableUnion(effective.RequiredChecks, effective.QualityGate.RequiredCoverage)
 	canonical, err := json.Marshal(struct {
 		Config  ReviewConfigV2
 		Context CompileContext

@@ -75,8 +75,8 @@ func TestDelegationRequiresClockAndAppliesNamedReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(effective.RequiredChecks, ",") != "backend-correctness" {
-		t.Fatalf("delegated replacement was not applied: %v", effective.RequiredChecks)
+	if strings.Join(effective.RequiredChecks, ",") != "backend-correctness,correctness" {
+		t.Fatalf("delegated replacement must preserve mandatory gate coverage: %v", effective.RequiredChecks)
 	}
 	ctx.EvaluationTime = expires
 	if _, err := Compile(config, ctx); err == nil || !strings.Contains(err.Error(), "expired") {
@@ -134,6 +134,9 @@ func TestCompileResolvesApplicablePacksDeterministically(t *testing.T) {
 	if strings.Join(got.RequiredChecks, ",") != "correctness,auth-boundary" {
 		t.Fatalf("checks not composed: %v", got.RequiredChecks)
 	}
+	if strings.Join(got.QualityGate.RequiredCoverage, ",") != "correctness,auth-boundary" {
+		t.Fatalf("pack checks must be enforced by the quality gate: %v", got.QualityGate.RequiredCoverage)
+	}
 	if got.Digest == "" || len(got.Explanation) < 4 {
 		t.Fatalf("compiled policy lacks digest or explanation: %#v", got)
 	}
@@ -185,6 +188,7 @@ func TestValidateRejectsContractViolations(t *testing.T) {
 		"required not allowed":      func(c *ReviewConfigV2) { c.Capabilities.Required = []string{"network.write"} },
 		"escaping glob":             func(c *ReviewConfigV2) { c.Domains["backend"] = []string{"../secret/**"} },
 		"blocking without coverage": func(c *ReviewConfigV2) { c.Defaults.GateMode = "blocking"; c.QualityGate.RequiredCoverage = nil },
+		"self-dependent gate":       func(c *ReviewConfigV2) { c.QualityGate.RequiredCoverage = []string{"7review/quality"} },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -194,6 +198,45 @@ func TestValidateRejectsContractViolations(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+func TestValidateRejectsDelegationOutsideGrantorScope(t *testing.T) {
+	config := validConfig()
+	config.Delegations = []DelegationV2{{
+		ID: "backend-owner", GrantorScope: ScopeRefV2{Kind: "domain", ID: "backend"},
+		TargetScope: ScopeRefV2{Kind: "path", ID: "frontend/**"}, ReplaceRuleIDs: []string{"correctness"},
+		ReplaceFields: []string{"checks"}, ProvenanceRef: "owners:backend",
+	}}
+	if err := Validate(config); err == nil || !strings.Contains(err.Error(), "not provably contained") {
+		t.Fatalf("cross-scope delegation must fail: %v", err)
+	}
+}
+
+func TestBaselineCompatibilityIsExplicit(t *testing.T) {
+	config := validConfig()
+	effective, err := Compile(config, CompileContext{ProjectID: "org/repo", RuntimeAllowed: []string{"repo.read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBaseline(effective, nil); err != nil {
+		t.Fatalf("all mode does not require a baseline: %v", err)
+	}
+	effective.QualityGate.BaselineMode = "changed"
+	if err := ValidateBaseline(effective, nil); err == nil {
+		t.Fatal("changed mode must require a baseline")
+	}
+	baseline := &BaselineRef{
+		AssessmentID: "assessment-1", PolicyDigest: effective.Digest,
+		ContextName: effective.QualityGate.ContextName, RuleIDs: append([]string(nil), effective.QualityGate.RuleIDs...),
+		CoverageIDs: append([]string(nil), effective.QualityGate.RequiredCoverage...), Verified: true,
+	}
+	if err := ValidateBaseline(effective, baseline); err != nil {
+		t.Fatalf("matching baseline must pass: %v", err)
+	}
+	baseline.PolicyDigest = "sha256:" + strings.Repeat("f", 64)
+	if err := ValidateBaseline(effective, baseline); err == nil {
+		t.Fatal("baseline compiled under another policy must fail")
 	}
 }
 

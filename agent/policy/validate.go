@@ -171,6 +171,9 @@ func validateDelegation(index int, d DelegationV2, c ReviewConfigV2) error {
 	if err := validateScope(prefix+".target_scope", d.TargetScope, c); err != nil {
 		return err
 	}
+	if !delegationScopeContained(d.GrantorScope, d.TargetScope, c) {
+		return fmt.Errorf("policy: %s target scope is not provably contained by its grantor", prefix)
+	}
 	if len(d.ReplaceRuleIDs) == 0 && len(d.ReplaceFields) == 0 {
 		return fmt.Errorf("policy: %s requires a replacement", prefix)
 	}
@@ -310,7 +313,41 @@ func validateQualityGate(g QualityGateV2, mode string) error {
 	if len(g.ContextName) < 1 || len(g.ContextName) > 100 || strings.IndexFunc(g.ContextName, func(r rune) bool { return r < 32 || r == 127 }) >= 0 {
 		return fmt.Errorf("policy: quality_gate.context_name must be 1-100 printable bytes")
 	}
+	for _, checkID := range g.RequiredCoverage {
+		if checkID == g.ContextName {
+			return fmt.Errorf("policy: quality gate cannot require its own native context")
+		}
+	}
 	return nil
+}
+
+func delegationScopeContained(grantor, target ScopeRefV2, c ReviewConfigV2) bool {
+	if grantor.Kind == "project" {
+		return c.ProjectID == "" || grantor.ID == c.ProjectID
+	}
+	if grantor == target {
+		return true
+	}
+	if target.Kind != "path" {
+		return false
+	}
+	var globs []string
+	switch grantor.Kind {
+	case "domain":
+		globs = c.Domains[grantor.ID]
+	case "module":
+		globs = c.Modules[grantor.ID]
+	case "feature":
+		globs = c.Features[grantor.ID]
+	case "path":
+		globs = []string{grantor.ID}
+	}
+	for _, glob := range globs {
+		if glob == target.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func validateGlobs(name string, globs []string) error {
