@@ -50,17 +50,13 @@ func (r *HeadroomReducer) Reduce(ctx context.Context, rc *review.Context) error 
 		return err
 	}
 	if out.SkillSections != nil {
-		rc.SkillSections = out.SkillSections
 		rc.Source.SkillSections = out.SkillSections
 	}
 	if out.CorpusSections != nil {
-		rc.CorpusSections = out.CorpusSections
 		rc.Source.CorpusSections = out.CorpusSections
 	}
 	if out.Memory != nil {
 		rc.Source.Memory = *out.Memory
-		rc.Conventions = join(out.Memory.Conventions)
-		rc.Philosophy = join(out.Memory.Decisions)
 	}
 	if out.Diff != nil {
 		rc.Diff = out.Diff
@@ -113,10 +109,6 @@ func (r *HeadroomReducer) client() *http.Client {
 		return r.HTTPClient
 	}
 	return &http.Client{Timeout: r.timeout()}
-}
-
-func join(items []string) string {
-	return strings.Join(items, "\n")
 }
 
 type headroomReduceRequest struct {

@@ -1474,12 +1474,11 @@ func TestFileRunStorePersistsRunsAcrossInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(req)
-	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
-	rc.DraftReport = "draft"
-	rc.FinalReport = "final"
+	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7", WebURL: "https://gitlab.example.com/p/-/merge_requests/7"}
+	rc.Source.Report.Draft = "draft"
+	rc.Source.Report.Final = "final"
 	rc.HILApproved = true
 	rc.Findings = []review.Finding{{ID: "F1", Severity: review.SeverityHigh, Title: "bug", Confidence: 0.9}}
-	rc.WebURL = "https://gitlab.example.com/p/-/merge_requests/7"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1562,12 +1561,12 @@ func TestFileRunStoreSafelyPersistsSlashContainingRunIDs(t *testing.T) {
 	}
 
 	slashContext := review.NewContext(reqSlash)
-	slashContext.DraftReport = "slash repo"
+	slashContext.Source.Report.Draft = "slash repo"
 	if err := store.SaveContext(context.Background(), slashRun.ID, slashContext); err != nil {
 		t.Fatal(err)
 	}
 	underscoreContext := review.NewContext(reqUnderscore)
-	underscoreContext.DraftReport = "underscore repo"
+	underscoreContext.Source.Report.Draft = "underscore repo"
 	if err := store.SaveContext(context.Background(), underscoreRun.ID, underscoreContext); err != nil {
 		t.Fatal(err)
 	}
@@ -1649,7 +1648,7 @@ func TestRunPostHILPublishesFinalThenWritesMemory(t *testing.T) {
 	}
 	rc := review.NewContext(req)
 	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
-	rc.DraftReport = "draft report"
+	rc.Source.Report.Draft = "draft report"
 	rc.Findings = []review.Finding{{ID: "F1", Severity: review.SeverityHigh, Title: "Finding", Confidence: 0.9}}
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
@@ -1694,7 +1693,7 @@ func TestApproveRunUsesProviderNeutralRunID(t *testing.T) {
 	}
 	rc := review.NewContext(req)
 	rc.Source.SCM = &review.SCMContext{Provider: "github", Repository: "owner/repo", ProjectID: "owner/repo", MRIID: 7, ChangeID: "7"}
-	rc.DraftReport = "draft"
+	rc.Source.Report.Draft = "draft"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1784,7 +1783,7 @@ func TestPublishFinalRequiresHILApproval(t *testing.T) {
 	}
 	rc := review.NewContext(req)
 	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
-	rc.FinalReport = "final"
+	rc.Source.Report.Final = "final"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1809,7 +1808,7 @@ func TestPublishFinalWritesMemoryBeforeFinalizing(t *testing.T) {
 	rc := review.NewContext(req)
 	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
 	rc.HILApproved = true
-	rc.FinalReport = "approved final"
+	rc.Source.Report.Final = "approved final"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1865,8 +1864,7 @@ func TestSuppressFindingUpdatesDraftAndRejectedIDs(t *testing.T) {
 		{ID: "F2", Severity: review.SeverityLow, Title: "Suppress", Confidence: 0.8},
 	}
 	rc.Source.Findings = rc.Findings
-	rc.DraftReport = renderReport(rc)
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = renderReport(rc)
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1904,8 +1902,7 @@ func TestReviseDraftUsesFormatterAndPersistsDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(req)
-	rc.DraftReport = "old draft"
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = "old draft"
 	rc.Findings = []review.Finding{{ID: "F1", Severity: review.SeverityHigh, Title: "Finding", Confidence: 0.9}}
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
@@ -1944,7 +1941,7 @@ func TestRerunReviewUsesStoredRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(req)
-	rc.DraftReport = "old draft"
+	rc.Source.Report.Draft = "old draft"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -1991,7 +1988,7 @@ func TestRunPostHILConvertsDraftFallbackToFinalReport(t *testing.T) {
 	}
 	rc := review.NewContext(req)
 	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
-	rc.DraftReport = "## 7review Draft\n\nbody"
+	rc.Source.Report.Draft = "## 7review Draft\n\nbody"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -2126,7 +2123,7 @@ func (m *recordingMemory) Recall(context.Context, review.Request) (Recall, error
 }
 
 func (m *recordingMemory) ProposeUpdate(_ context.Context, rc *review.Context) (UpdateProposal, error) {
-	m.proposedApproved = rc != nil && rc.HILApproved && rc.FinalReport != ""
+	m.proposedApproved = rc != nil && rc.HILApproved && rc.Source.Report.Final != ""
 	return UpdateProposal{Conventions: []string{"approved"}}, nil
 }
 

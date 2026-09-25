@@ -22,7 +22,7 @@ func TestHandleChatStreamStreamsAgainstStoredRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(req)
-	rc.DraftReport = "draft body"
+	rc.Source.Report.Draft = "draft body"
 	rc.Findings = []review.Finding{{ID: "F1", Severity: review.SeverityHigh, Title: "bug"}}
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)

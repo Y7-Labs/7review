@@ -408,7 +408,7 @@ func (m *e2eMemory) ProposeUpdate(_ context.Context, rc *review.Context) (pipeli
 	if rc == nil || !rc.HILApproved {
 		return pipeline.UpdateProposal{}, fmt.Errorf("approval required")
 	}
-	return pipeline.UpdateProposal{Conventions: []string{rc.FinalReport}}, nil
+	return pipeline.UpdateProposal{Conventions: []string{rc.Source.Report.Final}}, nil
 }
 
 func (m *e2eMemory) Write(context.Context, pipeline.UpdateProposal) error {

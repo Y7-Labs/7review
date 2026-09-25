@@ -81,7 +81,7 @@ func (r appToolRunner) MemoryProposal(ctx context.Context, id string) (any, erro
 		Run:        run.ID,
 		Approved:   rc.HILApproved,
 		Proposal:   proposal,
-		FinalBytes: len(rc.FinalReport),
+		FinalBytes: len(rc.Source.Report.Final),
 	}, nil
 }
 
@@ -134,11 +134,13 @@ func contextForRunPreview(run *pipeline.Run) *review.Context {
 		rc.Source = *run.Source
 	}
 	rc.Request = run.Request
-	rc.DraftReport = run.DraftReport
-	rc.FinalReport = run.FinalReport
+	rc.Source.Report.Draft = run.DraftReport
+	rc.Source.Report.Final = run.FinalReport
 	rc.HILApproved = run.HILApproved
-	rc.Findings = append([]review.Finding(nil), run.Findings...)
-	rc.WebURL = run.WebURL
+	rc.Source.Findings = append([]review.Finding(nil), run.Findings...)
+	if rc.Request.WebURL == "" {
+		rc.Request.WebURL = run.WebURL
+	}
 	return rc
 }
 

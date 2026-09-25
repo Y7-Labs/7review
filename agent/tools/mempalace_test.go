@@ -96,7 +96,7 @@ func TestMemPalaceStore_ProposeUpdateUsesFinalOnly(t *testing.T) {
 	store := NewMemPalaceStore("http://mempalace", time.Second)
 	rc := review.NewContext(review.Request{})
 	rc.HILApproved = true
-	rc.FinalReport = "final report"
+	rc.Source.Report.Final = "final report"
 	rc.Findings = []review.Finding{{ID: "F1", Title: "accepted"}}
 	rc.HILAddedNotes = []string{"human note"}
 

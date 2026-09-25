@@ -21,7 +21,7 @@ func TestHandlePublishFinalEnqueuesRunPublish(t *testing.T) {
 	}
 	rc := review.NewContext(reqRun)
 	rc.HILApproved = true
-	rc.FinalReport = "old final"
+	rc.Source.Report.Final = "old final"
 	rc.Source.SCM = &review.SCMContext{Provider: "gitlab", ProjectID: "p", MRIID: 7, ChangeID: "7"}
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestHandleApproveAcceptsRunID(t *testing.T) {
 	}
 	rc := review.NewContext(reqRun)
 	rc.Source.SCM = &review.SCMContext{Provider: "github", Repository: "owner/repo", ProjectID: "owner/repo", MRIID: 7, ChangeID: "7"}
-	rc.DraftReport = "draft"
+	rc.Source.Report.Draft = "draft"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}

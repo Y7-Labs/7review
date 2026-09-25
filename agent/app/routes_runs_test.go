@@ -73,7 +73,7 @@ func TestHandleRunEndpointsExposeStoredReviewContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(req)
-	rc.DraftReport = "draft body"
+	rc.Source.Report.Draft = "draft body"
 	rc.Findings = []review.Finding{{ID: "F1", Severity: review.SeverityHigh, Title: "bug"}}
 	rc.Source.Findings = rc.Findings
 	rc.Source.HumanCheck = []review.Finding{{ID: "H1", Severity: review.SeverityMedium, Title: "needs check", ValidationStatus: "needs_human_check"}}

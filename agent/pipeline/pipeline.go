@@ -58,8 +58,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 
 	rc := review.NewContext(req)
 	rc.Source.Run.ID = run.ID
-	rc.AvailableTools = []string{"scm", "diff", "context", "review", "report", "memory"}
-	rc.Source.Run.AvailableTools = append([]string(nil), rc.AvailableTools...)
+	rc.Source.Run.AvailableTools = []string{"scm", "diff", "context", "review", "report", "memory"}
 
 	scmContext, err := p.SCM.Enrich(ctx, req)
 	if err != nil {
@@ -79,8 +78,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	rc.Request.ChangedPaths = rc.ChangedPaths()
 	if p.SkillLoader != nil {
 		rc.Source.SkillActivations = p.SkillLoader.SelectActivations(rc.Request)
-		rc.SkillSections = p.SkillLoader.Select(rc.Request)
-		rc.Source.SkillSections = rc.SkillSections
+		rc.Source.SkillSections = p.SkillLoader.Select(rc.Request)
 	}
 	p.trace(ctx, run.ID, "skills_selected", StatusRunning, "repository review skills selected", map[string]string{
 		"count": strconv.Itoa(len(rc.SkillSections)),
@@ -92,7 +90,6 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 		return err
 	}
-	rc.Source.CorpusSections = rc.CorpusSections
 	p.trace(ctx, run.ID, "repository_knowledge_selected", StatusRunning, "repository knowledge selected", map[string]string{
 		"count":   strconv.Itoa(len(rc.CorpusSections)),
 		"paths":   joinSectionPaths(rc.CorpusSections, 8),
@@ -103,8 +100,6 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 		return err
 	} else {
-		rc.Conventions = joinMemory(recall.Conventions)
-		rc.Philosophy = joinMemory(recall.Decisions)
 		rc.Source.Memory = review.MemoryRecall{
 			Conventions: recall.Conventions,
 			Decisions:   recall.Decisions,
@@ -147,7 +142,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		"raw_batches": strconv.Itoa(len(rc.AllFindings())),
 		"findings":    strconv.Itoa(len(findings)),
 		"parse":       parseStatus,
-		"providers":   formatProviderTrace(rc.StepProviders),
+		"providers":   formatProviderTrace(rc.Source.Run.StepProviders),
 	})
 	coverageWarnings := validateSkillCoverage(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	coverageErrors := coreSkillCoverageErrors(rc.Source.SkillActivations, rc.Source.SkillCoverage)
@@ -191,16 +186,14 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	}
 	p.trace(ctx, run.ID, "skill_coverage_validated", StatusRunning, "model skill coverage validated", skillCoverageMeta(rc.Source.SkillActivations, rc.Source.SkillCoverage, coverageWarnings, coverageErrors))
 	if isFatalModelParseStatus(parseStatus) {
-		rc.DraftReport = renderReport(rc)
-		rc.Source.Report.Draft = rc.DraftReport
+		rc.Source.Report.Draft = renderReport(rc)
 		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
 		err := fmt.Errorf("model review output was %s: %s", parseStatus, parseWarning)
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 		return err
 	}
 	if len(coverageErrors) > 0 {
-		rc.DraftReport = renderReport(rc)
-		rc.Source.Report.Draft = rc.DraftReport
+		rc.Source.Report.Draft = renderReport(rc)
 		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
 		err := fmt.Errorf("model review did not satisfy required core skill coverage: %s", strings.Join(coverageErrors, "; "))
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
@@ -228,23 +221,21 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		"rejected":    strconv.Itoa(len(validation.Rejected)),
 	})
 	rc.Source.Model = modelReviewAudit(rc, findings, &validation, parseStatus, parseWarning)
-	rc.Findings = validation.Accepted
 	rc.Source.Findings = validation.Accepted
 	rc.Source.HumanCheck = validation.HumanCheck
 	rc.Source.Notes = validation.Notes
 	rc.Source.Questions = validation.Questions
 	rc.Source.InlineComments = p.publishInlineDraftComments(ctx, scmContext, rc, validation.Accepted)
 	p.trace(ctx, run.ID, "inline_comments_processed", StatusRunning, "inline draft comments processed", inlineCommentMeta(rc.Source.InlineComments))
-	rc.DraftReport = renderReport(rc)
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = renderReport(rc)
 
-	if err := p.SCMPublisher.PublishDraft(ctx, scmContext, rc.DraftReport); err != nil {
+	if err := p.SCMPublisher.PublishDraft(ctx, scmContext, rc.Source.Report.Draft); err != nil {
 		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 		return err
 	}
 	p.trace(ctx, run.ID, "draft_published", StatusRunning, "draft report published", map[string]string{
-		"draft_bytes": strconv.Itoa(len(rc.DraftReport)),
+		"draft_bytes": strconv.Itoa(len(rc.Source.Report.Draft)),
 	})
 	if err := p.notifyDraft(ctx, run.ID, scmContext, rc); err != nil {
 		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
@@ -590,7 +581,6 @@ func (p *Pipeline) ApproveRun(ctx context.Context, id string, approvedReport str
 	}
 
 	rc.HILApproved = true
-	rc.FinalReport = finalReport
 	rc.Source.Report.Final = finalReport
 	if err := p.Jobs.SaveContext(ctx, id, rc); err != nil {
 		return err
@@ -667,12 +657,11 @@ func (p *Pipeline) PublishFinal(ctx context.Context, id string, report string) e
 	}
 	finalReport := strings.TrimSpace(report)
 	if finalReport == "" {
-		finalReport = finalizeReport(rc.FinalReport)
+		finalReport = finalizeReport(rc.Source.Report.Final)
 	}
 	if finalReport == "" {
 		return fmt.Errorf("pipeline: final report is empty")
 	}
-	rc.FinalReport = finalReport
 	rc.Source.Report.Final = finalReport
 	if err := p.Jobs.Update(ctx, id, StatusFinalizing, nil); err != nil {
 		return err
@@ -741,13 +730,11 @@ func (p *Pipeline) SuppressFinding(ctx context.Context, id string, findingID str
 	if !found {
 		return fmt.Errorf("pipeline: finding %q not found", findingID)
 	}
-	rc.Findings = kept
 	rc.Source.Findings = kept
 	rc.Source.InlineComments = filterInlineComments(rc.Source.InlineComments, findingID)
 	rc.HILRejectedIDs = appendUnique(rc.HILRejectedIDs, findingID)
 	rc.HILAddedNotes = append(rc.HILAddedNotes, fmt.Sprintf("suppressed %s: %s", findingID, reason))
-	rc.DraftReport = renderReport(rc)
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = renderReport(rc)
 	if err := p.Jobs.SaveContext(ctx, id, rc); err != nil {
 		return err
 	}
@@ -784,7 +771,7 @@ func (p *Pipeline) ReviseDraft(ctx context.Context, id string, request string) e
 		return fmt.Errorf("pipeline: run status %q cannot revise draft", run.Status)
 	}
 	rc := contextForRun(run)
-	if strings.TrimSpace(rc.DraftReport) == "" {
+	if strings.TrimSpace(rc.Source.Report.Draft) == "" {
 		return fmt.Errorf("pipeline: draft report required before revision")
 	}
 	revised, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleFormatter, "revise_draft", reviseDraftSystemPrompt(), reviseDraftUserMessage(rc, request))
@@ -795,7 +782,6 @@ func (p *Pipeline) ReviseDraft(ctx context.Context, id string, request string) e
 	if revised == "" {
 		return fmt.Errorf("pipeline: revised draft is empty")
 	}
-	rc.DraftReport = revised
 	rc.Source.Report.Draft = revised
 	rc.HILAddedNotes = append(rc.HILAddedNotes, "draft revised: "+request)
 	if err := p.Jobs.SaveContext(ctx, id, rc); err != nil {
@@ -857,7 +843,7 @@ func (p *Pipeline) notifyDraft(ctx context.Context, runID string, scm *review.SC
 	}
 	msg := channel.DraftMessage{
 		RunID:       runID,
-		DraftReport: rc.DraftReport,
+		DraftReport: rc.Source.Report.Draft,
 		Summary:     reviewSummary(rc),
 	}
 	if scm != nil {
@@ -932,14 +918,13 @@ func contextForRun(run *Run) *review.Context {
 		return run.Context
 	}
 	rc := review.NewContext(run.Request)
-	rc.DraftReport = run.DraftReport
-	rc.FinalReport = run.FinalReport
+	rc.Source.Report.Draft = run.DraftReport
+	rc.Source.Report.Final = run.FinalReport
 	rc.HILApproved = run.HILApproved
-	rc.Findings = append([]review.Finding(nil), run.Findings...)
-	rc.WebURL = run.WebURL
-	rc.Source.Findings = rc.Findings
-	rc.Source.Report.Draft = rc.DraftReport
-	rc.Source.Report.Final = rc.FinalReport
+	rc.Source.Findings = append([]review.Finding(nil), run.Findings...)
+	if rc.Request.WebURL == "" {
+		rc.Request.WebURL = run.WebURL
+	}
 	return rc
 }
 
@@ -983,7 +968,7 @@ func reviseDraftUserMessage(rc *review.Context, request string) string {
 			fmt.Fprintf(&b, "- %s %s: %s\n", finding.ID, finding.Severity, finding.Title)
 		}
 		b.WriteString("\nCurrent draft:\n")
-		b.WriteString(rc.DraftReport)
+		b.WriteString(rc.Source.Report.Draft)
 	}
 	return b.String()
 }
@@ -1135,27 +1120,12 @@ func envSet(key string) bool {
 	return ok
 }
 
-func joinMemory(items []string) string {
-	var out string
-	for i, item := range items {
-		if i > 0 {
-			out += "\n"
-		}
-		out += item
-	}
-	return out
-}
-
 func applySCMContext(rc *review.Context, scmContext *review.SCMContext) {
 	if scmContext == nil {
 		return
 	}
 	rc.Source.SCM = scmContext
 	rc.Source.ChangedFiles = scmContext.Files
-	rc.MRTitle = scmContext.Title
-	rc.MRAuthor = scmContext.Author
-	rc.WebURL = scmContext.WebURL
-	rc.DiffRefs = scmContext.DiffRefs
 	if rc.Request.Title == "" {
 		rc.Request.Title = scmContext.Title
 	}
@@ -1704,7 +1674,7 @@ func deterministicProviderCoverageEvidence(rc *review.Context) []string {
 			evidence = append(evidence, fmt.Sprintf("scm:files:%d", len(rc.Source.SCM.Files)))
 		}
 	}
-	if len(rc.Source.InlineComments) > 0 || rc.Source.Report.Draft != "" || rc.DraftReport != "" {
+	if len(rc.Source.InlineComments) > 0 || rc.Source.Report.Draft != "" {
 		evidence = append(evidence, "publisher:draft-report")
 	}
 	for _, observation := range rc.Source.ToolObservations {
@@ -2124,7 +2094,7 @@ func modelReviewAudit(rc *review.Context, parsed []review.Finding, validation *V
 		ParseStatus:        parseStatus,
 		ParseWarning:       parseWarning,
 		ParsedFindings:     len(parsed),
-		ProviderTrace:      formatProviderTrace(rc.StepProviders),
+		ProviderTrace:      formatProviderTrace(rc.Source.Run.StepProviders),
 		RawResponseBytes:   len(joined),
 		RawResponseExcerpt: truncateForAudit(joined, 1200),
 	}

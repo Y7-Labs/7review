@@ -27,8 +27,7 @@ func TestHandleToolExecuteSuppressFinding(t *testing.T) {
 		{ID: "F2", Severity: review.SeverityLow, Title: "Suppress", Confidence: 0.8},
 	}
 	rc.Source.Findings = rc.Findings
-	rc.DraftReport = "draft with Suppress"
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = "draft with Suppress"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -68,8 +67,7 @@ func TestHandleToolExecuteReviseDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(reqRun)
-	rc.DraftReport = "old draft"
-	rc.Source.Report.Draft = rc.DraftReport
+	rc.Source.Report.Draft = "old draft"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +104,7 @@ func TestHandleToolExecuteRerunReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	rc := review.NewContext(reqRun)
-	rc.DraftReport = "old draft"
+	rc.Source.Report.Draft = "old draft"
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}

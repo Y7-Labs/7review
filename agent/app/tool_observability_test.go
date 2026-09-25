@@ -58,10 +58,9 @@ func TestHandleToolExecuteObservabilityTools(t *testing.T) {
 	rc.SkillSections = []review.Section{{Path: "agent/skills/api-contract-review/SKILL.md", Title: "api-contract-review", Kind: review.KindRules, Content: "skill body"}}
 	rc.Source.SkillSections = rc.SkillSections
 	rc.Source.Memory = review.MemoryRecall{Conventions: []string{"return typed errors"}}
-	rc.DraftReport = "draft report"
-	rc.FinalReport = "final report"
+	rc.Source.Report.Draft = "draft report"
+	rc.Source.Report.Final = "final report"
 	rc.HILApproved = true
-	rc.WebURL = rc.Source.SCM.WebURL
 	if err := store.SaveContext(context.Background(), run.ID, rc); err != nil {
 		t.Fatal(err)
 	}

@@ -28,10 +28,7 @@ func TestNewContextInitializesSourceAndRunMetadata(t *testing.T) {
 	if rc.Source.Request.Title != "canonical mutation" {
 		t.Fatalf("context request is not backed by source request: %#v", rc.Source.Request)
 	}
-	if rc.ProjectID != req.ProjectID || rc.MRIID != req.MRIID {
-		t.Fatalf("legacy fields were not initialized: project=%q mr=%d", rc.ProjectID, rc.MRIID)
-	}
-	if rc.StepProviders == nil || rc.Source.Run.StepProviders == nil {
+	if rc.Source.Run.StepProviders == nil {
 		t.Fatalf("step providers not initialized: %#v", rc)
 	}
 	if rc.Source.Run.StartedAt.IsZero() {
@@ -70,9 +67,6 @@ func TestRecordProviderAndWarningsUpdateSourceRunMetadata(t *testing.T) {
 	rc.RecordProvider("review", "openai/gpt-test")
 	rc.AddWarning("headroom trimmed context")
 
-	if rc.StepProviders["review"] != "openai/gpt-test" {
-		t.Fatalf("legacy provider map not updated: %#v", rc.StepProviders)
-	}
 	if rc.Source.Run.StepProviders["review"] != "openai/gpt-test" {
 		t.Fatalf("source provider map not updated: %#v", rc.Source.Run.StepProviders)
 	}

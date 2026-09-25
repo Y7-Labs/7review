@@ -112,16 +112,16 @@ func (s *MemoryRunStore) SaveContext(_ context.Context, id string, rc *review.Co
 		run = &Run{ID: id}
 		s.runs[id] = run
 	}
-	run.Context = rc
+	run.Context = rc.Clone()
 	if rc != nil {
-		source := rc.Source
+		source := rc.Source.Clone()
 		run.Source = &source
 		run.Request = rc.Request
-		run.DraftReport = rc.DraftReport
-		run.FinalReport = rc.FinalReport
+		run.DraftReport = rc.Source.Report.Draft
+		run.FinalReport = rc.Source.Report.Final
 		run.HILApproved = rc.HILApproved
 		run.Findings = append([]review.Finding(nil), rc.Findings...)
-		run.WebURL = rc.WebURL
+		run.WebURL = contextWebURL(rc)
 	}
 	run.UpdatedAt = time.Now().UTC()
 	appendContextSavedEvent(run)
@@ -150,6 +150,11 @@ func (s *MemoryRunStore) Get(_ context.Context, id string) (*Run, error) {
 		return nil, fmt.Errorf("run %q not found", id)
 	}
 	copy := *run
+	copy.Context = run.Context.Clone()
+	if run.Source != nil {
+		source := run.Source.Clone()
+		copy.Source = &source
+	}
 	copy.Findings = append([]review.Finding(nil), run.Findings...)
 	copy.Events = copyRunEvents(run.Events)
 	return &copy, nil
@@ -162,6 +167,11 @@ func (s *MemoryRunStore) List(_ context.Context) ([]Run, error) {
 	out := make([]Run, 0, len(s.runs))
 	for _, run := range s.runs {
 		copy := *run
+		copy.Context = run.Context.Clone()
+		if run.Source != nil {
+			source := run.Source.Clone()
+			copy.Source = &source
+		}
 		copy.Findings = append([]review.Finding(nil), run.Findings...)
 		copy.Events = copyRunEvents(run.Events)
 		out = append(out, copy)
@@ -230,12 +240,13 @@ func (s *FileRunStore) SaveContext(_ context.Context, id string, rc *review.Cont
 	if rc != nil {
 		run.Context = nil
 		run.Request = rc.Request
-		run.DraftReport = rc.DraftReport
-		run.FinalReport = rc.FinalReport
+		run.DraftReport = rc.Source.Report.Draft
+		run.FinalReport = rc.Source.Report.Final
 		run.HILApproved = rc.HILApproved
 		run.Findings = append([]review.Finding(nil), rc.Findings...)
-		run.WebURL = rc.WebURL
-		run.Source = &rc.Source
+		run.WebURL = contextWebURL(rc)
+		source := rc.Source.Clone()
+		run.Source = &source
 	}
 	run.UpdatedAt = time.Now().UTC()
 	appendContextSavedEvent(run)
@@ -362,6 +373,10 @@ func (s *FileRunStore) copyRun(run *Run) *Run {
 		return nil
 	}
 	copy := *run
+	if run.Source != nil {
+		source := run.Source.Clone()
+		copy.Source = &source
+	}
 	copy.Context = contextForPersistedRun(&copy)
 	copy.Findings = append([]review.Finding(nil), run.Findings...)
 	copy.Events = copyRunEvents(run.Events)
@@ -374,15 +389,27 @@ func contextForPersistedRun(run *Run) *review.Context {
 	}
 	rc := review.NewContext(run.Request)
 	if run.Source != nil {
-		rc.Source = *run.Source
+		rc.Source = run.Source.Clone()
 	}
 	rc.Request = run.Request
-	rc.DraftReport = run.DraftReport
-	rc.FinalReport = run.FinalReport
+	rc.Source.Report.Draft = run.DraftReport
+	rc.Source.Report.Final = run.FinalReport
 	rc.HILApproved = run.HILApproved
 	rc.Findings = append([]review.Finding(nil), run.Findings...)
-	rc.WebURL = run.WebURL
+	if rc.Request.WebURL == "" {
+		rc.Request.WebURL = run.WebURL
+	}
 	return rc
+}
+
+func contextWebURL(rc *review.Context) string {
+	if rc == nil {
+		return ""
+	}
+	if rc.Source.SCM != nil && rc.Source.SCM.WebURL != "" {
+		return rc.Source.SCM.WebURL
+	}
+	return rc.Source.Request.WebURL
 }
 
 func safeRunFilename(id string) string {

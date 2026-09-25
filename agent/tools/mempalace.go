@@ -71,8 +71,8 @@ func (s *MemPalaceStore) ProposeUpdate(_ context.Context, rc *review.Context) (r
 		}
 		conventions = append(conventions, fmt.Sprintf("%s: %s", finding.ID, finding.Title))
 	}
-	if rc.FinalReport != "" {
-		conventions = append(conventions, rc.FinalReport)
+	if rc.Source.Report.Final != "" {
+		conventions = append(conventions, rc.Source.Report.Final)
 	}
 	var vectors []review.Vector
 	for i, convention := range conventions {

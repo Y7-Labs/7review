@@ -38,8 +38,8 @@ func TestHeadroomReducer_ReduceUpdatesSelectedContext(t *testing.T) {
 	if rc.SkillSections[0].Title != "Reduced Skill" || rc.CorpusSections[0].Title != "Reduced Doc" {
 		t.Fatalf("context was not reduced: %#v %#v", rc.SkillSections, rc.CorpusSections)
 	}
-	if rc.Conventions != "c1" || rc.Philosophy != "d1" {
-		t.Fatalf("memory not updated: %q %q", rc.Conventions, rc.Philosophy)
+	if len(rc.Source.Memory.Conventions) != 1 || rc.Source.Memory.Conventions[0] != "c1" || len(rc.Source.Memory.Decisions) != 1 || rc.Source.Memory.Decisions[0] != "d1" {
+		t.Fatalf("memory not updated: %#v", rc.Source.Memory)
 	}
 	if len(rc.Run.Warnings) != 1 {
 		t.Fatalf("expected warning, got %#v", rc.Run.Warnings)

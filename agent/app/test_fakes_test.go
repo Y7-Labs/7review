@@ -49,7 +49,7 @@ func (proposalMemory) ProposeUpdate(_ context.Context, rc *review.Context) (pipe
 	if rc == nil || !rc.HILApproved {
 		return pipeline.UpdateProposal{}, errors.New("approval required")
 	}
-	return pipeline.UpdateProposal{Conventions: []string{rc.FinalReport}}, nil
+	return pipeline.UpdateProposal{Conventions: []string{rc.Source.Report.Final}}, nil
 }
 
 func (proposalMemory) Write(context.Context, pipeline.UpdateProposal) error {

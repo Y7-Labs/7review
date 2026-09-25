@@ -1,6 +1,7 @@
 package review
 
 import (
+	"fmt"
 	"sync"
 	"time"
 )
@@ -10,8 +11,10 @@ import (
 // changed files, selected corpus, skills, memory, model findings, report, and
 // run metadata.
 type Source struct {
-	Request Request
-	SCM     *SCMContext
+	Request   Request
+	SCM       *SCMContext
+	Attempt   AttemptIdentity
+	Execution ExecutionContext
 
 	ChangedFiles     []ChangedFile
 	Diff             *StructuredDiff
@@ -31,6 +34,11 @@ type Source struct {
 	Questions        []Finding
 	InlineComments   []InlineComment
 	Report           Report
+	Investigation    InvestigationProjection
+	Coverage         CoverageProjection
+	Assessment       AssessmentProjection
+	Gate             GateResult
+	Delivery         DeliveryProjection
 	Run              RunMetadata
 }
 
@@ -75,46 +83,15 @@ type Context struct {
 
 	Source
 
-	// ── Inputs (populated by Step 1) ─────────────────────────────────────
-	ProjectID string
-	MRIID     int
-	MRTitle   string
-	MRAuthor  string
-	WebURL    string
-	DiffRefs  DiffRefs
-
-	// ── Retrieved context (populated by Step 3) ──────────────────────────
-	Conventions string // formatted content of conventions.json
-	Philosophy  string // content of philosophy.md
-
-	// ── Contract sections (populated by Step 4) ──────────────────────────
-	// Keyed by section identifier (e.g. "architecture/controller_rules.md").
-	ContractSections []Section
-	SkillSections    []Section
-
 	// ── Review findings (populated by Step 5, thread-safe) ───────────────
 	// Each parallel batch appends its raw findings string here.
 	rawFindings []string
-	Findings    []Finding
-
-	// ── Report (populated by Step 6) ─────────────────────────────────────
-	DraftReport string
-	FinalReport string
 
 	// ── HIL decision (populated by HIL gate) ─────────────────────────────
 	HILApproved bool
 	// HILEdits are finding IDs the human marked as false positives or added.
 	HILRejectedIDs []string
 	HILAddedNotes  []string
-
-	// ── Memory update proposal (populated after approval) ────────────────
-	NewConventions      []string
-	PhilosophyAdditions []string
-
-	// ── Execution metadata ────────────────────────────────────────────────
-	// Which provider+model handled each step — written to the report footer.
-	StepProviders  map[string]string // e.g. {"step5": "ollama/deepseek-coder-v2:16b"}
-	AvailableTools []string
 }
 
 // NewContext initialises the canonical source and transient helpers for one run.
@@ -128,11 +105,27 @@ func NewContext(req Request) *Context {
 				StepProviders: stepProviders,
 			},
 		},
-		ProjectID:     req.ProjectID,
-		MRIID:         req.MRIID,
-		StepProviders: stepProviders,
 	}
 	return rc
+}
+
+// NewCanonicalContext validates target identity and execution boundaries before
+// creating a context. Legacy callers continue to use NewContext until migration.
+func NewCanonicalContext(req Request, attempt AttemptIdentity, execution ExecutionContext) (*Context, error) {
+	if err := attempt.Validate(); err != nil {
+		return nil, err
+	}
+	if err := execution.Validate(); err != nil {
+		return nil, err
+	}
+	if req.ProjectID != "" && req.ProjectID != attempt.Change.RepositoryID {
+		return nil, fmt.Errorf("request project %q does not match attempt repository %q", req.ProjectID, attempt.Change.RepositoryID)
+	}
+	rc := NewContext(req)
+	rc.Source.Attempt = attempt
+	rc.Source.Execution = execution
+	rc.Source.Investigation = InvestigationProjection{State: attempt.State, Version: attempt.Version}
+	return rc, nil
 }
 
 // AddFindings appends raw findings from one parallel batch.
@@ -152,12 +145,27 @@ func (rc *Context) AllFindings() []string {
 	return out
 }
 
+// Clone returns a detached execution context without copying its mutex.
+func (rc *Context) Clone() *Context {
+	if rc == nil {
+		return nil
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return &Context{
+		Source:         rc.Source.Clone(),
+		rawFindings:    append([]string(nil), rc.rawFindings...),
+		HILApproved:    rc.HILApproved,
+		HILRejectedIDs: append([]string(nil), rc.HILRejectedIDs...),
+		HILAddedNotes:  append([]string(nil), rc.HILAddedNotes...),
+	}
+}
+
 // RecordProvider logs which provider handled a given step.
 func (rc *Context) RecordProvider(step, providerAndModel string) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
-	rc.StepProviders[step] = providerAndModel
-	rc.Run.StepProviders = rc.StepProviders
+	rc.Run.StepProviders[step] = providerAndModel
 }
 
 func (rc *Context) AddWarning(warning string) {

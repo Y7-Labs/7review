@@ -71,9 +71,11 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	if rc == nil {
 		rc = review.NewContext(run.Request)
 		rc.Findings = append([]review.Finding(nil), run.Findings...)
-		rc.DraftReport = run.DraftReport
-		rc.FinalReport = run.FinalReport
-		rc.WebURL = run.WebURL
+		rc.Source.Report.Draft = run.DraftReport
+		rc.Source.Report.Final = run.FinalReport
+		if rc.Request.WebURL == "" {
+			rc.Request.WebURL = run.WebURL
+		}
 	}
 	system := reviewChatSystemPrompt(*run)
 	user := fmt.Sprintf("Engineer message:\n%s", req.Message)
