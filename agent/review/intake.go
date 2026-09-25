@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -17,12 +18,20 @@ type SnapshotAttestation struct {
 	Verified       bool             `json:"verified"`
 }
 
+var canonicalDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
 func (a SnapshotAttestation) Validate(change ChangeKey) error {
 	if !a.Verified {
 		return errors.New("snapshot attestation is not verified")
 	}
 	if err := a.Snapshot.Validate(); err != nil {
 		return err
+	}
+	if !canonicalDigestPattern.MatchString(a.Snapshot.FileManifestDigest) {
+		return errors.New("verified snapshot requires a canonical file manifest digest")
+	}
+	if a.Snapshot.LocalSnapshotDigest != "" && !canonicalDigestPattern.MatchString(a.Snapshot.LocalSnapshotDigest) {
+		return errors.New("verified local snapshot requires a canonical local digest")
 	}
 	if err := change.Validate(); err != nil {
 		return err

@@ -61,3 +61,14 @@ func TestScenario_S06_StaleTestProof(t *testing.T) {
 		t.Fatalf("current verified proof should be present: %#v", got)
 	}
 }
+
+func TestScenario_S26_RepositoryIsolationAtVerifiedIntake(t *testing.T) {
+	change := ChangeKey{Provider: "github", Host: "github.com", RepositoryID: "org/a", ChangeNumber: "7"}
+	attestation := SnapshotAttestation{
+		Snapshot:   SnapshotIdentity{RepositoryID: "org/b", BaseRevision: "base", HeadRevision: "head", FileManifestDigest: "sha256:" + strings.Repeat("a", 64)},
+		ProducerID: "github", ComparisonTree: "merge-tree", VerifiedAt: time.Now().UTC(), Verified: true,
+	}
+	if err := attestation.Validate(change); err == nil || !strings.Contains(err.Error(), "repository") {
+		t.Fatalf("cross-repository attestation must be rejected: %v", err)
+	}
+}
