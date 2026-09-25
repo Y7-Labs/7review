@@ -1,272 +1,218 @@
-# Current Status
+# 7review Status
 
-This document tracks the current implementation state and operational limits of
-7review. It intentionally avoids project names, merge request IDs, tokens,
-private URLs, and other deployment-specific details.
+Updated: 2026-09-25
+Current phase: PHASE 1 — CHARACTERIZATION AND CANONICAL DOMAIN.
 
-## Implementation State
+## Current Direction
 
-7review currently supports:
+The target is an adaptive, team-configurable review engine shared by local
+changes, GitHub/GitLab PRs/MRs and non-interactive CI. Design contracts guide
+intended behavior, concrete code invariants can establish ordinary defects,
+and effort follows impact/uncertainty. Humans retain merge authority while
+trusted repository policy can enforce blocking quality gates.
 
-- GitHub pull request and GitLab merge request webhook intake.
-- Bounded in-process webhook workers for concurrent reviews.
-- SCM enrichment for metadata, changed files, diffs, discussions, and publish
-  positions.
-- Repository knowledge selection through an in-process document graph.
-- Portable `SKILL.md` review procedures with required core/provider coverage.
-- Model routing through OpenAI, Anthropic, OpenRouter, DeepSeek, Mistral,
-  Gemini, Ollama, and OpenAI-compatible endpoints.
-- Provider-native read-only tool calls inside the review loop.
-- Deterministic validation for required finding fields, confidence, changed-file
-  location, and addressable inline comment positions.
-- Source-of-truth authority metadata in selected evidence manifests.
-- Finding strength classification with draft-only downgrades for speculative or
-  weak-authority issues.
-- Verifiable citation checks for confirmed knowledge-backed findings.
-- Draft report publishing, inline draft comments, human approval, final
-  publishing, and approved memory writeback.
-- Operator CLI/TUI/chat workflows for setup, status, run inspection, reruns,
-  approval, final publishing, and memory review.
+The canonical set is now:
+- [ARCHITECTURE.md](ARCHITECTURE.md): product, ownership, decisions and rationale.
+- [SPEC.md](SPEC.md): behavioral contracts, subsystem detail and acceptance.
+- [ROADMAP.md](ROADMAP.md): immediate queue and conditional implementation.
+- This file: recorded facts, verification scope and remaining blockers.
 
-## Stability Analysis
+The user accepted the complete design and authorized Phase 1 implementation on
+2026-09-25. This authorizes work; it does not mark target behavior implemented.
 
-The current baseline is stable for local development, deterministic tests, and
-the packaged Docker runtime. It is not yet production-complete. The remaining
-uncertainty is concentrated in real provider callbacks, external credentials,
-and restart/durability behavior under accepted webhook load.
+## Recorded Runtime Baseline
 
-Strong areas:
+These statements summarize prior implementation work at baseline `11f3f55`;
+no fresh source audit, Go suite, Compose smoke or hosted CI run was performed
+during consolidation.
 
-- The review lifecycle is coherent and test-covered from request normalization
-  through draft/final publication gates.
-- GitHub and GitLab are modeled through provider-neutral interfaces, so the
-  agent is not locked to one SCM.
-- `review.Source` is now the central context contract for request, SCM, diff,
-  corpus, skills, memory, findings, HIL state, inline comments, report, and run
-  metadata.
-- Corpus selection has been tightened to prefer source-of-truth anchors and
-  avoid explicit off-topic sections such as unrelated LiveKit or deletion
-  contract blocks.
-- Approval channels are implemented behind a manager abstraction, with sender
-  authorization and command parsing tested.
-- The three-container runtime builds and starts with non-root users, read-only
-  root filesystems, health-gated dependencies, persistent state volumes, and
-  bounded logs.
-- Headroom reduction and MemPalace write/semantic recall are verified against
-  the pinned packages, not only mocked bridge tests.
+- GitHub/GitLab webhook and authenticated manual intake, bounded in-process workers,
+  SCM metadata/diffs/discussions and provider publishing adapters exist.
+- Source normalization, document-corpus selection, authority/citation validation,
+  portable skills, model-role routing and governed read-only tools are existing
+  primitives, not evidence that the new resumable scheduler is implemented.
+- The existing lifecycle publishes a draft, gates final publication on human
+  approval and couples approved memory writeback to that workflow.
+- Input profiles and CLI/TUI/chat operator surfaces exist. WhatsApp, Telegram and
+  SimpleX channel foundations exist; full live-provider qualification is pending.
+- The packaged runtime uses Headroom and MemPalace sidecars. Optional enrichment
+  in the target does not make those dependencies optional in the current code.
+- Existing finding validation favors verifiable source-backed, positioned findings;
+  speculative/weak concerns remain notes or human-check material. This is not the
+  proposed CI quality-gate evaluator or full invariant-based target contract.
 
-Weak areas:
+## Target Implementation Gaps
 
-- Webhook work is still accepted into a bounded in-process queue. This is fine
-  for local/single-instance operation, but restart durability is not guaranteed
-  unless the run has already been persisted at the right point.
-- Real Twilio, Telegram, and SimpleX callback flows are not yet proven against
-  live provider payloads, network failures, retries, and operator mistakes.
-- Review quality is structurally safer than before, but still needs a benchmark
-  set of known reviews to measure false positives and missed findings.
-- Operational recovery paths are not fully documented: failed provider sends,
-  sidecar outages, model fallback exhaustion, and manual retry flow.
+| Target | Current evidence / gap |
+| --- | --- |
+| Immutable attempts, full freshness and scoped resume | Legacy per-change stores/reruns do not provide these contracts |
+| Transactional accepted work and separate effects | In-process accepted jobs can be lost on restart; full recovery/outbox semantics remain proposed |
+| Adaptive methods, triage and independent omission review | Existing skills, roles and tools are reusable; new controller/policy contracts not implemented |
+| CI-native runner, native feedback and gate evaluator | Specified with autonomous/service lifetimes, fork trust and service-owned publication; not qualified or delivered by these docs |
+| Governed memory and evidence graph | Existing recall/corpus are foundations; lineage, revocation and activation semantics remain target |
+| Optional Headroom/MemPalace/code intelligence | Setup and required-capability behavior still need implementation and tests |
+| TOON optimization | Proposed model-input-only optimization; no measured savings or quality parity |
 
-## Readiness Level
+ENG-D7/D8 select a PostgreSQL budget authority/action journal inside the server
+for coordinated team/CI use. SQLite remains a candidate only for autonomous local
+accounting. Neither has been installed or implemented in this phase. No mandatory
+graph database, new channel or autonomous merge is added.
 
-Current readiness: **runtime-packaged development baseline**.
+## September 25 Contract Reconciliation
 
-Current engineering direction: **adaptive review platform migration**. The
-runtime remains usable while the architecture migrates through compatibility
-phases. The approved design is in
-`docs/designs/adaptive-review-platform.md`; the executable phase plan is in
-`docs/designs/adaptive-review-implementation-plan.md`. The target includes a
-run-scoped Review Evidence Graph and governed memory; neither is implemented in
-the runtime yet.
+- User-approved ENG-D1 through ENG-D13 are recorded in ARCHITECTURE. Earlier
+  candidate D06 is superseded for coordinated accounting, not silently approved.
+- SPEC now defines loop eligibility/progress, per-line suspension, protected
+  coverage, fixed-period budget arithmetic, action/receipt fields, transactional
+  operations and conservative recovery. These representations are the accepted
+  implementation contract.
+- All 50 ENG acceptance cases were moved into the canonical SPEC alongside
+  S01-S60: 110 cases specified, none executed as target acceptance tests.
+- DOC-01 through DOC-06 are closed at design level in SPEC sections 20-25:
+  public schemas, complete effect/memory lifecycles, legacy migration, measurable
+  qualification objectives, two-mode CI publication and clause traceability.
+  Their implementation and qualification evidence remains absent.
+- Automated CI under setup grants, truthful incomplete coverage and scoped method
+  conflicts are retained. Optional isolated runtime verification is product scope;
+  safe sandbox contracts and qualification remain unfinished.
+- README/ROADMAP distinguish current runtime from these targets. AGENTS.md was
+  preserved as requested; its existing runtime sidecar guidance is not a target
+  architecture decision.
+- This pass changes documentation only. No runtime tests, dependency installation,
+  migration, deployment, commit or push is claimed.
+- gstack-guided primary review covered architecture, code-quality boundaries,
+  future test coverage and performance risks. A separate same-family agent found
+  three contract inconsistencies: billable retry identity/period, historical
+  currentness and delegated obligation replacement. All three were corrected
+  and rechecked as resolved. This is not a cross-model or whole-system sign-off.
+- The final static pass found 62 valid local links/anchors, 60 S cases plus 50
+  unique ENG cases, twelve numbered architecture sections and balanced code
+  fences. All 16 Mermaid blocks rendered in headless Chromium after the closure
+  edits; `git diff --check` passed and AGENTS.md remains unchanged.
+- An independent same-family whole-system review found five concrete issues, then
+  two residual issues after the first correction. After schema/config alignment,
+  publication recovery, memory-state unification, separate detection/escalation
+  scoring, atomic traceability and compensation variants were fixed, its final
+  recheck found no blocking design contradiction. This is not cross-model evidence.
+- No Go suite, live SCM/model qualification or crash tests ran during design. The
+  design is accepted for implementation; it is not an implemented or
+  production-ready system.
 
-Meaning:
+## Historical Verification
 
-- Safe to continue implementation.
-- Safe to use the Compose stack for controlled integration work.
-- Safe to run controlled review experiments.
-- Not yet safe to call production-ready or multi-instance-ready.
+Runtime packaging was recorded complete on 2026-08-27: pinned sidecars, hardened
+containers, readiness, embedded assets, isolated Compose smoke cleanup, real
+Headroom reduction and MemPalace semantic write/recall. Earlier green Go/Compose
+results are historical, not current CI status.
 
-Do not treat it as production-ready until:
+A prior live GitLab smoke exercised acceptance, enrichment, context/skills,
+model tools, findings and inline/draft publication. It did not establish every
+model finding's correctness or prove the full final-publication/learning lifecycle.
+Current hosted CI health has not been queried in this documentation phase.
 
-- At least one real GitHub or GitLab review completes through draft,
-  authorized approval, final publish, and memory writeback.
-- At least one real approval provider callback path is verified end-to-end.
-- Restart behavior is either durable or explicitly documented as single-process
-  v1 behavior.
+Known limits remain provider/model variance, speculative findings, live channel
+callbacks, accepted-work durability, uncertain external effects, operator recovery
+and unmeasured review precision/recall. This is a packaged development baseline,
+not a production-readiness claim.
 
-## Latest Smoke Coverage
+## Historical Design Validation
 
-The packaged runtime smoke now proves:
+- Product review applied gstack methods with separate Codex contexts. Six
+  subagent and five CLI findings were considered; no Claude/cross-provider
+  consensus or complete autoplan approval was established.
+- DX used a primary design walkthrough, not an independent usability test.
+- Six independent engineering findings were resolved at contract level and
+  rechecked: full freshness, derived-content revocation, grant precedence, total
+  cost reservation, parallel reducer fencing and immutable publication versions.
+  Their rationale and scenario mappings are in ARCHITECTURE.
+- The later primary-agent consistency pass brought CI into product journeys,
+  ownership, interfaces, policy, recovery, native effects and implementation
+  slices. It distinguished assessed-with-violations from incomplete review,
+  job-local receipts from durable handoff and comments from check/artifact grants.
+- The expanded CI scope and consolidation later received a same-family independent
+  whole-system review and explicit user acceptance. Cross-model review remains
+  unclaimed and is not an implementation prerequisite.
 
-- all three images build with the pinned Headroom and MemPalace releases
-- all services become healthy and the agent reports `READY`
-- the embedded profile, skills, instructions, and orchestrator config load
-- Headroom `/reduce` preserves section identity
-- MemPalace `/write` mines approved source and `/recall` returns the stored
-  vector semantically
-- isolated smoke volumes and containers are removed after the run
+The previous pre-consolidation static pass checked 13 documents, 61 local links,
+52 scenario IDs and 23 requirement mappings. This is historical artifact
+verification, not evidence that the scenarios ran.
 
-The Docker build context is constrained to application sources; the frontend
-dependency tree is excluded from the agent image build.
+## Integration And Documentation Clarification
 
-A previous live GitLab merge request smoke run also completed end-to-end with:
+Official Greptile and CodeRabbit documentation was consulted on 2026-09-12 to
+distinguish installed repository review from standalone CI execution. ARCHITECTURE
+records the sourced comparison and deliberate differences, not equivalence claims.
+SPEC now includes I01-I08: installation, permissions, triggers, incremental work,
+conversation commands, finding lifecycle, native gate mappings and compatibility.
+S53-S60 specify their qualification; none has run.
 
-- webhook acceptance and queue processing
-- SCM enrichment
-- graph-based repository context selection
-- skill selection and required skill coverage
-- model tool calls for changed files, diff summary, and merge request metadata
-- accepted model findings
-- inline draft comments published to changed lines
-- draft report publication
+The documentation uses a tailored arc42 coverage map, C4 context/deployment
+abstractions, a glossary and BCP 14 normative language. This is a documented
+method, not external certification or proof that every contract is correct.
 
-The smoke run proves the runtime path and publishing path are functional. It
-does not prove that every model finding is correct.
+## Consolidation Verification
 
-## Review Quality
+The design is consolidated from ten design notes and PENDING into the four
+canonical root documents. R01-R23, D01-D13, J01-J10, the original S01-S52 definitions,
+future test names and requirement mappings are retained. S53-S60 add installed-SCM
+qualification, giving 60 specified cases in total. SPEC sections 1-16
+keep their numbers; graph/memory detail and verification registries are included
+rather than silently dropped. Research and intermediate reviews are synthesized
+into rationale and this bounded evidence record, not competing specifications.
 
-The strongest observed results are on changes where the repository contains
-stable documentation anchors: requirement IDs, contract rules, API routes,
-schemas, data-model sections, design decisions, or ownership docs.
+Static transfer checks confirmed all original scenario bodies and R/J/D rows were
+preserved. Link/anchor validation passed for the four root documents and README
+(53 local references); all 60 cases have the required fields and future test
+names, and the 23 requirement mappings match their scenario declarations.
+No references to the removed design files remain outside excluded Git/dependency
+directories. `git diff --check` passed. These are artifact checks only.
+No candidate scenario, runtime test, hosted SCM workflow, benchmark, dependency
+installation, migration, deployment, commit or push is implied by this change.
+AGENTS.md remains untouched.
 
-The current system is good at surfacing:
+## Historical Whole-Document Quality Audit
 
-- contract/API/data-model drift
-- missing traceability between code and repository docs
-- changed-line findings that can be published inline
-- run audit data through timelines, selected context manifests, tool
-  observations, provider traces, and draft reports
+A primary-agent audit covered ARCHITECTURE, SPEC, ROADMAP, STATUS and README.
+It did not rerun independent gstack engineering review. The previous adapted
+standards map and successful link checks were insufficient to establish that
+the architecture/specification were implementation-ready.
 
-The current system is weaker at distinguishing:
+ARCHITECTURE now uses the twelve arc42 sections explicitly, separating context,
+logical containers, internal components, runtime sequences and physical placement.
+SPEC retains behavioral section and requirement/scenario IDs, with Mermaid views
+for lifecycle, delivery, evidence and memory. References and diagrams complement
+the normative text; they do not replace missing schemas or transitions.
 
-- confirmed defects from likely defects
-- review notes from publishable findings
-- speculative performance or future-maintenance concerns from concrete issues
+That audit recorded six open precision findings as DOC-01 through DOC-06: schema
+completeness, operational lifecycles, legacy mappings, quality/recovery objectives,
+CI publication ownership and clause-level verification. The current revision
+closes those design questions in SPEC sections 20-25. This supersedes their former
+open status but does not retroactively turn the historical audit into runtime proof.
 
-## Known Limits
+The README now introduces the target and contrasts it with existing runtime
+instructions. No proposed command or endpoint is presented as executable.
+Remaining documentation work is substantive, not just diagram formatting.
 
-- Model quality varies significantly by provider and model.
-- A structurally valid model finding can still be too speculative.
-- Inline comments should stay limited to addressable, high-confidence findings.
-- Positive observations and weak concerns should be summary notes, not inline
-  findings.
-- Final publication should remain human-approved.
+Audit verification: the 12 numbered architecture sections, 64 local links/anchors,
+60 scenario definitions and 23 requirement mappings passed static checks. Original
+R/J/D rows were preserved. All 16 Mermaid blocks across ARCHITECTURE, SPEC and
+README rendered with the installed offline Mermaid bundle in Chromium; selected
+context, container, sequence, lifecycle and memory renders were visually inspected.
+Syntax errors and unreadable crossing/overwide views found during verification
+were corrected. `git diff --check` passed. This is primary-agent artifact
+verification, not an independent standards audit or runtime test. DOC-01 through
+DOC-06 were closed later in the current revision. No runtime/dependency changes
+were made.
 
-## Review Quality Gate
+## Remaining Gates
 
-7review treats model output as draft review material, not as autonomous final
-judgment. The pipeline now applies a deterministic quality gate to reduce false
-positives, preserve useful review notes, and make source-of-truth authority
-explicit.
+1. Execute Phase 1 characterization and canonical-domain work with focused tests;
+   do not alter runtime behavior without a captured baseline.
+2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
+   implementation evidence requires an explicit amendment.
+3. Future deterministic/fault tests, hosted-provider tests, paired model-quality
+   evaluations and operator recovery evidence. All 110 scenarios are specified
+   only; related legacy tests do not count as their execution.
 
-### Source-Of-Truth Authority
-
-The document graph exposes authority as a first-class signal, not only as
-section kind or selection score.
-
-The target architecture evolves this existing selector into a Review Evidence
-Graph that also links applicable methods, tool observations, hypotheses,
-findings, HIL outcomes, and memory feedback. It explicitly does not attempt to
-index the complete codebase as a universal knowledge graph.
-
-Authority levels:
-
-- `sot`: binding source of truth, such as requirements, contracts, API specs,
-  data models, security rules, and approved repository rules.
-- `decision`: ADRs and approved architecture decisions.
-- `implementation_context`: ownership docs, runbooks, operational notes, and
-  code-adjacent documentation.
-- `design_context`: design docs, tokens, accessibility rules, states, and
-  component behavior.
-- `supporting`: useful references that cannot justify a finding alone.
-- `memory`: approved historical memory, always lower authority than repository
-  files.
-
-The `evidence_manifest` explains:
-
-- why the section was selected
-- which review signal pulled it in
-- which authority level it has
-- whether it can justify a finding by itself
-- whether it only supports another source
-
-### Finding Strength
-
-The validator classifies every model issue before publishing:
-
-- `confirmed`: direct evidence in changed code plus a cited source-of-truth
-  rule.
-- `likely`: strong evidence, but part of the needed context is absent or
-  inferred.
-- `speculative`: hypothesis, future debt, unmeasured performance concern, or
-  risk without a concrete violated rule.
-- `note`: useful non-blocking observation or positive context.
-- `question`: a clarification needed from the author.
-
-Only `confirmed` findings become inline comments by default in V1. `likely`
-items stay in the draft under human-check sections.
-
-### Skill-Specific Strictness
-
-Current skill-strictness rules:
-
-- Data migrations should not report TTL, pruning, or performance risks unless
-  there is volume evidence, a known slow query, a missing required index, or an
-  explicit repository requirement.
-- Contract drift is strong when a changed field, enum, route, event, or schema
-  is ratified in code but missing from the API or schema source of truth.
-- Design decisions should not be inverted into defects. If an ADR or system
-  model allows a nullable relation or temporary gap, the review should only
-  report a missing follow-up when another source requires that follow-up.
-- Ownership and runbook docs should guide maintainability notes, but should not
-  create blocking findings without a violated source-of-truth rule.
-
-### Findings, Notes, And Questions
-
-The draft report separates:
-
-- `findings`: actionable bugs or violated requirements.
-- `notes`: useful observations, positive confirmations, or low-risk
-  maintainability context.
-- `questions`: points that need author clarification.
-
-This prevents weak concerns from being published as inline defects while still
-keeping useful reviewer context in the draft.
-
-### Citation Validation
-
-A strong finding should include:
-
-- changed file and changed line
-- exact source document or section
-- violated rule restated in the finding
-- explanation of how the diff violates that rule
-
-Confirmed knowledge-backed findings must provide structured `citations` with
-`source`, `heading_or_key`, `rule`, and `violation`. The cited `rule` must match
-the selected source section text. If any of these are missing or unverifiable,
-the system downgrades the issue to human check, `note`, or `question`, or
-rejects it when it is not useful.
-
-### Publish Policy
-
-Default publication is:
-
-- draft summary for all accepted findings, notes, and questions
-- inline comments only for `confirmed` findings on addressable changed lines
-- `likely` findings kept in draft-only human-check sections
-- speculative items kept in a "Needs human check" section
-- final publication always behind human approval
-
-### Benchmark Reviews
-
-The deterministic validator has a small structural benchmark covering confirmed
-source citations, invented citations, speculative concerns, and explicit
-questions. A larger live benchmark set of known reviews should still measure:
-
-- true positives
-- false positives
-- missed findings
-- citation quality
-- correct downgrade of speculative concerns
-- correct use of source-of-truth authority
+Do not resume development automatically or label the redesigned system complete
+because its documents are consolidated.

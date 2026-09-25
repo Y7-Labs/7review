@@ -1,217 +1,281 @@
-# Stabilization Roadmap
+# 7review Roadmap
 
-This roadmap tracks the work needed before 7review should be considered ready
-for production-like review runs. It prioritizes stability, runtime packaging,
-and end-to-end confidence before adding more approval channels or large new
-features.
+Updated: 2026-09-25
+Status: DESIGN ACCEPTED; PHASE 1 IMPLEMENTATION AUTHORIZED.
 
-## Current Baseline
+[ARCHITECTURE.md](ARCHITECTURE.md) defines the product and system;
+[SPEC.md](SPEC.md) defines behavior and acceptance;
+[STATUS.md](STATUS.md) records facts. This file owns all planned work,
+including the former immediate queue and detailed implementation plan.
 
-Status: runtime-packaged development baseline.
+## Current Objective
 
-- `main` is green with `go test ./...`.
-- GitHub and GitLab review flows are implemented behind provider adapters.
-- The review pipeline selects repository corpus, activates skills, recalls
-  memory, reduces context, runs model review, validates findings, publishes
-  draft reports, waits for human approval, publishes final reports, and writes
-  approved memory.
-- Approval channel foundation exists for Twilio WhatsApp, Telegram, SimpleX,
-  and the generic internal JSON bridge.
-- Headroom and MemPalace are external sidecars reached through HTTP clients.
+Implement the accepted design incrementally, beginning with characterization and
+the canonical review domain before changing runtime orchestration.
+Private local review, GitHub/GitLab PR/MR review and non-interactive CI are core
+entry paths, not competing products. Existing test/lint/security/coverage results
+feed the investigation; native checks and quality artifacts expose its results.
+Teams own advisory/blocking rules. Humans retain merge authority.
 
-## Current Direction - Adaptive Review Platform
+Evaluate the existing SCM, Source, corpus, skills, tools and model primitives for
+reuse, adaptation or replacement; do not force the target into their current layout.
+Replace rigid final-stage HIL with bounded investigation and scoped questions.
+Separate assessment, quality-gate result, disclosure and governed learning.
+Headroom, MemPalace and code intelligence are optional in the target, not yet
+optional by virtue of this design in the existing packaged runtime.
 
-The next product milestone is no longer channel expansion. 7review will compile
-repository-owned review methods, rules, evidence, tools, validation, and
-publishing policy into an explainable `ReviewPlan`, then execute it through a
-bounded evidence-seeking agent loop. A run-scoped Review Evidence Graph connects
-the change, selected methodology, evidence, hypotheses, findings, human outcomes,
-and governed memory without becoming a general code knowledge platform.
+## Design Sequence
 
-The approved system design and phase gates are:
+1. Product conception: users, J01-J10 journeys, R01-R23 requirements, method
+   freedom and autonomy boundaries.
+2. System conception: responsibilities, adaptive loop, identity, persistence,
+   evidence/memory, CI modes, permissions and provider limitations.
+3. Specification: state transitions, interfaces, policy composition, recovery,
+   budgets, quality gates, export and migration.
+4. Validation: walk S01-S60 and their variants, challenge contradictions, record
+   decisions and approval explicitly. Written scenarios are not executed tests.
+5. Documentation refinement: keep these four canonical files coherent. Final
+   tutorials and operational guides follow design validation, using the local
+   reference projects for organization rather than importing their architectures.
+6. Development: only on separate authorization, following the conditional
+   implementation plan with tests in each slice.
 
-- `docs/designs/adaptive-review-platform.md`
-- `docs/designs/adaptive-review-implementation-plan.md`
-- `docs/designs/review-evidence-graph.md`
-- `docs/designs/memory-engineering.md`
+Steps 1-3 now have a complete candidate revision; ENG-D1 through ENG-D13 are
+approved directions and DOC-01 through DOC-06 are closed at design level. The loop
+contract and its 50 additional scenarios are in SPEC. The final whole-system review
+found no blocking design contradiction. The user accepted the complete design and
+authorized Phase 1 on 2026-09-25. No runtime completion or new provider
+qualification is claimed.
 
-Behavior characterization and the first canonical-state slice are complete.
-Implementation continues by removing the remaining duplicated run state.
-Snapshots, plans, the evidence graph, memory redesign, and repository policy
-follow in that order. New channels remain frozen during this migration.
+## Immediate Queue
 
-## Priority Rationale
+The documentation audit found six substantive design blockers. They are now closed
+in [SPEC sections 20-25](SPEC.md#20-public-schema-contracts): full public schemas,
+operational lifecycles, legacy compatibility, qualification targets, a two-mode
+publication topology and clause-level traceability. Closure is a design result,
+not implementation evidence.
 
-The next work should stabilize runtime and observability before expanding
-features. The review pipeline already has enough moving parts: SCM enrichment,
-corpus selection, skills, memory, model routing, validation, HIL approval, and
-publishing. Adding more channels or agent-session features before proving
-runtime packaging would increase uncertainty instead of reducing it.
+1. Review the [product contract](ARCHITECTURE.md#product-contract) and
+   [architecture](ARCHITECTURE.md#system-architecture) as one product:
+   local, PR/MR and CI review with team-owned methods and quality gates.
+2. Preserve the accepted [specification](SPEC.md) as the implementation contract.
+   Amend it only through an explicit decision when implementation evidence exposes
+   a contradiction. The final challenge covered S01-S60 and all 50 ENG cases.
+3. Preserve the independent whole-system review result: after two correction
+   cycles it found no remaining blocking design contradiction across CI,
+   installed-SCM, schemas, lifecycles, migration, metrics and traceability.
+4. Preserve approval of ENG-D1-ENG-D13 in
+   [the decision register](ARCHITECTURE.md#decisions-and-tradeoffs). Review the
+   complete candidate revision as one system; do not reopen individual decisions
+   without concrete contradictory evidence or count written cases as tested.
+5. Maintain ARCHITECTURE/SPEC/ROADMAP/STATUS as the canonical set. Final tutorials
+   and operator documentation follow validation; runtime development requires
+   separate authorization, not automatic continuation.
 
-Ordering principle:
+The [validation record](STATUS.md#september-25-contract-reconciliation) distinguishes
+static checks, historical reviews and future execution evidence.
+This roadmap owns sequence; [STATUS](STATUS.md) owns baseline/target state.
 
-1. Make the stack start reliably.
-2. Characterize and preserve one complete review path end-to-end.
-3. Introduce canonical source, trusted snapshots, and compatibility plans.
-4. Add the run-scoped evidence graph and governed memory.
-5. Add repository-owned policy and the bounded review loop.
-6. Prove strategy quality and GitHub/GitLab parity with scenarios.
-7. Resume real approval-channel validation after platform gates are green.
+## Authorized Implementation
 
-The critical path is Docker/runtime packaging first because it gives a stable
-environment for every later E2E test. Provider E2E before Docker would be noisy:
-failures could come from local env drift, sidecars, secrets, ports, or provider
-payloads, and it would be harder to know what actually broke.
+The phases below are authorized in sequence as of 2026-09-25. Each phase still
+requires its own tests and exit evidence; authorization is not proof of completion.
 
-## Phase 1 - Runtime Packaging
+## Gate 0: Review The Design — Complete
 
-Status: complete (2026-08-27).
+Review the concrete recommendations in
+[the decision register](ARCHITECTURE.md#decisions-and-tradeoffs), including compared
+storage/orchestration choices, scoped readiness, complete budget accounting,
+publication grants and migration. DOC-01 through DOC-06 have complete accepted
+contracts.
 
-Goal: make local and Docker startup reproducible before provider E2E work.
+The contracts were reviewed against [S01-S60](SPEC.md#acceptance-cases), the 50
+ENG cases, security boundaries, provider limitations and developer workflows.
+The independent final challenge found no blocking design contradiction after
+corrections. The user explicitly accepted the complete revision on 2026-09-25.
 
-- Validate `docker-compose config` and the existing agent, Headroom bridge, and
-  MemPalace bridge containers.
-- Verify `.env.example` has every required runtime variable and no dead provider
-  settings.
-- Add a smoke command that starts the stack, checks readiness, and verifies that
-  the sidecars respond.
-- Document the exact local startup path in `docs/docker.md` and keep secrets out
-  of committed config.
+Exit satisfied: no unresolved structural contradiction remained and the user
+accepted the complete specification revision and decision record.
 
-Exit criteria:
+## Phase 1: Characterization And Canonical Domain
 
-- [x] `make docker-config` passes.
-- [x] Docker stack starts from the documented environment contract.
-- [x] Agent readiness reports orchestrator, pipeline, queue, run store,
-  Headroom, and MemPalace status.
-- [x] The smoke gate exercises Headroom reduction plus MemPalace write and
-  semantic recall against the installed upstream packages.
+Scope: `agent/review`, pipeline/store consumers, scenario fixtures.
+- Preserve existing behavior with baseline fixtures and record known limitations.
+- Finish `Source` authority for corpus, skills, findings, reports and metadata.
+- Define identities, events, checks, observations and decision envelopes from the spec.
+- Include ExecutionContext, immutable GateResult and separate investigation,
+  coverage, gate and delivery projections from the first domain slice.
+- Create the deterministic scenario harness now, including failing/new-target
+  expectations isolated from legacy regression assertions.
 
-Detailed tasks:
+Exit: no competing authoritative copies; baseline tests green; spec invariants
+mapped to test names. Avoid broad interface churn.
 
-- Audit `Dockerfile`, `docker-compose.yml`, `.env.example`, and `Makefile` for
-  drift against the current Go config loader.
-- Verify bridge images build for Headroom and MemPalace without hidden local
-  dependencies.
-- Add or validate a smoke script that checks agent readiness and both sidecar
-  health endpoints.
-- Keep model/provider secrets outside compose files; only document variable
-  names and safe examples.
-- Record expected ports, volumes, and service DNS names.
+## Phase 2: Trusted Inputs And Policy
 
-Risks:
+Scope: repository snapshots, profile compatibility and policy resolution.
+- Bind base/head/local snapshots to verified identity and digests.
+- Compile legacy behavior explicitly; implement strict V2 schema and merge laws.
+- Add proposed policy validation/explanation commands and readiness projection.
+- Preserve scope, source-of-truth authority and corpus anti-noise fixtures.
+- Bind CI job, source head, comparison/merge tree and imported artifact provenance.
+- Compile scoped quality-gate rules, baseline compatibility and independent
+  prerequisites; reject self-dependency and unverified required dependencies.
 
-- `.env.example` can become stale faster than code.
-- Sidecars may pass build but fail at runtime if Python dependencies drift.
-- A smoke test that only checks container start is not enough; it must verify
-  agent-to-sidecar connectivity.
+Exit: S01-S09, S22, S24-S26 policy/input assertions pass without model calls.
+All schema fields have documented precedence, bounds and error behavior.
 
-Delivered controls:
+## Phase 3: Durable Attempts And Recovery
 
-- `headroom-ai==0.36.5` and `mempalace==3.8.0` are pinned explicitly.
-- Agent profile, skills, instructions, and orchestrator config are embedded in
-  the agent image with stable `/app` paths.
-- Containers run non-root with read-only root filesystems, dropped Linux
-  capabilities, bounded temporary filesystems, restart policy, and log rotation.
-- MemPalace keeps raw source, generated index, and runtime home in separate
-  paths inside its durable volume.
-- GitHub Actions runs source verification before the Compose contract smoke.
+Scope: storage, app intake and job lifecycle.
+- Implement the reviewed coordinated PostgreSQL budget/action ledger and its
+  atomic reservations/intent. Qualify autonomous local storage separately;
+  SQLite remains a candidate there, not a shared multi-runner database.
+- Specify fixed-period accounting, unresolved carry-over and all three ceilings;
+  test concurrent admission, idempotent settlement and authority outages.
+- Add unique attempts, command receipts, durable jobs, leases and version fencing.
+- Implement migration dry run, aliases, backup/restore and read-only legacy import.
+- Recover accepted jobs and interrupted actions; fail visibly on corruption.
+- Never blindly resend uncertain non-idempotent provider calls. Qualify each
+  adapter's idempotency window, receipt lookup and SDK retry behavior.
+- Keep network/model calls outside transactions.
+- Qualify isolated ephemeral stores separately from persistent service recovery;
+  verify acknowledged handoff and service-owned shared publication without hidden
+  infrastructure requirements for autonomous artifact-only jobs.
 
-## Phase 2 - Real Provider E2E
+Exit: S12-S17 and S28 recovery tests pass; restart loses no acknowledged input
+under the documented durability assumptions. Unknown model-call usage is bounded.
 
-Goal: prove the implemented channels with real callbacks, not just unit tests.
+## Phase 4: Delivery And Human Commands
 
-- Configure a stable HTTPS webhook URL for local or staging tests.
-- Configure Twilio WhatsApp sender and approved template.
-- Configure Telegram `setWebhook` with `X-Telegram-Bot-Api-Secret-Token`.
-- Run `simplex-chat -p 5225` locally or behind a secured proxy.
-- Exercise draft delivery and inbound commands:
-  `/approve <run_id>`, `/revise <run_id>`, and
-  `/suppress <run_id> <finding_id>`.
+Scope: application commands, SCM publication, existing channels, outbox.
+- Separate publication authorization, finding feedback, investigation requests
+  and memory activation.
+- Implement stable delivery identity, provider reconciliation and uncertain state.
+- Recheck revisions around publication; translate legacy commands explicitly.
+- Retry notifications/index writes without rerunning review.
+- Implement separately granted native GitHub checks/annotations and GitLab
+  pipeline-bound statuses in the coordinated service; reconcile uncertain batches
+  and fence stale jobs. Missing permissions cannot produce fake success.
 
-Exit criteria:
+Exit: S13-S16, S26-S28 and S30 pass with fakes; stale authorization cannot silently
+publish a current-looking report. Test real adapter reconciliation separately.
 
-- A draft review can be sent to each enabled provider.
-- Real inbound callbacks enqueue the expected approval/revision/suppression work.
-- Final publication succeeds on GitHub or GitLab after human approval.
+## Phase 5: Resumable Scheduler
 
-Detailed tasks:
+Scope: pipeline extraction at existing boundaries.
+- Implement cheap triage, eligibility, shared budget reservations and checkpoints.
+- Schedule bounded tool/model actions, waits, cancellation and scoped resumption.
+- Track coverage, per-line stagnation and explicit incomplete outcomes. Protect
+  priority checks from discretionary budget consumption; coalesce automatic work
+  toward the latest confirmed revision and revalidate reused evidence.
+- Separate independent omission review from candidate verification.
+- Use the existing orchestrator and tool implementations under governed permissions.
+- Add the non-interactive CI entry path using this same scheduler, with bounded
+  wait/handoff, deterministic gate evaluation, export manifests and exit mapping.
+- Consume trusted existing quality evidence without running untrusted PR scripts
+  with model or publisher credentials.
 
-- Start with one SCM provider path, preferably the one with known credentials
-  available locally.
-- Use one small test PR/MR with a predictable diff and harmless final publish.
-- Capture provider payload samples as sanitized fixtures where possible.
-- Validate unauthorized sender rejection before validating happy paths.
-- Verify retries are idempotent enough to avoid duplicate final publication.
+Exit: S01-S14 and S19-S23 action/state assertions pass. Every expensive action
+has a reason and reservation; waiting consumes no worker; duplicate responses
+cannot restart completed work.
 
-Risks:
+## Phase 6: Evidence And Governed Memory
 
-- Twilio template approval can delay WhatsApp testing.
-- Telegram webhooks require a stable HTTPS URL and exact secret handling.
-- SimpleX depends on a local process and should not be exposed publicly without
-  an explicit secured proxy.
+Scope: evidence projection, memory semantics, capability integration.
+- Extract corpus graph by equivalence; persist bounded proof paths.
+- Support invariant-backed findings without inventing missing contracts.
+- Govern feedback candidates, activation, expiry, contradiction and deletion lineage.
+- Keep local exact recall; adapt MemPalace as optional index and Headroom as
+  optional optimization. Add setup selection and health checks, not silent installs.
+- Attest optional code-intelligence scope/revision and expose coverage limits.
+- Specify and qualify optional isolated runtime verification before exposing it:
+  no model/publisher secrets in repository execution, bounded network/resources,
+  dependency provenance, cancellation and cleanup. Generated tests are not authority.
+- Preserve the accepted method-comparison and correction-dossier product scope;
+  neither authorizes auto-activation, repair or external transfer.
 
-## Phase 3 - Durability And Operations
+Exit: S08-S09, S18-S19, S22, S26-S27 pass; memory/index absence does not break
+baseline review. Required missing capabilities cannot silently pass.
 
-Goal: remove single-process assumptions that are risky for production.
+## Phase 7: Quality And Product Validation
 
-- Decide whether run and queue state stay file-backed for v1 or move to a
-  durable queue/store.
-- Ensure accepted webhook work survives process restart or document the local
-  limitation clearly.
-- Add operational docs for retries, failed provider callbacks, memory sidecar
-  outages, and model-provider fallback behavior.
-- Keep final publication and memory writeback human-gated.
+CI integration is a product deliverable, not just verification of this repository.
+Qualify the runner, policy and publication slices introduced in Phases 1-5 as
+one product workflow: artifacts/exit contract, deterministic gate, GitHub checks
+and GitLab status/Code Quality export. Verify runner/service credential separation,
+fork safety, prerequisite-cycle checks and explicit pipeline/merge-tree identity.
+Execute S45-S60 and provide version-pinned CI examples.
+Advisory is the default; teams may enable blocking rules through trusted policy.
 
-Exit criteria:
+- Implement and execute S01-S60 and the 50 ENG cases, shared provider fixtures and
+  local snapshot scenarios. Case count is not a coverage or quality measurement.
+- Run opt-in repeated live-model comparisons against the characterized baseline.
+- Measure independent-pass, graph and memory contributions separately.
+- Evaluate TOON only after typed artifacts stabilize; default JSON remains.
+- Surface plans, questions, coverage, costs and next actions consistently across
+  existing CLI/TUI/HTTP/channel surfaces.
+- Run controlled temporary GitHub PR/GitLab MR tests with explicit cleanup.
 
-- Restart behavior is either durable or explicitly bounded and documented.
-- Operator can inspect failed runs and retry safely.
-- No approval channel can publish final output without explicit authorized input.
+Exit: no critical silent-clear or lifecycle invariant failures in the acceptance
+corpus; quality/cost reports published with actual model identity and limitations.
+No score-only merge recommendation.
 
-Decision needed:
+## Phase 8: Controlled Rollout
 
-- **Option A: single-instance v1.** Keep file-backed runs and bounded in-process
-  queue, document restart limitations, and focus on local/staging reliability.
-- **Option B: durable v1.** Add an external queue/store before production use.
+Shadow planning first: no duplicated external publications or memory activation.
+Then opt-in new attempts, with legacy draining and version-compatible read support.
+Verify local-volume deployment, disk limits, backup, restore and rollback.
+Qualify ephemeral jobs without persistent sidecars, separately from service
+backup/recovery. Enabling required protection contexts needs explicit repository
+owner action and rollback instructions; old report grants do not authorize it.
+Do not scale horizontally or add channels in this milestone.
 
-Recommended default: Option A for the next milestone, unless the target runtime
-requires multi-instance or restart-safe webhook acceptance immediately.
+Exit: operator runbook and recovery rehearsal pass; no old binary can write the
+new schema. Broader activation requires explicit operational approval.
 
-## Phase 4 - Review Quality Hardening
+## Commit And Verification Discipline
 
-Goal: improve precision before expanding the product surface.
+One concern per commit; tests accompany each behavior change. Examples:
+`test(review): characterize attempt lifecycle`,
+`refactor(review): canonicalize finding state`,
+`feat(storage): persist review inbox atomically`,
+`feat(engine): resume revision-bound questions`.
 
-- Build a small benchmark set of real GitHub/GitLab reviews with known expected
-  outcomes.
-- Track true positives, false positives, missed findings, citation quality, and
-  downgrade behavior for speculative items.
-- Continue tightening corpus selection, source-of-truth authority handling, and
-  skill coverage repair only from observed failures.
+Run focused tests for touched packages, then the full existing Go suite before
+merging. Add tests for proposed packages only after those packages exist:
 
-Exit criteria:
+```bash
+GOCACHE=/tmp/7review-go-cache go test ./agent/review ./agent/pipeline ./agent/app
+GOCACHE=/tmp/7review-go-cache go test ./...
+make verify
+```
 
-- Benchmark runs are repeatable.
-- Confirmed findings cite changed code and selected source-of-truth sections.
-- Speculative findings stay in draft-only or human-check sections.
+Deployment changes additionally require the existing Compose smoke gate.
+Credentialed models/SCM tests remain opt-in, never replacements for deterministic
+CI. Documentation-only work uses link/consistency/diff validation; it does not
+establish a fresh green runtime baseline.
 
-Detailed tasks:
+## Historical Baseline And Unfinished Qualification
 
-- Build fixtures from real review failures, not hypothetical edge cases.
-- Track whether each finding is confirmed, likely, speculative, note, or
-  question after deterministic validation.
-- Keep benchmark repos/project contracts generic enough that 7review remains
-  reusable across projects.
-- Only tighten corpus selection when a failing example shows concrete noise or
-  missed evidence.
+Earlier work recorded runtime packaging completion on 2026-08-27, including
+pinned sidecars, container hardening, readiness and Compose smoke coverage.
+Prior Go/Compose green results are historical; none was rerun for this document.
+The old packaging-first roadmap and its file-store-versus-external-queue choice
+are superseded by the candidate design and D06 comparison.
 
-## Not Yet
+Existing webhook intake, draft/final publication, profile support and approval
+channels remain compatibility assets. Hosted provider callbacks, recovery,
+review accuracy and operator procedures still need evidence for the new system.
+An earlier draft-publication smoke does not establish the entire final approval
+and learning lifecycle, nor native CI integration.
 
-Do not start these before Phases 1-2 are stable:
+## Exit Gates
 
-- New approval channels.
-- A universal knowledge graph or mandatory whole-repository symbol index.
-- Bundled SCIP, CodeQL, or Joern services; these remain future opt-in tools.
-- Major Docker/deployment abstractions beyond the current compose stack.
-- Stateful streaming CLI/session work.
-- Multi-instance horizontal scaling.
+Design: complete for implementation entry. Structural choices, critical
+transitions, traceability, independent whole-system review and user acceptance
+are recorded.
+
+Implementation: actual deterministic and fault-test receipts, hosted-provider
+qualification, measured quality/cost results and operational recovery evidence.
+No documentation-only check can establish these gates.

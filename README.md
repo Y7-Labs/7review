@@ -4,14 +4,72 @@
 
 # 7review
 
+7review is being redesigned as a team-configurable review engine for GitHub/GitLab,
+local changes and CI. It investigates consequences under repository-owned methods,
+reports evidence and unknowns, and leaves merge authority with humans. Trusted
+team policy may enforce a blocking quality gate; the model does not approve code.
 
-7review is a code-review agent for GitHub pull requests and GitLab merge
-requests. It receives SCM webhooks, enriches the change with provider metadata,
-selects repository knowledge and skills, runs model review, validates findings,
-publishes a draft report, waits for human approval, then publishes the final
-report and writes approved memory.
+## Product Direction
 
-## Current Status
+Target behavior, not a list of already delivered capabilities:
+
+- Installed PR/MR review: selected repositories, automatic triggers, incremental
+  follow-up, native summary/inline feedback and authorized conversation commands.
+- Shared adaptive engine: cheap triage, scoped investigation, evidence validation,
+  bounded cost, clarification and revision-aware continuation.
+- Team-owned methods by project, domain, module or feature; design contracts govern
+  intended behavior without being mandatory for ordinary correctness findings.
+- CI execution: non-interactive jobs, provenance-bound artifacts and explicit
+  advisory/blocking gate outcomes, distinct from model confidence.
+- Governed memory and attempt-scoped evidence graph; semantic indexing, code
+  intelligence and Headroom remain optional in the target.
+
+Figure R1. Target product flow, not the current runtime pipeline. Arrows show
+normalized inputs, artifact flow and explicit human interaction.
+
+```mermaid
+flowchart TB
+  scm["Installed GitHub / GitLab integration"] -->|"Authenticated change"| engine["Shared adaptive review engine"]
+  local["Local or trusted CI input"] -->|"Frozen comparison"| engine
+  method["Trusted team methods"] -->|"Rules and obligations"| engine
+  engine -->|"Evidence, findings and coverage"| assessment["Versioned assessment"]
+  assessment -->|"Team policy evaluation"| gate["Deterministic quality gate"]
+  assessment -->|"Authorized feedback"| human["Human reviewer"]
+  human -->|"Scoped answer or dispute"| engine
+  gate -->|"Native status or job result"| output["SCM / CI"]
+```
+
+## Project State And Documentation
+
+The redesigned system remains a **design candidate**, not a released integration
+equivalent to Greptile or CodeRabbit. Thirteen engineering directions are approved
+(2026-09-25): adaptive progress, scoped stopping, priority coverage, revision reuse,
+latest-head scheduling, hierarchical budgets, coordinated PostgreSQL accounting,
+conservative recovery, semantic guards, fixed periods, credential isolation,
+automated CI and delegated methods. DOC-01 through DOC-06 are closed as design
+contracts, the final whole-system review found no blocking design contradiction,
+and the complete design was accepted on 2026-09-25. Phase 1 implementation is
+authorized; none of the target runtime capabilities is implied complete.
+
+The target has autonomous local accounting and optional coordinated team/CI mode.
+Only the coordinated authority can enforce ceilings shared across machines.
+PostgreSQL is selected for that budget/action ledger, not installed by this design;
+SQLite remains a local candidate. Optional isolated verification is in product
+scope, with sandbox qualification still required. No autonomous merge is permitted.
+
+| Document | Purpose |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Product, arc42 architecture views, decisions and remaining runtime risks |
+| [SPEC.md](SPEC.md) | Behavioral contracts, schemas, acceptance cases and precision closure |
+| [ROADMAP.md](ROADMAP.md) | Immediate design work and conditional implementation |
+| [STATUS.md](STATUS.md) | Recorded baseline, validation evidence and remaining gates |
+
+The remainder of this README documents the existing runtime. Those commands are
+not new-engine instructions, and historical smoke results are not current CI
+evidence. In particular, existing draft/HIL/final memory flow and packaged sidecar
+requirements differ from the target's independent effects and optional enrichment.
+
+## Existing Runtime
 
 7review is usable as a local-first draft review agent for GitHub pull requests
 and GitLab merge requests. Operators can manually request a review for a
@@ -42,7 +100,7 @@ Current operating recommendation: use 7review as an automated draft reviewer
 with human-in-the-loop approval. It is not yet intended to auto-publish final
 approval comments without engineer review.
 
-## Architecture
+## Existing Runtime Architecture
 
 7review is split into two planes:
 
@@ -75,10 +133,10 @@ flowchart TB
     Tools --> Pipeline
 ```
 
-Review lifecycle:
+Existing review lifecycle, distinct from the target adaptive engine:
 
 ```mermaid
-flowchart LR
+flowchart TB
     Request[normalized request] --> Enrich[SCM enrichment]
     Enrich --> Diff[structured diff]
     Diff --> Context[skills + graph corpus + memory]
