@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -98,6 +99,38 @@ func (c *GitHubClient) Enrich(ctx context.Context, req review.Request) (*review.
 		Commits: normalizedCommits,
 		Files:   changedFiles,
 	}, nil
+}
+
+func (c *GitHubClient) ReadRepositoryFile(ctx context.Context, repositoryID, revision, filePath string) ([]byte, error) {
+	if c == nil || c.BaseURL == "" || c.Token == "" {
+		return nil, fmt.Errorf("github: repository file reader is not configured")
+	}
+	if repositoryID == "" || revision == "" || filePath == "" {
+		return nil, fmt.Errorf("github: repository, revision and path are required")
+	}
+	var content struct {
+		Type     string `json:"type"`
+		Encoding string `json:"encoding"`
+		Content  string `json:"content"`
+	}
+	endpoint := fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath(repositoryID), escapeRepositoryPath(filePath), url.QueryEscape(revision))
+	if err := c.get(ctx, endpoint, &content); err != nil {
+		if isHTTPStatus(err, http.StatusNotFound) {
+			return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
+		}
+		return nil, err
+	}
+	if content.Type != "file" || content.Encoding != "base64" {
+		return nil, fmt.Errorf("github: %s is not a base64 file", filePath)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(content.Content, "\n", ""))
+	if err != nil {
+		return nil, fmt.Errorf("github: decode %s: %w", filePath, err)
+	}
+	if len(decoded) > repositoryFileReadLimit {
+		return nil, fmt.Errorf("github: repository file exceeds %d bytes", repositoryFileReadLimit)
+	}
+	return decoded, nil
 }
 
 func (c *GitHubClient) PublishDraft(ctx context.Context, source *review.SCMContext, report string) error {
@@ -222,7 +255,7 @@ func (c *GitHubClient) sendPage(ctx context.Context, method, path string, in any
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("github: %s %s: %s: %s", method, path, resp.Status, readToolErrorBody(resp.Body))
+		return nil, &providerHTTPError{service: "github", method: method, path: path, status: resp.Status, code: resp.StatusCode, body: readToolErrorBody(resp.Body)}
 	}
 	if out == nil {
 		return resp.Header.Clone(), nil
@@ -243,6 +276,14 @@ func repoPath(repo string) string {
 		return url.PathEscape(repo)
 	}
 	return url.PathEscape(owner) + "/" + url.PathEscape(name)
+}
+
+func escapeRepositoryPath(value string) string {
+	parts := strings.Split(strings.TrimPrefix(value, "/"), "/")
+	for i := range parts {
+		parts[i] = url.PathEscape(parts[i])
+	}
+	return strings.Join(parts, "/")
 }
 
 func firstLine(text string) string {

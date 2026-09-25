@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,6 +12,14 @@ import (
 // SCM enriches webhook events with merge/pull request API context.
 type SCM interface {
 	Enrich(context.Context, review.Request) (*review.SCMContext, error)
+}
+
+var ErrRepositoryFileNotFound = errors.New("repository file not found")
+
+const repositoryFileReadLimit = 2 << 20
+
+type RepositoryFileReader interface {
+	ReadRepositoryFile(context.Context, string, string, string) ([]byte, error)
 }
 
 // Publisher writes review reports back to the source-control platform.
@@ -27,6 +36,18 @@ type InlinePublisher interface {
 type ProviderRouter struct {
 	SCM        map[string]SCM
 	Publishers map[string]Publisher
+}
+
+func (r ProviderRouter) ReadRepositoryFile(ctx context.Context, provider, repositoryID, revision, path string) ([]byte, error) {
+	tool, ok := r.SCM[strings.ToLower(provider)]
+	if !ok || tool == nil {
+		return nil, fmt.Errorf("tools: no SCM configured for provider %q", provider)
+	}
+	reader, ok := tool.(RepositoryFileReader)
+	if !ok {
+		return nil, fmt.Errorf("tools: provider %q cannot read repository files", provider)
+	}
+	return reader.ReadRepositoryFile(ctx, repositoryID, revision, path)
 }
 
 func (r ProviderRouter) Enrich(ctx context.Context, req review.Request) (*review.SCMContext, error) {

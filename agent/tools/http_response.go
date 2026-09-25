@@ -2,6 +2,7 @@ package tools
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -9,6 +10,24 @@ import (
 
 const maxToolResponseBodyBytes int64 = 8 << 20
 const maxToolErrorBodyBytes int64 = 4 << 10
+
+type providerHTTPError struct {
+	service string
+	method  string
+	path    string
+	status  string
+	code    int
+	body    string
+}
+
+func (e *providerHTTPError) Error() string {
+	return fmt.Sprintf("%s: %s %s: %s: %s", e.service, e.method, e.path, e.status, e.body)
+}
+
+func isHTTPStatus(err error, code int) bool {
+	var target *providerHTTPError
+	return errors.As(err, &target) && target.code == code
+}
 
 func decodeToolJSON(service, method, path string, body io.Reader, out any) error {
 	if out == nil {
