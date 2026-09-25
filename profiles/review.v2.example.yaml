@@ -1,0 +1,76 @@
+schema_version: 2
+project_id: owner/repository
+defaults:
+  methods: [builtin/correctness]
+  publication: human_authorized
+  gate_mode: advisory
+  required_checks: [correctness]
+limits:
+  currency: USD
+  attempt:
+    model_calls: 8
+    tool_calls: 12
+    input_tokens: 200000
+    output_tokens: 20000
+    money_micro: 500000
+    active_ms: 180000
+    observation_bytes: 1048576
+  change:
+    model_calls: 40
+    tool_calls: 80
+    input_tokens: 1000000
+    output_tokens: 100000
+    money_micro: 2500000
+    active_ms: 900000
+    observation_bytes: 5242880
+    period: {kind: fixed, anchor: 2026-01-01T00:00:00Z, duration_ms: 2592000000}
+  project:
+    model_calls: 1000
+    tool_calls: 2000
+    input_tokens: 20000000
+    output_tokens: 2000000
+    money_micro: 50000000
+    active_ms: 21600000
+    observation_bytes: 104857600
+    period: {kind: fixed, anchor: 2026-01-01T00:00:00Z, duration_ms: 2592000000}
+triggers:
+  enabled: true
+  on_updates: true
+  include_drafts: false
+  include_branches: []
+  exclude_branches: []
+  include_authors: []
+  exclude_authors: []
+  include_labels: []
+  exclude_labels: []
+capabilities:
+  allowed: [repo.read, model.review]
+  required: [repo.read]
+domains:
+  backend: [backend/**]
+modules: {}
+features: {}
+delegations: []
+packs:
+  - id: backend
+    priority: 100
+    match: {domains: [backend]}
+    methods: [repo/backend]
+    checks: [backend-contract]
+    risk_floor: medium
+    independent_review: false
+    publication:
+      mode: inherit
+      artifact_classes: [assessment, check]
+      manual_required: false
+quality_gate:
+  rule_ids: []
+  required_coverage: [correctness]
+  min_severity: high
+  min_strength: confirmed
+  baseline_mode: all
+  context_name: 7review/quality
+retention:
+  audit_days: 365
+  source_days: 30
+  unresolved_reservation_days: 365

@@ -30,6 +30,13 @@ const operatorStreamTimeout = 10 * time.Minute
 const maxSSEEventBytes = 4 << 20
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "policy" {
+		if err := runPolicyCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "status" {
 		if err := runStatus(os.Args[2:], os.Stdout); err != nil {
 			os.Exit(1)
