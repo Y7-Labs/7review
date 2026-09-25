@@ -34,6 +34,7 @@ type Pipeline struct {
 	Channels         *channel.Manager
 	SCM              tools.SCM
 	SCMPublisher     tools.Publisher
+	TrustedPolicy    TrustedPolicyAdmission
 }
 
 // Run executes the automated review pipeline.
@@ -76,6 +77,35 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 
 	rc.Diff = normalizeDiff(scmContext.Files)
 	rc.Request.ChangedPaths = rc.ChangedPaths()
+	if p.TrustedPolicy != nil {
+		admission, admissionErr := p.TrustedPolicy.Evaluate(ctx, rc.Request, scmContext)
+		if admissionErr != nil {
+			_ = p.Jobs.SaveContext(ctx, run.ID, rc)
+			_ = p.Jobs.Update(ctx, run.ID, StatusFailed, admissionErr)
+			return admissionErr
+		}
+		rc.Source.Policy = projectTrustedPolicy(admission)
+		if admission.Attestation.Verified {
+			attestation := admission.Attestation
+			rc.Source.Attestation = &attestation
+		}
+		if admission.Warning != "" {
+			rc.AddWarning(admission.Warning)
+		}
+		p.trace(ctx, run.ID, "trusted_policy_evaluated", StatusRunning, "trusted repository policy evaluated", map[string]string{
+			"mode":             admission.Mode,
+			"trigger_accepted": strconv.FormatBool(admission.Trigger.Accepted),
+			"policy_digest":    rc.Source.Policy.Digest,
+			"source_revision":  rc.Source.Policy.SourceRevision,
+		})
+		if admission.Enforced && !admission.Trigger.Accepted {
+			if err := p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
+				_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+				return err
+			}
+			return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
+		}
+	}
 	if p.SkillLoader != nil {
 		rc.Source.SkillActivations = p.SkillLoader.SelectActivations(rc.Request)
 		rc.Source.SkillSections = p.SkillLoader.Select(rc.Request)

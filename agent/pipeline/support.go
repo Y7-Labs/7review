@@ -24,6 +24,7 @@ const (
 	StatusFinalizing RunStatus = "finalizing"
 	StatusFinalized  RunStatus = "finalized"
 	StatusFailed     RunStatus = "failed"
+	StatusIgnored    RunStatus = "ignored"
 )
 
 type Run struct {
