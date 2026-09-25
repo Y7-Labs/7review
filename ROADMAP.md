@@ -137,9 +137,12 @@ All schema fields have documented precedence, bounds and error behavior.
 Progress (2026-09-25): verified SCM/local snapshot attestations, revision-bound
 test readiness, strict JSON/YAML `ReviewConfigV2`, explicit legacy projection,
 runtime ceilings, deterministic pack composition and offline validate/explain
-commands, deterministic trigger evaluation and GitHub/GitLab trusted-base intake
-wiring are implemented. Remaining: complete delegation and quality-gate semantics, CI/artifact provenance,
-corpus fixtures and all named scenario assertions required by the exit criterion.
+commands, deterministic trigger evaluation, GitHub/GitLab trusted-base intake,
+delegation containment, baseline compatibility, deterministic gate outcomes/CI
+exit codes and CI artifact identity validation are implemented. Remaining: wire
+typed quality evidence and gate results into CI/native adapters, compile verified
+independent prerequisites, finish corpus fixtures and execute every named scenario
+assertion required by the exit criterion.
 
 ## Phase 3: Durable Attempts And Recovery
 

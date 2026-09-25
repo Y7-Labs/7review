@@ -226,22 +226,25 @@ were made.
 
 ## Remaining Gates
 
-1. Continue Phase 2 with delegation, scoped quality-gate semantics and CI artifact
-   provenance while preserving the characterized legacy runtime.
+1. Continue Phase 2 by wiring typed CI evidence and deterministic gate results
+   into runtime/native adapters while preserving the characterized legacy runtime.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
-3. Execute the remaining Phase 2 scenarios. S06 now has a deterministic named
-   assertion for stale test proof; the other specified scenarios remain unproven.
-   Related legacy tests do not count as their execution.
+3. Execute the remaining Phase 2 scenarios. S06, S22, S26 and S50 now have named
+   assertions; the other specified scenarios remain unproven. Related legacy tests
+   do not count as their execution.
 
 Current Phase 2 evidence (2026-09-25): `agent/review` validates immutable snapshot
 attestations and readiness provenance. `agent/policy` rejects unknown/missing or
 duplicate configuration, binds authority to an attested base, enforces runtime
-ceilings and resolves packs deterministically. `7review policy validate|explain`
-provides offline preview. GitHub/GitLab intake can now load the policy at the
-attested base SHA in `preview` or `enforce` mode, expose snapshot/policy state and
-stop rejected triggers before model work. CI/native status adapters do not yet
-consume V2 gate results.
+ceilings, contains delegated authority and resolves packs deterministically.
+`7review policy validate|explain` provides offline preview. GitHub/GitLab intake
+loads policy at the attested base SHA in `preview` or `enforce`, exposes snapshot/
+policy state and stops rejected triggers before model work. Gate evaluation now
+preserves known violations under incomplete coverage, validates compatible
+baselines and maps advisory/blocking outcomes to CI exit codes. CI artifact
+provenance is revision/tree/job bound, but CI/native adapters do not yet import
+that evidence or publish V2 gate results.
 
-Do not resume development automatically or label the redesigned system complete
-because its documents are consolidated.
+Document consolidation alone is not evidence that the redesigned runtime is
+complete; the remaining gates above require executable integration evidence.

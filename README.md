@@ -50,9 +50,10 @@ automated CI and delegated methods. DOC-01 through DOC-06 are closed as design
 contracts, the final whole-system review found no blocking design contradiction,
 and the complete design was accepted on 2026-09-25. Phase 1 canonical-domain work
 is complete. Phase 2 is in progress: immutable intake attestations, typed readiness,
-strict policy V2 validation/compilation and offline policy preview exist, but are
-not yet connected to review intake or SCM/CI delivery. None of the later target
-runtime capabilities is implied complete.
+strict policy V2 compilation, trusted-base GitHub/GitLab admission, deterministic
+quality-gate evaluation, baseline compatibility and CI artifact provenance contracts
+exist. Native CI delivery and the remaining scenario fixtures are not complete.
+None of the later target runtime capabilities is implied complete.
 
 The target has autonomous local accounting and optional coordinated team/CI mode.
 Only the coordinated authority can enforce ceilings shared across machines.
