@@ -48,8 +48,9 @@ latest-head scheduling, hierarchical budgets, coordinated PostgreSQL accounting,
 conservative recovery, semantic guards, fixed periods, credential isolation,
 automated CI and delegated methods. DOC-01 through DOC-06 are closed as design
 contracts, the final whole-system review found no blocking design contradiction,
-and the complete design was accepted on 2026-09-25. Phase 1 implementation is
-authorized; none of the target runtime capabilities is implied complete.
+and the complete design was accepted on 2026-09-25. Phase 1 canonical-domain work
+is complete; Phase 2 has not started. None of the later target runtime capabilities
+is implied complete.
 
 The target has autonomous local accounting and optional coordinated team/CI mode.
 Only the coordinated authority can enforce ceilings shared across machines.

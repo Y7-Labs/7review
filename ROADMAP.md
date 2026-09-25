@@ -97,7 +97,7 @@ corrections. The user explicitly accepted the complete revision on 2026-09-25.
 Exit satisfied: no unresolved structural contradiction remained and the user
 accepted the complete specification revision and decision record.
 
-## Phase 1: Characterization And Canonical Domain
+## Phase 1: Characterization And Canonical Domain — Complete 2026-09-25
 
 Scope: `agent/review`, pipeline/store consumers, scenario fixtures.
 - Preserve existing behavior with baseline fixtures and record known limitations.
@@ -110,6 +110,15 @@ Scope: `agent/review`, pipeline/store consumers, scenario fixtures.
 
 Exit: no competing authoritative copies; baseline tests green; spec invariants
 mapped to test names. Avoid broad interface churn.
+
+Evidence: `review.Source` now owns review inputs, SCM data, corpus, skills, memory,
+findings, reports and execution metadata. Target attempt/execution identities,
+events, observations, decisions, checks, assessment, coverage, gate and delivery
+projections have validated Go contracts. Run-store boundaries clone canonical
+state defensively. Contract tests cite SPEC clauses/scenarios; `go test ./...` and
+`go test -race ./agent/review ./agent/pipeline` pass. Legacy HIL fields remain an
+explicit compatibility surface for later command/effect migration, not a second
+copy of canonical review artifacts.
 
 ## Phase 2: Trusted Inputs And Policy
 

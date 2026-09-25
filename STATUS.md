@@ -1,7 +1,7 @@
 # 7review Status
 
 Updated: 2026-09-25
-Current phase: PHASE 1 — CHARACTERIZATION AND CANONICAL DOMAIN.
+Current phase: PHASE 1 COMPLETE; PHASE 2 NOT YET STARTED.
 
 ## Current Direction
 
@@ -52,6 +52,26 @@ during consolidation.
 | Governed memory and evidence graph | Existing recall/corpus are foundations; lineage, revocation and activation semantics remain target |
 | Optional Headroom/MemPalace/code intelligence | Setup and required-capability behavior still need implementation and tests |
 | TOON optimization | Proposed model-input-only optimization; no measured savings or quality parity |
+
+## Phase 1 Implementation Evidence
+
+Completed on 2026-09-25 in commit `1bb0f2a`:
+
+- Added validated canonical contracts for change/snapshot/attempt identity,
+  execution context, events, observations, execution and human decisions, checks,
+  assessment, coverage, gate and delivery projections.
+- Added the pure attempt transition table and a validated canonical-context
+  constructor while preserving `NewContext` for legacy callers.
+- Removed shadow copies of corpus/skills/findings/reports/SCM and run metadata from
+  `review.Context`; `review.Source` is now authoritative for those artifacts.
+- Added defensive `Source`/`Context` cloning at memory and file run-store boundaries.
+- Added deterministic contract cases tied to SCHEMA-04/05/06, LOOP-05, PUB-01 and
+  scenarios S13/S14/S19/S24/S30/S45, plus store aliasing regression coverage.
+
+Verification: `go test ./...` passed across all Go packages;
+`go test -race ./agent/review ./agent/pipeline` passed. No external API, model,
+database, Docker or hosted CI qualification ran. The target scheduler, policy V2,
+durable attempt store and native gate publication remain future phases.
 
 ENG-D7/D8 select a PostgreSQL budget authority/action journal inside the server
 for coordinated team/CI use. SQLite remains a candidate only for autonomous local
@@ -206,8 +226,8 @@ were made.
 
 ## Remaining Gates
 
-1. Execute Phase 1 characterization and canonical-domain work with focused tests;
-   do not alter runtime behavior without a captured baseline.
+1. Begin Phase 2 trusted-input and policy work from the canonical contracts;
+   preserve legacy behavior until each replacement has characterization tests.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
 3. Future deterministic/fault tests, hosted-provider tests, paired model-quality
