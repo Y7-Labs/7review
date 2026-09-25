@@ -43,6 +43,34 @@ func TestCompileBoundRejectsHeadPolicyAndAcceptsTrustedBase(t *testing.T) {
 	}
 }
 
+func TestTriggerExclusionsOverrideIncludes(t *testing.T) {
+	triggers := TriggersV2{
+		Enabled: true, OnUpdates: true, IncludeBranches: []string{"main", "release/**"},
+		ExcludeBranches: []string{"release/private/**"}, IncludeLabels: []string{"ready"}, ExcludeLabels: []string{"no-review"},
+	}
+	accepted := EvaluateTrigger(triggers, TriggerInput{Branch: "release/1.0", Labels: []string{"ready"}})
+	if !accepted.Accepted {
+		t.Fatalf("expected accepted trigger: %#v", accepted)
+	}
+	rejected := EvaluateTrigger(triggers, TriggerInput{Branch: "release/private/hotfix", Labels: []string{"ready", "no-review"}})
+	if rejected.Accepted || len(rejected.Reasons) == 0 {
+		t.Fatalf("exclusions must win: %#v", rejected)
+	}
+}
+
+func TestScenario_S22_ProposedMethodCannotBecomeTrustedPolicy(t *testing.T) {
+	config := validConfig()
+	attestation := review.SnapshotAttestation{
+		Snapshot:   review.SnapshotIdentity{RepositoryID: "org/repo", BaseRevision: "safe-base", HeadRevision: "injected-head", FileManifestDigest: "sha256:" + strings.Repeat("a", 64)},
+		ProducerID: "github", ComparisonTree: "merge-tree", VerifiedAt: time.Now().UTC(), Verified: true,
+	}
+	proposedHeadMethod := Source{RepositoryID: "org/repo", Revision: "injected-head", Digest: "sha256:" + strings.Repeat("b", 64), Trust: TrustBaseSnapshot}
+	_, err := CompileBound(config, proposedHeadMethod, attestation, CompileContext{ProjectID: "org/repo", RuntimeAllowed: []string{"repo.read"}})
+	if err == nil {
+		t.Fatal("a proposed head method must remain evidence, never trusted authority")
+	}
+}
+
 func TestCompileResolvesApplicablePacksDeterministically(t *testing.T) {
 	config := validConfig()
 	config.Packs = []MethodPackV2{
