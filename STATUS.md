@@ -226,13 +226,22 @@ were made.
 
 ## Remaining Gates
 
-1. Begin Phase 2 trusted-input and policy work from the canonical contracts;
-   preserve legacy behavior until each replacement has characterization tests.
+1. Continue Phase 2 by wiring verified snapshots and compiled policy into intake;
+   finish trigger, delegation and scoped quality-gate semantics without replacing
+   the characterized legacy runtime prematurely.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
-3. Future deterministic/fault tests, hosted-provider tests, paired model-quality
-   evaluations and operator recovery evidence. All 110 scenarios are specified
-   only; related legacy tests do not count as their execution.
+3. Execute the remaining Phase 2 scenarios. S06 now has a deterministic named
+   assertion for stale test proof; the other specified scenarios remain unproven.
+   Related legacy tests do not count as their execution.
+
+Current Phase 2 evidence (2026-09-25): `agent/review` validates immutable snapshot
+attestations and readiness provenance. `agent/policy` rejects unknown/missing or
+duplicate configuration, binds authority to an attested base, enforces runtime
+ceilings and resolves packs deterministically. `7review policy validate|explain`
+provides offline preview only. `go test ./...` and
+`go test -race ./agent/review ./agent/policy` pass. No intake, SCM status or CI
+adapter consumes V2 policy yet.
 
 Do not resume development automatically or label the redesigned system complete
 because its documents are consolidated.

@@ -49,8 +49,10 @@ conservative recovery, semantic guards, fixed periods, credential isolation,
 automated CI and delegated methods. DOC-01 through DOC-06 are closed as design
 contracts, the final whole-system review found no blocking design contradiction,
 and the complete design was accepted on 2026-09-25. Phase 1 canonical-domain work
-is complete; Phase 2 has not started. None of the later target runtime capabilities
-is implied complete.
+is complete. Phase 2 is in progress: immutable intake attestations, typed readiness,
+strict policy V2 validation/compilation and offline policy preview exist, but are
+not yet connected to review intake or SCM/CI delivery. None of the later target
+runtime capabilities is implied complete.
 
 The target has autonomous local accounting and optional coordinated team/CI mode.
 Only the coordinated authority can enforce ceilings shared across machines.
@@ -236,6 +238,18 @@ Check readiness:
 ```sh
 go run ./cmd/7review status --server http://localhost:8080
 ```
+
+Validate or preview a target V2 repository policy without activating it:
+
+```sh
+go run ./cmd/7review policy validate --file profiles/review.v2.example.yaml
+go run ./cmd/7review policy explain --file profiles/review.v2.example.yaml \
+  --project owner/repository --path backend/auth/service.go \
+  --capability repo.read --capability model.review
+```
+
+`policy explain` is an unbound preview. Runtime activation must additionally bind
+the policy digest and revision to a verified trusted-base snapshot.
 
 Start the Docker runtime:
 

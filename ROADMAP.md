@@ -134,6 +134,13 @@ Scope: repository snapshots, profile compatibility and policy resolution.
 Exit: S01-S09, S22, S24-S26 policy/input assertions pass without model calls.
 All schema fields have documented precedence, bounds and error behavior.
 
+Progress (2026-09-25): verified SCM/local snapshot attestations, revision-bound
+test readiness, strict JSON/YAML `ReviewConfigV2`, explicit legacy projection,
+runtime ceilings, deterministic pack composition and offline validate/explain
+commands are implemented. Remaining: intake wiring, complete trigger/delegation
+and quality-gate semantics, CI/artifact provenance, corpus fixtures and all named
+scenario assertions required by the exit criterion.
+
 ## Phase 3: Durable Attempts And Recovery
 
 Scope: storage, app intake and job lifecycle.
