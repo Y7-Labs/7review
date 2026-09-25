@@ -226,9 +226,8 @@ were made.
 
 ## Remaining Gates
 
-1. Continue Phase 2 by wiring verified snapshots, trigger decisions and compiled
-   policy into intake; finish delegation and scoped quality-gate semantics without
-   replacing the characterized legacy runtime prematurely.
+1. Continue Phase 2 with delegation, scoped quality-gate semantics and CI artifact
+   provenance while preserving the characterized legacy runtime.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
 3. Execute the remaining Phase 2 scenarios. S06 now has a deterministic named
@@ -239,9 +238,10 @@ Current Phase 2 evidence (2026-09-25): `agent/review` validates immutable snapsh
 attestations and readiness provenance. `agent/policy` rejects unknown/missing or
 duplicate configuration, binds authority to an attested base, enforces runtime
 ceilings and resolves packs deterministically. `7review policy validate|explain`
-provides offline preview only. `go test ./...` and
-`go test -race ./agent/review ./agent/policy` pass. No intake, SCM status or CI
-adapter consumes V2 policy yet.
+provides offline preview. GitHub/GitLab intake can now load the policy at the
+attested base SHA in `preview` or `enforce` mode, expose snapshot/policy state and
+stop rejected triggers before model work. CI/native status adapters do not yet
+consume V2 gate results.
 
 Do not resume development automatically or label the redesigned system complete
 because its documents are consolidated.

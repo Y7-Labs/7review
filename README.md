@@ -302,6 +302,9 @@ WEBHOOK_QUEUE_SIZE=128
 WEBHOOK_REVIEW_MODE=manual_first
 REVIEW_LABEL_INCLUDE=7review,ready-for-review
 REVIEW_LABEL_EXCLUDE=no-review,wip,draft
+POLICY_V2_MODE=legacy
+POLICY_V2_PATH=.7review/review.yaml
+POLICY_RUNTIME_CAPABILITIES=repo.read,model.review
 ```
 
 Webhook review modes:
@@ -311,6 +314,19 @@ Webhook review modes:
 - `auto`: webhook events enqueue review unless explicit excludes or allowlists
   reject them.
 - `off`: valid webhook events are accepted but ignored by review policy.
+
+Repository policy V2 activation:
+
+- `legacy`: default; preserves the characterized input-profile behavior.
+- `preview`: reads and compiles policy from the PR/MR base revision, records its
+  projection and warnings, but does not change admission.
+- `enforce`: fails closed when trusted policy is missing/invalid and applies its
+  automatic triggers before skills, corpus, memory or model calls.
+
+In `preview` and `enforce`, `POLICY_V2_PATH` is fetched through the GitHub/GitLab
+API at the verified base SHA. Operator project/repository, label-exclusion and
+branch-exclusion guards remain absolute. Use `policy validate` and `policy
+explain` before enabling enforcement.
 
 GitHub:
 

@@ -180,12 +180,22 @@ WEBHOOK_QUEUE_SIZE=32
 WEBHOOK_REVIEW_MODE=manual_first
 REVIEW_LABEL_INCLUDE=7review,ready-for-review
 REVIEW_LABEL_EXCLUDE=no-review,wip,draft
+POLICY_V2_MODE=legacy
+POLICY_V2_PATH=.7review/review.yaml
+POLICY_RUNTIME_CAPABILITIES=repo.read,model.review
 ```
 
 With `manual_first`, webhook deliveries are accepted but only enqueue a review
 when include policy matches and no exclude/allowlist rule rejects the event. Use
 `WEBHOOK_REVIEW_MODE=auto` for the previous always-review webhook behavior, or
 `WEBHOOK_REVIEW_MODE=off` to accept valid webhook payloads without enqueueing.
+
+`POLICY_V2_MODE=preview` loads `.7review/review.yaml` from the verified PR/MR
+base SHA and records the resulting policy without changing legacy admission.
+After inspecting preview results, `POLICY_V2_MODE=enforce` applies repository
+triggers and fails closed on missing or invalid trusted policy. Runtime capability
+inventory comes from `POLICY_RUNTIME_CAPABILITIES`; required policy capabilities
+must be present in that inventory.
 
 `WEBHOOK_WORKERS=2` allows two review jobs to be active at the same time.
 `max_parallel` controls batch fan-out inside a single review.
