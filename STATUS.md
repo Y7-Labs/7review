@@ -226,9 +226,9 @@ were made.
 
 ## Remaining Gates
 
-1. Continue Phase 2 by wiring verified snapshots and compiled policy into intake;
-   finish trigger, delegation and scoped quality-gate semantics without replacing
-   the characterized legacy runtime prematurely.
+1. Continue Phase 2 by wiring verified snapshots, trigger decisions and compiled
+   policy into intake; finish delegation and scoped quality-gate semantics without
+   replacing the characterized legacy runtime prematurely.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
 3. Execute the remaining Phase 2 scenarios. S06 now has a deterministic named

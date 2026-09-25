@@ -137,9 +137,9 @@ All schema fields have documented precedence, bounds and error behavior.
 Progress (2026-09-25): verified SCM/local snapshot attestations, revision-bound
 test readiness, strict JSON/YAML `ReviewConfigV2`, explicit legacy projection,
 runtime ceilings, deterministic pack composition and offline validate/explain
-commands are implemented. Remaining: intake wiring, complete trigger/delegation
-and quality-gate semantics, CI/artifact provenance, corpus fixtures and all named
-scenario assertions required by the exit criterion.
+commands and deterministic trigger evaluation are implemented. Remaining: intake
+wiring, complete delegation and quality-gate semantics, CI/artifact provenance,
+corpus fixtures and all named scenario assertions required by the exit criterion.
 
 ## Phase 3: Durable Attempts And Recovery
 
