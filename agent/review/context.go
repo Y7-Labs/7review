@@ -11,10 +11,11 @@ import (
 // changed files, selected corpus, skills, memory, model findings, report, and
 // run metadata.
 type Source struct {
-	Request   Request
-	SCM       *SCMContext
-	Attempt   AttemptIdentity
-	Execution ExecutionContext
+	Request     Request
+	SCM         *SCMContext
+	Attestation *SnapshotAttestation
+	Attempt     AttemptIdentity
+	Execution   ExecutionContext
 
 	ChangedFiles     []ChangedFile
 	Diff             *StructuredDiff
@@ -40,7 +41,32 @@ type Source struct {
 	Gate             GateResult
 	Delivery         DeliveryProjection
 	Readiness        ReadinessProjection
+	Policy           PolicyProjection
 	Run              RunMetadata
+}
+
+type PolicyProjection struct {
+	Mode              string           `json:"mode"`
+	Digest            string           `json:"digest,omitempty"`
+	SourceRevision    string           `json:"source_revision,omitempty"`
+	SourceDigest      string           `json:"source_digest,omitempty"`
+	Methods           []string         `json:"methods,omitempty"`
+	RequiredChecks    []string         `json:"required_checks,omitempty"`
+	MatchedPacks      []string         `json:"matched_packs,omitempty"`
+	RiskFloor         string           `json:"risk_floor,omitempty"`
+	IndependentReview bool             `json:"independent_review"`
+	TriggerAccepted   bool             `json:"trigger_accepted"`
+	TriggerReasons    []string         `json:"trigger_reasons,omitempty"`
+	Warnings          []string         `json:"warnings,omitempty"`
+	Decisions         []PolicyDecision `json:"decisions,omitempty"`
+}
+
+type PolicyDecision struct {
+	Field      string `json:"field"`
+	Value      string `json:"value"`
+	Source     string `json:"source"`
+	Reason     string `json:"reason"`
+	Precedence int32  `json:"precedence"`
 }
 
 type ModelReview struct {

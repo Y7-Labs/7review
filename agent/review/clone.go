@@ -6,6 +6,10 @@ func (s Source) Clone() Source {
 	out.Request.Labels = cloneStrings(s.Request.Labels)
 	out.Request.ChangedPaths = cloneStrings(s.Request.ChangedPaths)
 	out.SCM = cloneSCMContext(s.SCM)
+	if s.Attestation != nil {
+		attestation := *s.Attestation
+		out.Attestation = &attestation
+	}
 	out.ChangedFiles = append([]ChangedFile(nil), s.ChangedFiles...)
 	if s.Diff != nil {
 		diff := *s.Diff
@@ -39,6 +43,12 @@ func (s Source) Clone() Source {
 	out.Readiness.IntentSummary.Provenance = append([]string(nil), s.Readiness.IntentSummary.Provenance...)
 	out.Readiness.AcceptanceCriteria.Provenance = append([]string(nil), s.Readiness.AcceptanceCriteria.Provenance...)
 	out.Readiness.TestEvidence.Provenance = append([]string(nil), s.Readiness.TestEvidence.Provenance...)
+	out.Policy.Methods = cloneStrings(s.Policy.Methods)
+	out.Policy.RequiredChecks = cloneStrings(s.Policy.RequiredChecks)
+	out.Policy.MatchedPacks = cloneStrings(s.Policy.MatchedPacks)
+	out.Policy.TriggerReasons = cloneStrings(s.Policy.TriggerReasons)
+	out.Policy.Warnings = cloneStrings(s.Policy.Warnings)
+	out.Policy.Decisions = append([]PolicyDecision(nil), s.Policy.Decisions...)
 	out.Run.StepProviders = cloneStringMap(s.Run.StepProviders)
 	out.Run.AvailableTools = cloneStrings(s.Run.AvailableTools)
 	out.Run.Warnings = cloneStrings(s.Run.Warnings)

@@ -19,6 +19,7 @@ type Request struct {
 	SourceBranch string
 	TargetBranch string
 	Author       string
+	Draft        bool `json:"Draft,omitempty"`
 	Labels       []string
 	ChangedPaths []string
 }

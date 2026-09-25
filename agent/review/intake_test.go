@@ -72,3 +72,27 @@ func TestScenario_S26_RepositoryIsolationAtVerifiedIntake(t *testing.T) {
 		t.Fatalf("cross-repository attestation must be rejected: %v", err)
 	}
 }
+
+func TestAttestSCMRequestIsOrderIndependentAndRejectsStaleWebhook(t *testing.T) {
+	req := Request{Provider: "github", ProjectID: "org/repo", Repository: "org/repo", ChangeID: "7", SourceSHA: "head", TargetSHA: "base", WebURL: "https://github.com/org/repo/pull/7"}
+	scm := &SCMContext{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DiffRefs: DiffRefs{BaseSHA: "base", HeadSHA: "head"}, Files: []ChangedFile{
+		{NewPath: "b.go", Patch: "+b", Status: "modified"},
+		{NewPath: "a.go", Patch: "+a", Status: "modified"},
+	}}
+	_, first, err := AttestSCMRequest(req, scm, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	scm.Files[0], scm.Files[1] = scm.Files[1], scm.Files[0]
+	_, second, err := AttestSCMRequest(req, scm, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Snapshot.FileManifestDigest != second.Snapshot.FileManifestDigest {
+		t.Fatal("manifest digest must not depend on provider file ordering")
+	}
+	req.SourceSHA = "stale-head"
+	if _, _, err := AttestSCMRequest(req, scm, time.Now().UTC()); err == nil || !strings.Contains(err.Error(), "head revision") {
+		t.Fatalf("stale webhook head must be rejected: %v", err)
+	}
+}
