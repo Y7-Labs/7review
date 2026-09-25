@@ -40,6 +40,9 @@ type Config struct {
 	MemPalaceTimeout            int
 	ChannelInboundToken         string
 	ChannelAuthorizedSenders    []string
+	PolicyV2Mode                string
+	PolicyV2Path                string
+	PolicyRuntimeCapabilities   []string
 
 	// ── GitLab ────────────────────────────────────────────────────────────
 	GitLabURL     string
@@ -115,6 +118,9 @@ func LoadConfig() (*Config, error) {
 		MemPalaceTimeout:            getEnvInt("MEMPALACE_TIMEOUT_MS", 240000),
 		ChannelInboundToken:         os.Getenv("CHANNEL_INBOUND_TOKEN"),
 		ChannelAuthorizedSenders:    getEnvList("CHANNEL_AUTHORIZED_SENDERS", ""),
+		PolicyV2Mode:                getEnv("POLICY_V2_MODE", "legacy"),
+		PolicyV2Path:                getEnv("POLICY_V2_PATH", ".7review/review.yaml"),
+		PolicyRuntimeCapabilities:   getEnvList("POLICY_RUNTIME_CAPABILITIES", "repo.read,model.review"),
 
 		// GitLab
 		GitLabURL:     os.Getenv("GITLAB_URL"),
@@ -198,6 +204,17 @@ func LoadConfig() (*Config, error) {
 	default:
 		missing = append(missing, "WEBHOOK_REVIEW_MODE must be one of: manual_first, auto, off")
 	}
+	switch c.PolicyV2Mode {
+	case "legacy", "preview", "enforce":
+	default:
+		missing = append(missing, "POLICY_V2_MODE must be one of: legacy, preview, enforce")
+	}
+	if c.PolicyV2Mode != "legacy" && strings.TrimSpace(c.PolicyV2Path) == "" {
+		missing = append(missing, "POLICY_V2_PATH is required when POLICY_V2_MODE is preview or enforce")
+	}
+	if c.PolicyV2Mode != "legacy" && !validRepositoryPolicyPath(c.PolicyV2Path) {
+		missing = append(missing, "POLICY_V2_PATH must be a repository-relative .yaml, .yml, or .json path without .. segments")
+	}
 
 	// At least one LLM provider key must be present.
 	hasProvider := c.AnthropicAPIKey != "" || c.OpenAIAPIKey != "" ||
@@ -278,6 +295,20 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func validRepositoryPolicyPath(value string) bool {
+	value = strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if value == "" || strings.HasPrefix(value, "/") {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if part == ".." || part == "" {
+			return false
+		}
+	}
+	lower := strings.ToLower(value)
+	return strings.HasSuffix(lower, ".yaml") || strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".json")
 }
 
 func getEnvList(key, fallback string) []string {

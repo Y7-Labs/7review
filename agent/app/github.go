@@ -67,6 +67,7 @@ func gitHubWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 			SourceBranch: event.PullRequest.Head.Ref,
 			TargetBranch: event.PullRequest.Base.Ref,
 			Author:       event.PullRequest.User.Login,
+			Draft:        event.PullRequest.Draft,
 		}
 		for _, label := range event.PullRequest.Labels {
 			req.Labels = append(req.Labels, label.Name)
@@ -115,6 +116,7 @@ type githubPullRequest struct {
 	Title   string `json:"title"`
 	Body    string `json:"body"`
 	HTMLURL string `json:"html_url"`
+	Draft   bool   `json:"draft"`
 	User    struct {
 		Login string `json:"login"`
 	} `json:"user"`

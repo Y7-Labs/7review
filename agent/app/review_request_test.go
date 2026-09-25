@@ -48,6 +48,19 @@ func TestReviewPolicyAutoAndOffModes(t *testing.T) {
 	}
 }
 
+func TestReviewPolicyV2EnforceDefersPositiveSelectionButKeepsAbsoluteExcludes(t *testing.T) {
+	s := &Server{cfg: &config.Config{
+		WebhookReviewMode: "manual_first", PolicyV2Mode: "enforce",
+		ReviewLabelInclude: []string{"legacy-label"}, ReviewLabelExclude: []string{"no-review"},
+	}}
+	if decision := s.reviewPolicyDecision(review.Request{Labels: []string{"backend"}}); !decision.allowed || !strings.Contains(decision.reason, "deferred") {
+		t.Fatalf("V2 enforcement should defer positive trigger selection: %#v", decision)
+	}
+	if decision := s.reviewPolicyDecision(review.Request{Labels: []string{"backend", "no-review"}}); decision.allowed {
+		t.Fatalf("runtime exclusion must remain absolute: %#v", decision)
+	}
+}
+
 func TestReviewPolicyDisallowedProjectRepoAndBranch(t *testing.T) {
 	s := &Server{cfg: &config.Config{
 		WebhookReviewMode:     "auto",

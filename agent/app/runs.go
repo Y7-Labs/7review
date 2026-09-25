@@ -47,28 +47,30 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 }
 
 type runDTO struct {
-	ID               string                 `json:"id"`
-	Provider         string                 `json:"provider"`
-	ProjectID        string                 `json:"project_id"`
-	ChangeID         string                 `json:"change_id"`
-	MRIID            int                    `json:"mr_iid"`
-	Title            string                 `json:"title,omitempty"`
-	Status           pipeline.RunStatus     `json:"status"`
-	Error            string                 `json:"error,omitempty"`
-	WebURL           string                 `json:"web_url,omitempty"`
-	UpdatedAt        time.Time              `json:"updated_at"`
-	EventCount       int                    `json:"event_count"`
-	Events           []pipeline.RunEvent    `json:"events,omitempty"`
-	Findings         []review.Finding       `json:"findings,omitempty"`
-	HumanCheck       []review.Finding       `json:"human_check,omitempty"`
-	Notes            []review.Finding       `json:"notes,omitempty"`
-	Questions        []review.Finding       `json:"questions,omitempty"`
-	InlineComments   []review.InlineComment `json:"inline_comments,omitempty"`
-	ToolRequests     int                    `json:"tool_requests,omitempty"`
-	ToolObservations int                    `json:"tool_observations,omitempty"`
-	DraftReport      string                 `json:"draft_report,omitempty"`
-	FinalReport      string                 `json:"final_report,omitempty"`
-	HILApproved      bool                   `json:"hil_approved"`
+	ID               string                   `json:"id"`
+	Provider         string                   `json:"provider"`
+	ProjectID        string                   `json:"project_id"`
+	ChangeID         string                   `json:"change_id"`
+	MRIID            int                      `json:"mr_iid"`
+	Title            string                   `json:"title,omitempty"`
+	Status           pipeline.RunStatus       `json:"status"`
+	Error            string                   `json:"error,omitempty"`
+	WebURL           string                   `json:"web_url,omitempty"`
+	UpdatedAt        time.Time                `json:"updated_at"`
+	EventCount       int                      `json:"event_count"`
+	Events           []pipeline.RunEvent      `json:"events,omitempty"`
+	Findings         []review.Finding         `json:"findings,omitempty"`
+	HumanCheck       []review.Finding         `json:"human_check,omitempty"`
+	Notes            []review.Finding         `json:"notes,omitempty"`
+	Questions        []review.Finding         `json:"questions,omitempty"`
+	InlineComments   []review.InlineComment   `json:"inline_comments,omitempty"`
+	ToolRequests     int                      `json:"tool_requests,omitempty"`
+	ToolObservations int                      `json:"tool_observations,omitempty"`
+	DraftReport      string                   `json:"draft_report,omitempty"`
+	FinalReport      string                   `json:"final_report,omitempty"`
+	HILApproved      bool                     `json:"hil_approved"`
+	Snapshot         *review.SnapshotIdentity `json:"snapshot,omitempty"`
+	Policy           *review.PolicyProjection `json:"policy,omitempty"`
 }
 
 func toRunDTO(run pipeline.Run, includeDetails bool) runDTO {
@@ -90,6 +92,14 @@ func toRunDTO(run pipeline.Run, includeDetails bool) runDTO {
 		dto.Events = append([]pipeline.RunEvent(nil), run.Events...)
 		dto.Findings = run.Findings
 		if run.Source != nil {
+			if run.Source.Attestation != nil {
+				snapshot := run.Source.Attestation.Snapshot
+				dto.Snapshot = &snapshot
+			}
+			if run.Source.Policy.Mode != "" {
+				policyProjection := run.Source.Policy
+				dto.Policy = &policyProjection
+			}
 			dto.HumanCheck = append([]review.Finding(nil), run.Source.HumanCheck...)
 			dto.Notes = append([]review.Finding(nil), run.Source.Notes...)
 			dto.Questions = append([]review.Finding(nil), run.Source.Questions...)

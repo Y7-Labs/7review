@@ -643,7 +643,7 @@ func sessionRowMatchesQuery(run remoteRunRow, query string) bool {
 
 func isKnownSessionStatus(value string) bool {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "queued", "running", "drafted", "awaiting_hil", "approved", "published", "finalized", "failed":
+	case "queued", "running", "drafted", "awaiting_hil", "approved", "published", "finalized", "failed", "ignored":
 		return true
 	default:
 		return false

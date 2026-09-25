@@ -94,6 +94,12 @@ func NewServer() (*Server, error) {
 	}
 	s.pipeline.SCM = router
 	s.pipeline.SCMPublisher = router
+	if cfg.PolicyV2Mode != "legacy" {
+		s.pipeline.TrustedPolicy = pipeline.SCMPolicyAdmission{
+			Mode: cfg.PolicyV2Mode, Path: cfg.PolicyV2Path, Reader: router,
+			RuntimeCapabilities: append([]string(nil), cfg.PolicyRuntimeCapabilities...),
+		}
+	}
 	s.pipeline.ContextReducer = tools.NewHeadroomReducer(cfg.HeadroomURL, time.Duration(cfg.HeadroomTimeout)*time.Millisecond)
 	s.pipeline.Memory = reviewMemoryStore(cfg)
 	s.pipeline.Channels = channel.NewManager(channelConfigs(inputProfile, cfg))

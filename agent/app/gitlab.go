@@ -47,6 +47,7 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 					ID string `json:"id"`
 				} `json:"last_commit"`
 				Labels gitLabLabels `json:"labels"`
+				Draft  bool         `json:"draft"`
 			} `json:"object_attributes"`
 			User struct {
 				Username string `json:"username"`
@@ -79,6 +80,7 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 			SourceBranch: event.ObjectAttributes.SourceBranch,
 			TargetBranch: event.ObjectAttributes.TargetBranch,
 			Author:       event.User.Username,
+			Draft:        event.ObjectAttributes.Draft,
 			Labels:       mergeGitLabLabels(event.ObjectAttributes.Labels, event.Labels),
 		})
 		if err != nil {

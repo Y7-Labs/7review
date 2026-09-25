@@ -60,11 +60,41 @@ func TestLoadConfig_SidecarTimeoutDefaults(t *testing.T) {
 	if cfg.WebhookReviewMode != "manual_first" {
 		t.Fatalf("unexpected webhook review mode %q", cfg.WebhookReviewMode)
 	}
+	if cfg.PolicyV2Mode != "legacy" || cfg.PolicyV2Path != ".7review/review.yaml" || strings.Join(cfg.PolicyRuntimeCapabilities, ",") != "repo.read,model.review" {
+		t.Fatalf("unexpected policy V2 defaults: %#v", cfg)
+	}
 	if strings.Join(cfg.ReviewLabelInclude, ",") != "7review,ready-for-review" {
 		t.Fatalf("unexpected include labels %#v", cfg.ReviewLabelInclude)
 	}
 	if strings.Join(cfg.ReviewLabelExclude, ",") != "no-review,wip,draft" {
 		t.Fatalf("unexpected exclude labels %#v", cfg.ReviewLabelExclude)
+	}
+}
+
+func TestLoadConfigRejectsInvalidPolicyV2Mode(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "agent-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("POLICY_V2_MODE", "magic")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "POLICY_V2_MODE") {
+		t.Fatalf("expected policy mode validation, got %v", err)
+	}
+}
+
+func TestLoadConfigRejectsEscapingPolicyV2Path(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "agent-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("POLICY_V2_MODE", "enforce")
+	t.Setenv("POLICY_V2_PATH", "../review.yaml")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "POLICY_V2_PATH") {
+		t.Fatalf("expected policy path validation, got %v", err)
 	}
 }
 

@@ -31,6 +31,9 @@ func (s *Server) reviewPolicyDecision(req review.Request) reviewPolicyDecision {
 	if branchMatches(req, s.cfg.ReviewBranchExclude) {
 		return reviewPolicyDecision{reason: "excluded branch matched"}
 	}
+	if s.cfg.PolicyV2Mode == "enforce" {
+		return reviewPolicyDecision{allowed: true, reason: "trusted V2 trigger evaluation deferred until SCM enrichment"}
+	}
 	if len(s.cfg.ReviewBranchInclude) > 0 && !branchMatches(req, s.cfg.ReviewBranchInclude) {
 		return reviewPolicyDecision{reason: "no included branch matched"}
 	}
