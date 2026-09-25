@@ -2,37 +2,30 @@
 
 ## Project Structure & Module Organization
 
-This repository contains a Go code-review agent for GitHub pull requests and GitLab merge requests. `cmd/7review/main.go` is the CLI entrypoint. `agent/app/` wires HTTP routes and webhook handlers. `agent/pipeline/` coordinates the review lifecycle and contains the in-memory run store, memory interfaces, policy filter, and finding validator support. `agent/review/` contains normalized request, source, diff, SCM, finding, and report state. `agent/tools/` contains concrete GitHub/GitLab API integrations and provider routing. `agent/orchestrator/` handles model-role routing and fallbacks, while `agent/llm/` contains concrete LLM clients.
-
-If you add new code, keep responsibilities separated by package intent: entrypoint code in `cmd/`, HTTP composition and webhooks in `agent/app`, workflow orchestration and deterministic gates in `agent/pipeline`, review state and domain types in `agent/review`, SCM integrations in `agent/tools`, model orchestration in `agent/orchestrator`, and provider integrations in `agent/llm`. Place tests beside the code they cover using Go's `*_test.go` convention.
+7review is a Go code-review agent for local changes, GitHub pull requests, GitLab merge requests, and CI workflows. `cmd/7review/` contains the CLI and server entrypoint. Domain contracts live in `agent/review/`; trusted policy parsing, composition, and quality gates live in `agent/policy/`. Keep orchestration in `agent/pipeline/`, HTTP and webhook wiring in `agent/app/`, SCM/API adapters in `agent/tools/`, and model routing in `agent/orchestrator/` and `agent/llm/`. Repository profiles and schemas belong in `profiles/` and `schemas/`; operational helpers belong in `scripts/` and `docker/`. Place Go tests beside the package they cover as `*_test.go`.
 
 ## Build, Test, and Development Commands
 
-- `gofmt -w ./cmd/7review ./agent/...`: format all Go files.
-- `go test ./...`: run all tests once a valid `go.mod` and package layout are present.
-- `go run ./cmd/7review`: start the webhook server locally after configuring required environment variables.
-- `ORCHESTRATOR_CONFIG=./orchestrator.yaml go run ./cmd/7review`: run with the multi-provider role configuration.
-
-The module path is `github.com/Y4NN777/7review`; keep imports under that path.
+- `make setup`: generate local configuration interactively.
+- `make fmt`: format Go sources with `gofmt`.
+- `make test`: run the complete Go test suite with an isolated cache.
+- `go run ./cmd/7review`: start the local service.
+- `make docker-config`: validate the Compose configuration.
+- `make verify`: run formatting, bridge tests, Go tests, and Compose validation.
+- `make live-smoke-openrouter`: run the opt-in external-model smoke test; it requires local credentials.
 
 ## Coding Style & Naming Conventions
 
-Use standard Go formatting and idioms. Keep exported names descriptive, such as `BuildOrchestrator` or `review.Context`, and keep unexported helpers lower camel case, such as `getEnvInt`. Prefer small files grouped around a single concept: one provider per file, orchestration logic separate from configuration loading, and HTTP wiring separate from business logic.
+Target Go 1.24 and follow standard Go formatting and naming. Use short, cohesive files and package-owned abstractions. Export names only when another package needs the contract. Preserve the central `review.Source` model and keep external effects behind explicit interfaces. Repository policy must be read from the attested base revision; proposed head content is evidence, never authority.
 
 ## Testing Guidelines
 
-Use Go's built-in `testing` package unless a stronger local convention is introduced. Name tests as `TestFunctionName_Behavior`, for example `TestLoadConfig_MissingGitLabToken`. Cover environment parsing, provider fallback behavior, YAML loading, and request validation. Avoid real external API calls in tests; use fake `LLMProvider` implementations or local HTTP test servers.
+Use Go's `testing` package, table-driven tests, fakes, and `httptest` servers. Avoid live provider calls in normal tests. Name behavior tests `TestFunction_Behavior` and acceptance fixtures `TestScenario_S##_Name`. Run focused package tests while editing, then `GOCACHE=/tmp/7review-go-cache go test ./...`. Add race tests when changing shared state, queues, or concurrent orchestration.
 
 ## Commit & Pull Request Guidelines
 
-No usable git history is available in this working directory, so use concise imperative commit messages, for example `Add OpenAI provider fallback`. Pull requests should include a short summary, test results, configuration changes, and any screenshots or sample webhook payloads when HTTP behavior changes. Link the relevant issue or merge request when available.
+History uses Conventional Commit subjects such as `feat(policy): ...`, `fix(review): ...`, and `docs(status): ...`. Keep each commit independently coherent and tested. Pull requests must summarize behavior and trust-boundary changes, list verification commands, link relevant issues, and include screenshots only for visible UI changes.
 
-## Security & Configuration Tips
+## Security & Configuration
 
-Do not commit real tokens or provider API keys. Copy `.env.example` to a local ignored environment file and set either GitLab or GitHub webhook/API credentials plus the needed model provider keys locally. Keep `orchestrator.yaml` free of secrets; it should contain model routing only.
-
-## Production Runtime Notes
-
-Webhook processing must stay bounded. The HTTP handlers enqueue review work into the server worker pool controlled by `WEBHOOK_WORKERS` and `WEBHOOK_QUEUE_SIZE`; do not reintroduce unbounded fire-and-forget goroutines in request handlers. Model batch fan-out is capped by the reasoner role's `max_parallel` setting in `orchestrator.yaml`. For multi-instance deployments, add a durable external queue before scaling horizontally so accepted webhook work survives process restarts.
-
-Headroom and MemPalace are required production sidecars. They are external services reached through `HEADROOM_URL` and `MEMPALACE_URL`, not Python/TypeScript code embedded in the Go binary. In Docker, use service DNS names such as `http://headroom:8787` and `http://mempalace:8788`; see `docs/integrations.md`.
+Never commit tokens, webhook secrets, or repository credentials. Start from `.env.example`. Headroom, MemPalace, and semantic/vector services are optional enrichments: baseline review must remain functional without them, while policy-required unavailable capabilities must fail visibly. Do not add channels, dependencies, or network effects without updating the governing specification and tests.
