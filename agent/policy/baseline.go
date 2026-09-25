@@ -8,6 +8,7 @@ type BaselineRef struct {
 	ContextName  string
 	RuleIDs      []string
 	CoverageIDs  []string
+	FindingKeys  []string
 	Verified     bool
 }
 
