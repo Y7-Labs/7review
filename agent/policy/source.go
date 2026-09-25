@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -29,6 +31,12 @@ func CompileBound(config ReviewConfigV2, source Source, attestation review.Snaps
 	if err := validateSource(source, attestation); err != nil {
 		return EffectivePolicy{}, err
 	}
+	if config.ProjectID != "" && config.ProjectID != source.RepositoryID {
+		return EffectivePolicy{}, fmt.Errorf("policy: configuration project does not match its trusted source repository")
+	}
+	if len(config.Capabilities.Required) > 0 && len(ctx.RuntimeAllowed) == 0 {
+		return EffectivePolicy{}, fmt.Errorf("policy: bound compilation requires a runtime capability inventory")
+	}
 	effective, err := Compile(config, ctx)
 	if err != nil {
 		return EffectivePolicy{}, err
@@ -37,12 +45,14 @@ func CompileBound(config ReviewConfigV2, source Source, attestation review.Snaps
 		Field: "policy_source", Value: source.Digest, Source: string(source.Trust),
 		Reason: "configuration bound to an immutable trusted source", Precedence: 1<<31 - 1,
 	}}, effective.Explanation...)
+	bound := sha256.Sum256([]byte(strings.Join([]string{effective.Digest, source.Digest, source.Revision, attestation.Snapshot.FileManifestDigest}, "\x00")))
+	effective.Digest = "sha256:" + hex.EncodeToString(bound[:])
 	return effective, nil
 }
 
 func validateSource(source Source, attestation review.SnapshotAttestation) error {
-	if !attestation.Verified {
-		return fmt.Errorf("policy: snapshot attestation is not verified")
+	if err := attestation.ValidateSnapshot(); err != nil {
+		return fmt.Errorf("policy: invalid snapshot attestation: %w", err)
 	}
 	if source.RepositoryID == "" || source.RepositoryID != attestation.Snapshot.RepositoryID {
 		return fmt.Errorf("policy: source repository does not match attested snapshot")

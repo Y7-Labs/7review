@@ -12,7 +12,16 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const MaxConfigBytes = 2 << 20
+
 func Load(path string) (ReviewConfigV2, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return ReviewConfigV2{}, fmt.Errorf("policy: stat %s: %w", path, err)
+	}
+	if info.Size() > MaxConfigBytes {
+		return ReviewConfigV2{}, fmt.Errorf("policy: %s exceeds %d bytes", path, MaxConfigBytes)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return ReviewConfigV2{}, fmt.Errorf("policy: read %s: %w", path, err)
@@ -28,6 +37,9 @@ func Load(path string) (ReviewConfigV2, error) {
 }
 
 func DecodeJSON(data []byte) (ReviewConfigV2, error) {
+	if len(data) > MaxConfigBytes {
+		return ReviewConfigV2{}, fmt.Errorf("policy: JSON exceeds %d bytes", MaxConfigBytes)
+	}
 	var config ReviewConfigV2
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -47,6 +59,9 @@ func DecodeJSON(data []byte) (ReviewConfigV2, error) {
 }
 
 func DecodeYAML(data []byte) (ReviewConfigV2, error) {
+	if len(data) > MaxConfigBytes {
+		return ReviewConfigV2{}, fmt.Errorf("policy: YAML exceeds %d bytes", MaxConfigBytes)
+	}
 	var config ReviewConfigV2
 	decoder := yaml.NewDecoder(bytes.NewReader(data))
 	decoder.KnownFields(true)

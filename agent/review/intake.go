@@ -21,6 +21,19 @@ type SnapshotAttestation struct {
 var canonicalDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 func (a SnapshotAttestation) Validate(change ChangeKey) error {
+	if err := a.ValidateSnapshot(); err != nil {
+		return err
+	}
+	if err := change.Validate(); err != nil {
+		return err
+	}
+	if change.RepositoryID != a.Snapshot.RepositoryID {
+		return errors.New("snapshot attestation repository does not match change")
+	}
+	return nil
+}
+
+func (a SnapshotAttestation) ValidateSnapshot() error {
 	if !a.Verified {
 		return errors.New("snapshot attestation is not verified")
 	}
@@ -32,12 +45,6 @@ func (a SnapshotAttestation) Validate(change ChangeKey) error {
 	}
 	if a.Snapshot.LocalSnapshotDigest != "" && !canonicalDigestPattern.MatchString(a.Snapshot.LocalSnapshotDigest) {
 		return errors.New("verified local snapshot requires a canonical local digest")
-	}
-	if err := change.Validate(); err != nil {
-		return err
-	}
-	if change.RepositoryID != a.Snapshot.RepositoryID {
-		return errors.New("snapshot attestation repository does not match change")
 	}
 	if strings.TrimSpace(a.ProducerID) == "" || strings.TrimSpace(a.ComparisonTree) == "" || a.VerifiedAt.IsZero() {
 		return errors.New("verified snapshot requires producer, comparison tree and verification time")

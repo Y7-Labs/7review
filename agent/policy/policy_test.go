@@ -38,8 +38,49 @@ func TestCompileBoundRejectsHeadPolicyAndAcceptsTrustedBase(t *testing.T) {
 		t.Fatalf("head policy must not become authority: %v", err)
 	}
 	source.Revision = "base"
-	if _, err := CompileBound(config, source, attestation, CompileContext{ProjectID: "org/repo", RuntimeAllowed: []string{"repo.read"}}); err != nil {
+	bound, err := CompileBound(config, source, attestation, CompileContext{ProjectID: "org/repo", RuntimeAllowed: []string{"repo.read"}})
+	if err != nil {
 		t.Fatal(err)
+	}
+	preview, err := Compile(config, CompileContext{ProjectID: "org/repo", RuntimeAllowed: []string{"repo.read"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bound.Digest == preview.Digest {
+		t.Fatal("bound policy digest must include trusted source identity")
+	}
+	if _, err := CompileBound(config, source, attestation, CompileContext{ProjectID: "org/repo"}); err == nil || !strings.Contains(err.Error(), "capability inventory") {
+		t.Fatalf("bound compilation without runtime inventory must fail: %v", err)
+	}
+}
+
+func TestDelegationRequiresClockAndAppliesNamedReplacement(t *testing.T) {
+	config := validConfig()
+	expires := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	config.Delegations = []DelegationV2{{
+		ID: "backend-owner", GrantorScope: ScopeRefV2{Kind: "project", ID: "org/repo"}, TargetScope: ScopeRefV2{Kind: "path", ID: "backend/**"},
+		ReplaceRuleIDs: []string{"correctness"}, ReplaceFields: []string{"checks"},
+		Constraints: DelegationConstraintsV2{AllowedCheckIDs: []string{"backend-correctness"}, ExpiresAt: &expires}, ProvenanceRef: "owners:backend",
+	}}
+	config.Packs = []MethodPackV2{{
+		ID: "backend", Priority: 10, Match: MatchV2{Paths: []string{"backend/**"}}, Checks: []string{"backend-correctness"}, RiskFloor: "none",
+		Publication: PublicationConstraintV2{Mode: "inherit", ArtifactClasses: []string{}}, DelegationID: "backend-owner",
+	}}
+	ctx := CompileContext{ProjectID: "org/repo", ChangedPaths: []string{"backend/service.go"}, RuntimeAllowed: []string{"repo.read"}}
+	if _, err := Compile(config, ctx); err == nil || !strings.Contains(err.Error(), "clock") {
+		t.Fatalf("expiring delegation without clock must fail: %v", err)
+	}
+	ctx.EvaluationTime = time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
+	effective, err := Compile(config, ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(effective.RequiredChecks, ",") != "backend-correctness" {
+		t.Fatalf("delegated replacement was not applied: %v", effective.RequiredChecks)
+	}
+	ctx.EvaluationTime = expires
+	if _, err := Compile(config, ctx); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expired delegation must fail: %v", err)
 	}
 }
 
@@ -127,6 +168,12 @@ func TestDecodeRejectsMissingRequiredAndDuplicateJSONFields(t *testing.T) {
 	}
 	if _, err := DecodeJSON([]byte(`{"schema_version":2,"schema_version":2}`)); err == nil || !strings.Contains(err.Error(), "duplicate JSON key") {
 		t.Fatalf("expected duplicate-key error, got %v", err)
+	}
+}
+
+func TestDecodeRejectsOversizedPolicy(t *testing.T) {
+	if _, err := DecodeJSON(make([]byte, MaxConfigBytes+1)); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size limit error, got %v", err)
 	}
 }
 

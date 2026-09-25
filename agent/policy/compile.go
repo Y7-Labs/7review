@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
 type CompileContext struct {
@@ -18,6 +19,7 @@ type CompileContext struct {
 	Labels          []string
 	RuntimeAllowed  []string
 	RuntimeCeilings *LimitsV2
+	EvaluationTime  time.Time
 }
 
 type EffectivePolicy struct {
@@ -108,7 +110,10 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 			if !scopeMatches(delegation.TargetScope, config, ctx) {
 				continue
 			}
-			if err := applyDelegatedReplacement(&effective, pack, delegation); err != nil {
+			if !scopeMatches(delegation.GrantorScope, config, ctx) {
+				return EffectivePolicy{}, fmt.Errorf("policy: delegation %q grantor is not authoritative for the matched change", delegation.ID)
+			}
+			if err := applyDelegatedReplacement(&effective, pack, delegation, ctx.EvaluationTime); err != nil {
 				return EffectivePolicy{}, err
 			}
 		}
@@ -158,9 +163,14 @@ func enforceRuntimeCeilings(requested LimitsV2, ceilings *LimitsV2) error {
 	return nil
 }
 
-func applyDelegatedReplacement(e *EffectivePolicy, pack MethodPackV2, d DelegationV2) error {
+func applyDelegatedReplacement(e *EffectivePolicy, pack MethodPackV2, d DelegationV2, at time.Time) error {
 	if d.Constraints.ExpiresAt != nil {
-		return fmt.Errorf("policy: delegation %q expiry requires an explicit compilation clock", d.ID)
+		if at.IsZero() {
+			return fmt.Errorf("policy: delegation %q expiry requires an explicit compilation clock", d.ID)
+		}
+		if !at.Before(*d.Constraints.ExpiresAt) {
+			return fmt.Errorf("policy: delegation %q is expired", d.ID)
+		}
 	}
 	methodAllowed, checkAllowed := toSet(d.Constraints.AllowedMethodIDs), toSet(d.Constraints.AllowedCheckIDs)
 	for _, method := range pack.Methods {
@@ -180,6 +190,20 @@ func applyDelegatedReplacement(e *EffectivePolicy, pack MethodPackV2, d Delegati
 	}
 	if fields["checks"] {
 		e.RequiredChecks = without(e.RequiredChecks, remove)
+	}
+	if fields["risk_floor"] {
+		if d.Constraints.MaxRisk != "" && riskRank(pack.RiskFloor) > riskRank(d.Constraints.MaxRisk) {
+			return fmt.Errorf("policy: delegation %q risk floor exceeds its constraint", d.ID)
+		}
+		e.RiskFloor = pack.RiskFloor
+	}
+	if fields["independent_review"] {
+		e.IndependentReview = pack.IndependentReview
+	}
+	if fields["publication"] {
+		if pack.Publication.Mode != "inherit" {
+			e.Publication = pack.Publication
+		}
 	}
 	e.Explanation = append(e.Explanation, ExplanationEntry{Field: "delegation", Value: d.ID, Source: d.ProvenanceRef, Reason: "authorized replacement applied before pack union", Precedence: pack.Priority})
 	return nil
