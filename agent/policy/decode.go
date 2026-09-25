@@ -26,6 +26,10 @@ func Load(path string) (ReviewConfigV2, error) {
 	if err != nil {
 		return ReviewConfigV2{}, fmt.Errorf("policy: read %s: %w", path, err)
 	}
+	return Decode(path, data)
+}
+
+func Decode(path string, data []byte) (ReviewConfigV2, error) {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".yaml", ".yml":
 		return DecodeYAML(data)
