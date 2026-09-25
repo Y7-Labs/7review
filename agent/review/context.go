@@ -39,6 +39,7 @@ type Source struct {
 	Assessment       AssessmentProjection
 	Gate             GateResult
 	Delivery         DeliveryProjection
+	Readiness        ReadinessProjection
 	Run              RunMetadata
 }
 
@@ -126,6 +127,21 @@ func NewCanonicalContext(req Request, attempt AttemptIdentity, execution Executi
 	rc.Source.Execution = execution
 	rc.Source.Investigation = InvestigationProjection{State: attempt.State, Version: attempt.Version}
 	return rc, nil
+}
+
+// NewVerifiedContext additionally proves that the attempt and execution use the
+// exact immutable source accepted at intake.
+func NewVerifiedContext(req Request, attempt AttemptIdentity, execution ExecutionContext, attestation SnapshotAttestation) (*Context, error) {
+	if err := attestation.Validate(attempt.Change); err != nil {
+		return nil, err
+	}
+	if attestation.Snapshot != attempt.Snapshot {
+		return nil, fmt.Errorf("attempt snapshot does not match verified attestation")
+	}
+	if attestation.ComparisonTree != execution.ComparisonTree {
+		return nil, fmt.Errorf("execution comparison tree does not match verified attestation")
+	}
+	return NewCanonicalContext(req, attempt, execution)
 }
 
 // AddFindings appends raw findings from one parallel batch.
