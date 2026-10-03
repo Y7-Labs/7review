@@ -41,7 +41,9 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 	jobID := flags.String("job-id", "", "job identity override")
 	changeID := flags.String("change-id", "", "pull or merge request identity override")
 	var qualities repeatedFlag
+	var dependencies repeatedFlag
 	flags.Var(&qualities, "quality", "verified CI quality artifact provider:id:path")
+	flags.Var(&dependencies, "dependency", "trusted job graph entry job=dependency1,dependency2")
 	if err := flags.Parse(args[1:]); err != nil {
 		return 2, err
 	}
@@ -66,6 +68,10 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 		}
 		artifactRefs = append(artifactRefs, ref)
 	}
+	dependencyGraph, err := cirunner.ParseDependencyGraph(dependencies)
+	if err != nil {
+		return 2, err
+	}
 	var orch *orchestrator.Orchestrator
 	if !environment.UntrustedFork {
 		orch, _, err = cirunner.BuildModelOrchestratorFromEnvironment()
@@ -78,7 +84,7 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 	result, err := cirunner.Run(ctx, cirunner.Options{
 		RepositoryDir: *repositoryDir, PolicyPath: *policyPath, SkillsPath: *skillsPath,
 		Offline: *offline, Environment: environment, DeadlineAt: time.Now().UTC().Add(*deadline),
-		Quality: artifactRefs, Orchestrator: orch,
+		Quality: artifactRefs, DependencyGraph: dependencyGraph, Orchestrator: orch,
 	})
 	if err != nil {
 		return 2, err

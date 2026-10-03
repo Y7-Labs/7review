@@ -32,16 +32,17 @@ type ArtifactRef struct {
 }
 
 type Options struct {
-	RepositoryDir string
-	PolicyPath    string
-	SkillsPath    string
-	Offline       bool
-	Environment   Environment
-	DeadlineAt    time.Time
-	Quality       []ArtifactRef
-	Orchestrator  *orchestrator.Orchestrator
-	HTTPClient    *http.Client
-	Now           func() time.Time
+	RepositoryDir   string
+	PolicyPath      string
+	SkillsPath      string
+	Offline         bool
+	Environment     Environment
+	DeadlineAt      time.Time
+	Quality         []ArtifactRef
+	DependencyGraph map[string][]string
+	Orchestrator    *orchestrator.Orchestrator
+	HTTPClient      *http.Client
+	Now             func() time.Time
 }
 
 type Result struct {
@@ -68,6 +69,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	result := Result{StartedAt: now}
 	if strings.TrimSpace(opts.RepositoryDir) == "" || strings.TrimSpace(opts.PolicyPath) == "" || opts.DeadlineAt.IsZero() {
 		return result, errors.New("CI runner requires repository, policy path and deadline")
+	}
+	if opts.DependencyGraph != nil {
+		if err := ValidateDependencyGraph(opts.Environment.JobID, opts.DependencyGraph); err != nil {
+			return result, err
+		}
 	}
 	adapter := tools.FrozenGitSCM{
 		RepositoryDir: opts.RepositoryDir, RepositoryID: opts.Environment.RepositoryID, Provider: opts.Environment.Provider,

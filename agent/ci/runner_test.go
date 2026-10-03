@@ -16,7 +16,7 @@ import (
 	"github.com/Y4NN777/7review/agent/review"
 )
 
-func TestRunProducesDeterministicPartialAssessmentForUntrustedFork(t *testing.T) {
+func TestScenario_S48_CIForkIsolation(t *testing.T) {
 	repo, base, head := ciGitFixture(t)
 	result := runPartialFixture(t, repo, base, head)
 	if result.Assessment.Completeness != review.AssessmentPartial || result.Gate.Outcome != review.GateIncomplete || ExitCode(result) != 2 {
@@ -33,10 +33,14 @@ func TestRunProducesDeterministicPartialAssessmentForUntrustedFork(t *testing.T)
 func runPartialFixture(t *testing.T, repo, base, head string) Result {
 	t.Helper()
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	orch := orchestrator.NewOrchestrator(
+		orchestrator.DefaultOrchestratorConfig("review", "small", "panic"),
+		map[string]orchestrator.LLMProvider{"panic": panicProvider{}},
+	)
 	result, err := Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
 		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
-		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now },
+		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,4 +133,11 @@ type ciStaticProvider struct{ response string }
 func (ciStaticProvider) Name() string { return "fake" }
 func (p ciStaticProvider) Complete(context.Context, llm.LLMRequest) (string, error) {
 	return p.response, nil
+}
+
+type panicProvider struct{}
+
+func (panicProvider) Name() string { return "panic" }
+func (panicProvider) Complete(context.Context, llm.LLMRequest) (string, error) {
+	panic("untrusted fork invoked a model provider")
 }
