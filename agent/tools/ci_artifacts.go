@@ -158,9 +158,10 @@ func (v GitLabCIArtifactVerifier) VerifyAndImport(ctx context.Context, jobID int
 	}
 	jobEndpoint := fmt.Sprintf("%s/api/v4/projects/%s/jobs/%d", baseURL, url.PathEscape(v.ProjectID), jobID)
 	var metadata struct {
-		ID       int64  `json:"id"`
-		Status   string `json:"status"`
-		Pipeline struct {
+		ID                int64      `json:"id"`
+		Status            string     `json:"status"`
+		ArtifactsExpireAt *time.Time `json:"artifacts_expire_at"`
+		Pipeline          struct {
 			ID  int64  `json:"id"`
 			SHA string `json:"sha"`
 		} `json:"pipeline"`
@@ -170,6 +171,13 @@ func (v GitLabCIArtifactVerifier) VerifyAndImport(ctx context.Context, jobID int
 	}
 	if metadata.ID != jobID || (metadata.Status != "success" && metadata.Status != "failed") {
 		return review.ImportedCIQualityEvidence{}, errors.New("gitlab CI artifact job is not a completed producer")
+	}
+	now := time.Now().UTC()
+	if v.Now != nil {
+		now = v.Now().UTC()
+	}
+	if metadata.ArtifactsExpireAt != nil && !now.Before(metadata.ArtifactsExpireAt.UTC()) {
+		return review.ImportedCIQualityEvidence{}, errors.New("gitlab CI artifact is expired")
 	}
 	if strconv.FormatInt(metadata.Pipeline.ID, 10) != execution.PipelineID {
 		return review.ImportedCIQualityEvidence{}, errors.New("gitlab CI artifact belongs to another pipeline")
@@ -190,10 +198,6 @@ func (v GitLabCIArtifactVerifier) VerifyAndImport(ctx context.Context, jobID int
 	payload, err := extractArtifactFile(archive, artifactPath)
 	if err != nil {
 		return review.ImportedCIQualityEvidence{}, err
-	}
-	now := time.Now().UTC()
-	if v.Now != nil {
-		now = v.Now().UTC()
 	}
 	provenance := review.CIArtifactProvenance{
 		PipelineID: execution.PipelineID, JobID: strconv.FormatInt(jobID, 10), SourceRevision: snapshot.HeadRevision,

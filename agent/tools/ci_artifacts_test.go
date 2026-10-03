@@ -18,11 +18,12 @@ func TestGitHubCIArtifactVerifierBindsRunRevisionAndDigest(t *testing.T) {
 	payload := qualityArtifactFixture("tests", "passed")
 	archive := zipFixture(t, "quality/tests.json", payload)
 	metadataDigest := digestBytes(archive)
+	expired := false
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/repos/org/repo/actions/artifacts/41":
-			fmt.Fprintf(w, `{"id":41,"expired":false,"digest":%q,"archive_download_url":%q,"workflow_run":{"id":99,"head_sha":"head"}}`, metadataDigest, server.URL+"/archive.zip")
+			fmt.Fprintf(w, `{"id":41,"expired":%t,"digest":%q,"archive_download_url":%q,"workflow_run":{"id":99,"head_sha":"head"}}`, expired, metadataDigest, server.URL+"/archive.zip")
 		case "/archive.zip":
 			_, _ = w.Write(archive)
 		default:
@@ -46,6 +47,11 @@ func TestGitHubCIArtifactVerifierBindsRunRevisionAndDigest(t *testing.T) {
 		t.Fatalf("github archive digest mismatch must fail: %v", err)
 	}
 	metadataDigest = digestBytes(archive)
+	expired = true
+	if _, err := verifier.VerifyAndImport(context.Background(), 41, "quality/tests.json", snapshot, execution); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expired github artifact must fail: %v", err)
+	}
+	expired = false
 	execution.PipelineID = "100"
 	if _, err := verifier.VerifyAndImport(context.Background(), 41, "quality/tests.json", snapshot, execution); err == nil || !strings.Contains(err.Error(), "another workflow run") {
 		t.Fatalf("wrong workflow run must fail: %v", err)
@@ -80,6 +86,29 @@ func TestGitLabCIArtifactVerifierBindsJobPipelineAndRevision(t *testing.T) {
 	snapshot.HeadRevision = "source"
 	if _, err := verifier.VerifyAndImport(context.Background(), 77, "quality/security.json", snapshot, execution); err == nil || !strings.Contains(err.Error(), "revision") {
 		t.Fatalf("wrong gitlab pipeline revision must fail: %v", err)
+	}
+}
+
+func TestGitLabCIArtifactVerifierRejectsExpiredArtifact(t *testing.T) {
+	payload := qualityArtifactFixture("tests", "passed")
+	archive := zipFixture(t, "quality/tests.json", payload)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/jobs/77"):
+			fmt.Fprint(w, `{"id":77,"status":"success","artifacts_expire_at":"2026-10-03T11:00:00Z","pipeline":{"id":99,"sha":"head"}}`)
+		case strings.HasSuffix(r.URL.Path, "/jobs/77/artifacts"):
+			_, _ = w.Write(archive)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	snapshot, execution := artifactIdentityFixture()
+	verifier := GitLabCIArtifactVerifier{BaseURL: server.URL, ProjectID: "123", Client: server.Client(), Now: func() time.Time {
+		return time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	}}
+	if _, err := verifier.VerifyAndImport(context.Background(), 77, "quality/tests.json", snapshot, execution); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("expired gitlab artifact must fail: %v", err)
 	}
 }
 
