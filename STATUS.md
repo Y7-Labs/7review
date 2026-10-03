@@ -96,10 +96,9 @@ Implemented through the current CI-runner commit series:
 - Executed tests cover S45, S48, S49 and S52, provider API rejection, duplicate or
   absent coverage, cancellation, offline missing base and synthetic merge identity.
 
-Targeted Go package tests passed locally for `agent/ci`, `agent/tools`,
-`agent/pipeline` and `cmd/7review`. Full-suite, vet, race and hosted smoke results
-are recorded only after final verification; no GitHub check, GitLab status or Code
-Quality publication is claimed by this runner.
+Final local verification passed with `go test ./...`, `go vet ./...` and
+`go test -race ./...`. No hosted smoke run was performed, and no GitHub check,
+GitLab status or Code Quality publication is claimed by this runner.
 
 ## September 25 Contract Reconciliation
 
