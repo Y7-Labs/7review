@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -8,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -20,6 +23,7 @@ const (
 	maxGitMetadataBytes = 8 << 20
 	maxGitDiffBytes     = 32 << 20
 	maxGitChangedFiles  = 4096
+	maxGitArchiveBytes  = 256 << 20
 )
 
 var immutableGitRevisionPattern = regexp.MustCompile(`^[0-9a-fA-F]{40}([0-9a-fA-F]{24})?$`)
@@ -117,6 +121,71 @@ func (g FrozenGitSCM) ReadRepositoryFile(ctx context.Context, repositoryID, revi
 		return nil, err
 	}
 	return data, nil
+}
+
+// ExportSnapshot materializes the immutable analysis tree without consulting
+// the mutable working directory. Symlinks and special files are rejected.
+func (g FrozenGitSCM) ExportSnapshot(ctx context.Context, destination string) error {
+	if err := g.validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(destination) == "" {
+		return errors.New("git snapshot destination is required")
+	}
+	if err := g.ensureRevision(ctx, g.comparisonRevision()); err != nil {
+		return err
+	}
+	archive, err := g.run(ctx, maxGitArchiveBytes, "archive", "--format=tar", g.comparisonRevision())
+	if err != nil {
+		return fmt.Errorf("git archive snapshot: %w", err)
+	}
+	if err := os.MkdirAll(destination, 0o700); err != nil {
+		return err
+	}
+	reader := tar.NewReader(bytes.NewReader(archive))
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read git archive: %w", err)
+		}
+		archivePath := strings.TrimSuffix(header.Name, "/")
+		if !validRepositoryRelativePath(archivePath) {
+			return fmt.Errorf("git archive contains unsafe path %q", header.Name)
+		}
+		target := filepath.Join(destination, filepath.FromSlash(archivePath))
+		switch header.Typeflag {
+		case tar.TypeXHeader, tar.TypeXGlobalHeader:
+			continue
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				return err
+			}
+		case tar.TypeReg, tar.TypeRegA:
+			if header.Size < 0 || header.Size > maxGitArchiveBytes {
+				return fmt.Errorf("git archive file %q exceeds extraction limit", header.Name)
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				return err
+			}
+			file, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err != nil {
+				return err
+			}
+			_, copyErr := io.CopyN(file, reader, header.Size)
+			closeErr := file.Close()
+			if copyErr != nil {
+				return copyErr
+			}
+			if closeErr != nil {
+				return closeErr
+			}
+		default:
+			return fmt.Errorf("git archive contains unsupported file type for %q", header.Name)
+		}
+	}
 }
 
 func (g FrozenGitSCM) changedFiles(ctx context.Context) ([]review.ChangedFile, error) {

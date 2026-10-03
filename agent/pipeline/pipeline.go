@@ -118,6 +118,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		rc.Source.SkillActivations = p.SkillLoader.SelectActivations(rc.Request)
 		rc.Source.SkillSections = p.SkillLoader.Select(rc.Request)
 	}
+	rc.Source.SkillActivations = mergeEffectivePolicyActivation(rc.Source.SkillActivations, rc.Source.Policy)
 	p.trace(ctx, run.ID, "skills_selected", StatusRunning, "repository review skills selected", map[string]string{
 		"count": strconv.Itoa(len(rc.SkillSections)),
 		"paths": joinSectionPaths(rc.SkillSections, 8),
@@ -298,6 +299,31 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		return err
 	}
 	return nil
+}
+
+func mergeEffectivePolicyActivation(activations []review.SkillActivation, projection review.PolicyProjection) []review.SkillActivation {
+	if len(projection.RequiredChecks) == 0 {
+		return activations
+	}
+	covered := map[string]bool{}
+	for _, activation := range activations {
+		for _, check := range activation.RequiredChecks {
+			covered[strings.ToLower(strings.TrimSpace(check))] = true
+		}
+	}
+	var missing []string
+	for _, check := range projection.RequiredChecks {
+		if !covered[strings.ToLower(strings.TrimSpace(check))] {
+			missing = append(missing, check)
+		}
+	}
+	if len(missing) == 0 {
+		return activations
+	}
+	return append(activations, review.SkillActivation{
+		Name: "effective-policy", Path: projection.SourceRevision, Category: "policy", ReviewDomain: "project",
+		RequiredChecks: missing, Required: true, Reason: "trusted effective policy requires auditable review coverage",
+	})
 }
 
 func (p *Pipeline) publishInlineDraftComments(ctx context.Context, scm *review.SCMContext, rc *review.Context, findings []review.Finding) []review.InlineComment {

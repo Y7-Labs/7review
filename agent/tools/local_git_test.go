@@ -72,6 +72,28 @@ func TestFrozenGitSCMBindsSyntheticMerge(t *testing.T) {
 	}
 }
 
+func TestFrozenGitSCMExportsCommittedTreeInsteadOfWorkingTree(t *testing.T) {
+	repo, base, head := gitFixture(t)
+	if err := os.WriteFile(filepath.Join(repo, "service.go"), []byte("uncommitted mutation\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	destination := t.TempDir()
+	adapter := FrozenGitSCM{
+		RepositoryDir: repo, RepositoryID: "org/repo", Provider: "github",
+		BaseRevision: base, HeadRevision: head, Offline: true,
+	}
+	if err := adapter.ExportSnapshot(context.Background(), destination); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "service.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "package service\n" {
+		t.Fatalf("snapshot export read mutable working tree data: %q", data)
+	}
+}
+
 func TestFrozenGitSCMRejectsMissingRevisionOfflineAndUnsafePath(t *testing.T) {
 	repo, base, head := gitFixture(t)
 	adapter := FrozenGitSCM{RepositoryDir: repo, RepositoryID: "org/repo", Provider: "github", BaseRevision: base, HeadRevision: strings.Repeat("f", 40), Offline: true}
