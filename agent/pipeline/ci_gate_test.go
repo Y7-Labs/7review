@@ -110,3 +110,52 @@ func TestEvaluateImportedCIGateRejectsDuplicateChecks(t *testing.T) {
 		t.Fatalf("duplicate check identities must fail: %v", err)
 	}
 }
+
+func TestEvaluateReviewAndImportedCIGateCombinesReviewCoverageAndFindings(t *testing.T) {
+	effective, assessment, now := ciGateFixture(t)
+	effective.QualityGate.RequiredCoverage = []string{"correctness", "tests"}
+	source := review.Source{
+		ChangedFiles: []review.ChangedFile{{NewPath: "main.go"}},
+		SkillActivations: []review.SkillActivation{{
+			Name: "correctness-review", ReviewDomain: "backend", RequiredChecks: []string{"correctness"}, Required: true,
+		}},
+		SkillCoverage: []review.SkillCoverage{{
+			Name: "correctness-review", Status: "covered", Checks: []string{"correctness"}, Evidence: []string{"finding:F1"},
+		}},
+		Findings: []review.Finding{{
+			ID: "F1", Severity: review.SeverityHigh, Strength: "confirmed", Location: review.Location{Path: "main.go", Line: 10},
+			ValidationStatus: "accepted", Citations: []review.EvidenceCitation{{Source: "AGENTS.md", Rule: "correctness", Violation: "unchecked error"}},
+		}},
+	}
+	coverage, gate, err := EvaluateReviewAndImportedCIGate(
+		effective, assessment, "sha256:"+strings.Repeat("a", 64), source,
+		[]review.ImportedCIQualityEvidence{importedCheck(t, "tests", review.CheckSatisfied)}, nil, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !coverage.Complete || len(coverage.Checks) != 2 {
+		t.Fatalf("review and CI coverage were not combined: %#v", coverage)
+	}
+	if gate.Outcome != review.GateViolations || !slices.Contains(gate.ViolatedRuleIDs, "correctness") {
+		t.Fatalf("accepted review finding must affect the gate: %#v", gate)
+	}
+}
+
+func TestEvaluateReviewAndImportedCIGateFailsClosedForMissingReviewCoverage(t *testing.T) {
+	effective, assessment, now := ciGateFixture(t)
+	effective.QualityGate.RequiredCoverage = []string{"correctness", "tests"}
+	source := review.Source{SkillActivations: []review.SkillActivation{{
+		Name: "correctness-review", RequiredChecks: []string{"correctness"}, Required: true,
+	}}}
+	coverage, gate, err := EvaluateReviewAndImportedCIGate(
+		effective, assessment, "sha256:"+strings.Repeat("a", 64), source,
+		[]review.ImportedCIQualityEvidence{importedCheck(t, "tests", review.CheckSatisfied)}, nil, now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if coverage.Complete || gate.Outcome != review.GateIncomplete || !slices.Contains(coverage.UnknownCheckIDs, "correctness") {
+		t.Fatalf("missing review coverage must fail closed: coverage=%#v gate=%#v", coverage, gate)
+	}
+}

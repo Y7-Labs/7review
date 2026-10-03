@@ -35,7 +35,15 @@ type Pipeline struct {
 	SCM              tools.SCM
 	SCMPublisher     tools.Publisher
 	TrustedPolicy    TrustedPolicyAdmission
+	DeliveryMode     DeliveryMode
 }
+
+type DeliveryMode string
+
+const (
+	DeliveryPublish      DeliveryMode = "publish"
+	DeliveryArtifactOnly DeliveryMode = "artifact_only"
+)
 
 // Run executes the automated review pipeline.
 func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
@@ -255,22 +263,33 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	rc.Source.HumanCheck = validation.HumanCheck
 	rc.Source.Notes = validation.Notes
 	rc.Source.Questions = validation.Questions
-	rc.Source.InlineComments = p.publishInlineDraftComments(ctx, scmContext, rc, validation.Accepted)
-	p.trace(ctx, run.ID, "inline_comments_processed", StatusRunning, "inline draft comments processed", inlineCommentMeta(rc.Source.InlineComments))
+	if p.DeliveryMode == DeliveryArtifactOnly {
+		rc.Source.InlineComments = nil
+		p.trace(ctx, run.ID, "inline_comments_suppressed", StatusRunning, "artifact-only execution forbids SCM comments", nil)
+	} else {
+		rc.Source.InlineComments = p.publishInlineDraftComments(ctx, scmContext, rc, validation.Accepted)
+		p.trace(ctx, run.ID, "inline_comments_processed", StatusRunning, "inline draft comments processed", inlineCommentMeta(rc.Source.InlineComments))
+	}
 	rc.Source.Report.Draft = renderReport(rc)
 
-	if err := p.SCMPublisher.PublishDraft(ctx, scmContext, rc.Source.Report.Draft); err != nil {
-		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
-		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-		return err
-	}
-	p.trace(ctx, run.ID, "draft_published", StatusRunning, "draft report published", map[string]string{
-		"draft_bytes": strconv.Itoa(len(rc.Source.Report.Draft)),
-	})
-	if err := p.notifyDraft(ctx, run.ID, scmContext, rc); err != nil {
-		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
-		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-		return err
+	if p.DeliveryMode == DeliveryArtifactOnly {
+		p.trace(ctx, run.ID, "draft_exported", StatusRunning, "draft retained for artifact export", map[string]string{
+			"draft_bytes": strconv.Itoa(len(rc.Source.Report.Draft)),
+		})
+	} else {
+		if err := p.SCMPublisher.PublishDraft(ctx, scmContext, rc.Source.Report.Draft); err != nil {
+			_ = p.Jobs.SaveContext(ctx, run.ID, rc)
+			_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+			return err
+		}
+		p.trace(ctx, run.ID, "draft_published", StatusRunning, "draft report published", map[string]string{
+			"draft_bytes": strconv.Itoa(len(rc.Source.Report.Draft)),
+		})
+		if err := p.notifyDraft(ctx, run.ID, scmContext, rc); err != nil {
+			_ = p.Jobs.SaveContext(ctx, run.ID, rc)
+			_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+			return err
+		}
 	}
 	if err := p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
 		return err
@@ -1004,6 +1023,9 @@ func reviseDraftUserMessage(rc *review.Context, request string) string {
 }
 
 func (p *Pipeline) withDefaults() {
+	if p.DeliveryMode == "" {
+		p.DeliveryMode = DeliveryPublish
+	}
 	if p.Jobs == nil {
 		p.Jobs = NewMemoryRunStore()
 	}
@@ -1036,7 +1058,13 @@ func (p *Pipeline) withDefaults() {
 }
 
 func (p *Pipeline) requireConfiguredAdapters() error {
-	if p == nil || p.Config == nil {
+	if p == nil {
+		return nil
+	}
+	if p.DeliveryMode != DeliveryPublish && p.DeliveryMode != DeliveryArtifactOnly {
+		return fmt.Errorf("pipeline: unsupported delivery mode %q", p.DeliveryMode)
+	}
+	if p.Config == nil {
 		return nil
 	}
 	var missing []string
@@ -1049,7 +1077,7 @@ func (p *Pipeline) requireConfiguredAdapters() error {
 	if hasConfiguredSCM(p.Config) && isNoopSCM(p.SCM) {
 		missing = append(missing, "SCM enrichment adapter")
 	}
-	if hasConfiguredSCM(p.Config) && isNoopPublisher(p.SCMPublisher) {
+	if p.DeliveryMode != DeliveryArtifactOnly && hasConfiguredSCM(p.Config) && isNoopPublisher(p.SCMPublisher) {
 		missing = append(missing, "SCM publisher adapter")
 	}
 	if len(missing) == 0 {

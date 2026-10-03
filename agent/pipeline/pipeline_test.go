@@ -39,6 +39,41 @@ func TestRunFailsWhenContextReducerFails(t *testing.T) {
 	}
 }
 
+func TestArtifactOnlyRunHasNoSCMSideEffects(t *testing.T) {
+	store := NewMemoryRunStore()
+	p := &Pipeline{
+		Orchestrator: orchestrator.NewOrchestrator(
+			orchestrator.DefaultOrchestratorConfig("review", "small", "fake"),
+			map[string]orchestrator.LLMProvider{"fake": staticLLMProvider{response: `{"findings":[],"skill_coverage":[]}`}},
+		),
+		Jobs:             store,
+		Policy:           DefaultPolicyFilter{},
+		FindingValidator: DefaultFindingValidator{},
+		Memory:           NoopMemoryStore{},
+		SCM:              fakeSCM{},
+		SCMPublisher:     panickingPublisher{},
+		ContextReducer:   NoopContextReducer{},
+		DeliveryMode:     DeliveryArtifactOnly,
+	}
+
+	if err := p.Run(context.Background(), review.Request{Provider: "github", ProjectID: "p", MRIID: 1, ChangeID: "1"}); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.Get(context.Background(), "p!1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Status != StatusDrafted || strings.TrimSpace(run.DraftReport) == "" {
+		t.Fatalf("artifact-only run did not retain its draft: %#v", run)
+	}
+	if !hasRunEvent(run.Events, "draft_exported") || !hasRunEvent(run.Events, "inline_comments_suppressed") {
+		t.Fatalf("artifact-only audit events missing: %#v", run.Events)
+	}
+	if hasRunEvent(run.Events, "draft_published") || hasRunEvent(run.Events, "inline_comments_processed") {
+		t.Fatalf("artifact-only run reported an SCM side effect: %#v", run.Events)
+	}
+}
+
 func TestRunRejectsConfiguredProductionNoopAdapters(t *testing.T) {
 	p := &Pipeline{
 		Config: &config.Config{
@@ -2043,6 +2078,20 @@ func (fakePublisher) PublishDraft(context.Context, *review.SCMContext, string) e
 
 func (fakePublisher) PublishFinal(context.Context, *review.SCMContext, string) error {
 	return nil
+}
+
+type panickingPublisher struct{}
+
+func (panickingPublisher) PublishDraft(context.Context, *review.SCMContext, string) error {
+	panic("artifact-only run attempted to publish a draft")
+}
+
+func (panickingPublisher) PublishFinal(context.Context, *review.SCMContext, string) error {
+	panic("artifact-only run attempted to publish a final report")
+}
+
+func (panickingPublisher) PublishInlineDraft(context.Context, *review.SCMContext, review.InlineComment) (review.InlineComment, error) {
+	panic("artifact-only run attempted to publish an inline comment")
 }
 
 type draftRecordingPublisher struct {
