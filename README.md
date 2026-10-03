@@ -52,10 +52,11 @@ and the complete design was accepted on 2026-09-25. Phase 1 canonical-domain wor
 is complete. Phase 2 is in progress: immutable intake attestations, typed readiness,
 strict policy V2 compilation, trusted-base GitHub/GitLab admission, deterministic
 quality-gate evaluation, baseline compatibility and CI artifact provenance contracts
-exist. Verified CI quality artifacts now normalize tests, lint, security and
-coverage into deterministic gate inputs; their V1 schema lives at
-`schemas/ci-quality-v1.schema.json`. The executable CI runner, native provider
-delivery and remaining scenario fixtures are not complete.
+exist. The executable ephemeral runner now performs frozen Git review, verifies
+GitHub/GitLab quality artifacts, evaluates the gate and exports canonical files.
+Its quality input schema lives at `schemas/ci-quality-v1.schema.json`. Native
+provider delivery, coordinated persistence and the remaining scenario fixtures
+are not complete.
 None of the later target runtime capabilities is implied complete.
 
 The target has autonomous local accounting and optional coordinated team/CI mode.
@@ -70,6 +71,32 @@ scope, with sandbox qualification still required. No autonomous merge is permitt
 | [SPEC.md](SPEC.md) | Behavioral contracts, schemas, acceptance cases and precision closure |
 | [ROADMAP.md](ROADMAP.md) | Immediate design work and conditional implementation |
 | [STATUS.md](STATUS.md) | Recorded baseline, validation evidence and remaining gates |
+
+## Ephemeral CI Runner
+
+`7review ci review` is the delivered non-interactive path. It reads policy from
+the immutable base revision, analyzes the declared source head or synthetic merge
+tree, and never starts the server, sidecars or channels. It does not publish an
+SCM check, comment or status.
+
+```sh
+7review ci review \
+  --policy-path .7review/review.yaml \
+  --quality github:123456:ci-quality.json \
+  --output .7review/out \
+  --deadline 10m
+```
+
+GitHub Actions and GitLab CI identity are detected from their native environment.
+Hosted overrides must match that identity. A missing base may be fetched read-only;
+`--offline` instead fails closed. Fork input never receives model credentials and
+produces a partial assessment with exit `2`.
+
+The output directory contains `assessment.json`, `coverage.json`, `gate.json`,
+`report.md` and `run-manifest.json`. Blocking pass/violation/incomplete map to
+`0/1/2`; advisory violations return `0`, while incomplete/error remains `2`.
+See [GitHub Actions](examples/ci/github-actions.yml) and
+[GitLab CI](examples/ci/gitlab-ci.yml) for source-pinned examples.
 
 The remainder of this README documents the existing runtime. Those commands are
 not new-engine instructions, and historical smoke results are not current CI
@@ -189,6 +216,8 @@ Package map:
 - `cmd/7review`: server and operator CLI entrypoint
 - `agent/app`: HTTP routes, webhooks, run endpoints, chat streaming, tool
   execution
+- `agent/ci`: ephemeral runner identity, dependency checks, gate assembly and
+  canonical artifact export
 - `agent/pipeline`: review lifecycle, run store, deterministic gates, report
   rendering
 - `agent/review`: normalized request, source, diff, SCM, finding, report, and

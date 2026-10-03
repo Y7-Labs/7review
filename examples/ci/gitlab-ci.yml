@@ -1,0 +1,42 @@
+stages: [quality, review]
+
+# scripts/ci-quality must emit schemas/ci-quality-v1.schema.json compatible JSON.
+
+variables:
+  GIT_DEPTH: "0"
+  SEVEN_REVIEW_SHA: "93703df12faeca91b10b17f1bdf038f9b11b7ad6"
+
+quality:
+  stage: quality
+  image: golang:1.25
+  script:
+    - ./scripts/ci-quality > ci-quality.json
+    - printf 'QUALITY_JOB_ID=%s\n' "$CI_JOB_ID" > quality.env
+  artifacts:
+    expire_in: 7 days
+    paths: [ci-quality.json]
+    reports:
+      dotenv: quality.env
+
+review:
+  stage: review
+  image: golang:1.25
+  needs:
+    - job: quality
+      artifacts: true
+  timeout: 15m
+  before_script:
+    - git clone https://github.com/Y7-Labs/7review.git .tools/7review
+    - git -C .tools/7review checkout --detach "$SEVEN_REVIEW_SHA"
+    - go build -o /tmp/7review ./.tools/7review/cmd/7review
+  script:
+    - >-
+      /tmp/7review ci review
+      --policy-path .7review/review.yaml
+      --quality gitlab:${QUALITY_JOB_ID}:ci-quality.json
+      --output .7review/out
+      --deadline 10m
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths: [.7review/out]

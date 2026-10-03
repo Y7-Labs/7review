@@ -1,7 +1,7 @@
 # 7review Roadmap
 
-Updated: 2026-09-25
-Status: DESIGN ACCEPTED; PHASE 1 IMPLEMENTATION AUTHORIZED.
+Updated: 2026-10-03
+Status: DESIGN ACCEPTED; PHASE 2 IMPLEMENTATION IN PROGRESS.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) defines the product and system;
 [SPEC.md](SPEC.md) defines behavior and acceptance;
@@ -229,6 +229,14 @@ and GitLab status/Code Quality export. Verify runner/service credential separati
 fork safety, prerequisite-cycle checks and explicit pipeline/merge-tree identity.
 Execute S45-S60 and provide version-pinned CI examples.
 Advisory is the default; teams may enable blocking rules through trusted policy.
+
+Delivered in the ephemeral-runner slice: frozen base/head/merge identity, bounded
+read-only fetch, trusted-base policy, verified GitHub/GitLab quality artifacts,
+artifact-only model execution, deterministic gate exits, canonical atomic exports,
+fork isolation and executable S45/S48/S49/S52 cases. Source-pinned GitHub and
+GitLab examples are in `examples/ci/`. This does not complete Phase 7: native
+checks/status/Code Quality, service handoff, remaining S46-S60 qualification and
+hosted smoke runs remain open.
 
 - Implement and execute S01-S60 and the 50 ENG cases, shared provider fixtures and
   local snapshot scenarios. Case count is not a coverage or quality measurement.

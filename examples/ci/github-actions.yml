@@ -1,0 +1,63 @@
+name: 7review
+
+# scripts/ci-quality must emit schemas/ci-quality-v1.schema.json compatible JSON.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Produce canonical quality evidence
+        run: ./scripts/ci-quality > ci-quality.json
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: 7review-quality
+          path: ci-quality.json
+          if-no-files-found: error
+          retention-days: 7
+
+  review:
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: actions/checkout@v6
+        with:
+          repository: Y7-Labs/7review
+          ref: 93703df12faeca91b10b17f1bdf038f9b11b7ad6
+          path: .tools/7review
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: .tools/7review/go.mod
+      - name: Build 7review
+        run: go build -o "$RUNNER_TEMP/7review" ./.tools/7review/cmd/7review
+      - name: Review frozen pull request snapshot
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          "$RUNNER_TEMP/7review" ci review \
+            --policy-path .7review/review.yaml \
+            --quality github:${{ needs.quality.outputs.artifact-id }}:ci-quality.json \
+            --output .7review/out \
+            --deadline 10m
+      - name: Upload 7review result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: 7review-result
+          path: .7review/out
+          if-no-files-found: error

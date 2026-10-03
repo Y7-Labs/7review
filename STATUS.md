@@ -1,7 +1,7 @@
 # 7review Status
 
-Updated: 2026-09-25
-Current phase: PHASE 1 COMPLETE; PHASE 2 NOT YET STARTED.
+Updated: 2026-10-03
+Current phase: PHASE 1 COMPLETE; PHASE 2 IN PROGRESS.
 
 ## Current Direction
 
@@ -48,7 +48,7 @@ during consolidation.
 | Immutable attempts, full freshness and scoped resume | Legacy per-change stores/reruns do not provide these contracts |
 | Transactional accepted work and separate effects | In-process accepted jobs can be lost on restart; full recovery/outbox semantics remain proposed |
 | Adaptive methods, triage and independent omission review | Existing skills, roles and tools are reusable; new controller/policy contracts not implemented |
-| CI-native runner, native feedback and gate evaluator | Specified with autonomous/service lifetimes, fork trust and service-owned publication; not qualified or delivered by these docs |
+| CI-native runner, native feedback and gate evaluator | Ephemeral artifact-only runner and deterministic gate are implemented; native shared-context publication and hosted qualification remain open |
 | Governed memory and evidence graph | Existing recall/corpus are foundations; lineage, revocation and activation semantics remain target |
 | Optional Headroom/MemPalace/code intelligence | Setup and required-capability behavior still need implementation and tests |
 | TOON optimization | Proposed model-input-only optimization; no measured savings or quality parity |
@@ -77,6 +77,29 @@ ENG-D7/D8 select a PostgreSQL budget authority/action journal inside the server
 for coordinated team/CI use. SQLite remains a candidate only for autonomous local
 accounting. Neither has been installed or implemented in this phase. No mandatory
 graph database, new channel or autonomous merge is added.
+
+## Ephemeral CI Runner Evidence
+
+Implemented through the current CI-runner commit series:
+
+- `7review ci review` detects GitHub Actions or GitLab CI and rejects conflicting
+  hosted identity overrides.
+- The runner distinguishes base, source head and synthetic merge, validates the
+  Git tree manifest, reads policy from base with `git show`, and exports the
+  analysis tree instead of reading mutable working-tree files.
+- GitHub workflow artifacts are bound to workflow run, head and provider digest;
+  GitLab artifacts are bound to job, pipeline and SHA, then locally digested.
+- Artifact-only execution disables SCM publishing, inline comments, channels,
+  sidecars and server startup. Untrusted forks do not invoke a configured model.
+- Assessment, coverage, gate, report and manifest are written atomically. The
+  manifest records SHA-256 digests, provenance boundary, unknowns and exclusions.
+- Executed tests cover S45, S48, S49 and S52, provider API rejection, duplicate or
+  absent coverage, cancellation, offline missing base and synthetic merge identity.
+
+Targeted Go package tests passed locally for `agent/ci`, `agent/tools`,
+`agent/pipeline` and `cmd/7review`. Full-suite, vet, race and hosted smoke results
+are recorded only after final verification; no GitHub check, GitLab status or Code
+Quality publication is claimed by this runner.
 
 ## September 25 Contract Reconciliation
 
