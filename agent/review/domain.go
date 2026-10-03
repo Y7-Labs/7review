@@ -45,11 +45,13 @@ func (k ChangeKey) Validate() error {
 }
 
 type SnapshotIdentity struct {
-	RepositoryID        string `json:"repository_id"`
-	BaseRevision        string `json:"base_revision,omitempty"`
-	HeadRevision        string `json:"head_revision,omitempty"`
-	LocalSnapshotDigest string `json:"local_snapshot_digest,omitempty"`
-	FileManifestDigest  string `json:"file_manifest_digest"`
+	RepositoryID               string `json:"repository_id"`
+	BaseRevision               string `json:"base_revision,omitempty"`
+	HeadRevision               string `json:"head_revision,omitempty"`
+	SyntheticMergeRevision     string `json:"synthetic_merge_revision,omitempty"`
+	SourceToMergeMappingDigest string `json:"source_to_merge_mapping_digest,omitempty"`
+	LocalSnapshotDigest        string `json:"local_snapshot_digest,omitempty"`
+	FileManifestDigest         string `json:"file_manifest_digest"`
 }
 
 func (s SnapshotIdentity) Validate() error {
@@ -65,7 +67,30 @@ func (s SnapshotIdentity) Validate() error {
 	if strings.TrimSpace(s.HeadRevision) != "" && strings.TrimSpace(s.BaseRevision) == "" {
 		return errors.New("SCM snapshot requires a base revision")
 	}
+	if strings.TrimSpace(s.SyntheticMergeRevision) != "" {
+		if strings.TrimSpace(s.HeadRevision) == "" {
+			return errors.New("synthetic merge snapshot requires a source head revision")
+		}
+		if s.SyntheticMergeRevision == s.HeadRevision || s.SyntheticMergeRevision == s.BaseRevision {
+			return errors.New("synthetic merge revision must differ from source head and base")
+		}
+		if strings.TrimSpace(s.SourceToMergeMappingDigest) == "" {
+			return errors.New("synthetic merge snapshot requires a source-to-merge mapping digest")
+		}
+	} else if strings.TrimSpace(s.SourceToMergeMappingDigest) != "" {
+		return errors.New("source-to-merge mapping requires a synthetic merge revision")
+	}
 	return nil
+}
+
+func (s SnapshotIdentity) AnalysisRevision() string {
+	if strings.TrimSpace(s.SyntheticMergeRevision) != "" {
+		return s.SyntheticMergeRevision
+	}
+	if strings.TrimSpace(s.HeadRevision) != "" {
+		return s.HeadRevision
+	}
+	return s.LocalSnapshotDigest
 }
 
 type AttemptState string

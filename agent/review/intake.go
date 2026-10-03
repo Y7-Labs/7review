@@ -46,8 +46,14 @@ func (a SnapshotAttestation) ValidateSnapshot() error {
 	if a.Snapshot.LocalSnapshotDigest != "" && !canonicalDigestPattern.MatchString(a.Snapshot.LocalSnapshotDigest) {
 		return errors.New("verified local snapshot requires a canonical local digest")
 	}
+	if a.Snapshot.SourceToMergeMappingDigest != "" && !canonicalDigestPattern.MatchString(a.Snapshot.SourceToMergeMappingDigest) {
+		return errors.New("verified synthetic merge snapshot requires a canonical source-to-merge mapping digest")
+	}
 	if strings.TrimSpace(a.ProducerID) == "" || strings.TrimSpace(a.ComparisonTree) == "" || a.VerifiedAt.IsZero() {
 		return errors.New("verified snapshot requires producer, comparison tree and verification time")
+	}
+	if a.Snapshot.SyntheticMergeRevision != "" && a.ComparisonTree != a.Snapshot.SyntheticMergeRevision {
+		return errors.New("verified comparison tree does not match synthetic merge revision")
 	}
 	return nil
 }
@@ -60,6 +66,8 @@ func (a SnapshotAttestation) Digest() (string, error) {
 		a.Snapshot.RepositoryID,
 		a.Snapshot.BaseRevision,
 		a.Snapshot.HeadRevision,
+		a.Snapshot.SyntheticMergeRevision,
+		a.Snapshot.SourceToMergeMappingDigest,
 		a.Snapshot.LocalSnapshotDigest,
 		a.Snapshot.FileManifestDigest,
 		a.ProducerID,

@@ -110,6 +110,29 @@ func TestDomainContract_SCHEMA04_SnapshotIsHeadOrLocal(t *testing.T) {
 	})
 }
 
+func TestScenario_S52_SyntheticMergeIdentity(t *testing.T) {
+	snapshot := SnapshotIdentity{
+		RepositoryID: "r-1", BaseRevision: "base-sha", HeadRevision: "head-sha",
+		SyntheticMergeRevision: "merge-sha", SourceToMergeMappingDigest: "sha256:" + strings.Repeat("a", 64),
+		FileManifestDigest: "sha256:" + strings.Repeat("b", 64),
+	}
+	if err := snapshot.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.AnalysisRevision() != "merge-sha" {
+		t.Fatalf("analysis revision must be the synthetic merge: %#v", snapshot)
+	}
+	snapshot.SourceToMergeMappingDigest = ""
+	if err := snapshot.Validate(); err == nil || !strings.Contains(err.Error(), "mapping digest") {
+		t.Fatalf("synthetic merge without mapping must fail: %v", err)
+	}
+	snapshot.SyntheticMergeRevision = ""
+	snapshot.SourceToMergeMappingDigest = "sha256:" + strings.Repeat("a", 64)
+	if err := snapshot.Validate(); err == nil || !strings.Contains(err.Error(), "requires a synthetic merge") {
+		t.Fatalf("orphan mapping must fail: %v", err)
+	}
+}
+
 func TestDomainContract_LOOP05_AttemptTerminalStates(t *testing.T) {
 	for _, state := range []AttemptState{AttemptAssessed, AttemptIncomplete, AttemptFailed, AttemptCancelled, AttemptSuperseded} {
 		if !state.Terminal() {

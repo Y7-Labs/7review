@@ -33,6 +33,33 @@ func TestSnapshotAttestationBindsRepositoryAndImmutableInput(t *testing.T) {
 	}
 }
 
+func TestSnapshotAttestationDigestBindsSyntheticMerge(t *testing.T) {
+	attestation := SnapshotAttestation{
+		Snapshot: SnapshotIdentity{
+			RepositoryID: "org/repo", BaseRevision: "base", HeadRevision: "head",
+			SyntheticMergeRevision: "merge", SourceToMergeMappingDigest: "sha256:" + strings.Repeat("a", 64),
+			FileManifestDigest: "sha256:" + strings.Repeat("b", 64),
+		},
+		ProducerID: "ci", ComparisonTree: "merge", VerifiedAt: time.Now().UTC(), Verified: true,
+	}
+	first, err := attestation.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	attestation.Snapshot.SyntheticMergeRevision = "merge-2"
+	second, err := attestation.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("attestation digest must bind the synthetic merge revision")
+	}
+	attestation.ComparisonTree = "wrong-tree"
+	if err := attestation.ValidateSnapshot(); err == nil || !strings.Contains(err.Error(), "comparison tree") {
+		t.Fatalf("mismatched synthetic comparison must fail: %v", err)
+	}
+}
+
 func TestReadinessRequiresReasonAndProvenance(t *testing.T) {
 	projection := ReadinessProjection{
 		IntentSummary:      ReadinessField{Status: ReadinessPresent, Provenance: []string{"request:description"}, Reason: "author supplied intent"},
