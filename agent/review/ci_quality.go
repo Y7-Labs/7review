@@ -71,6 +71,9 @@ func ImportCIQualityEvidence(data []byte, provenance CIArtifactProvenance, snaps
 	if provenance.ArtifactDigest != actualDigest {
 		return ImportedCIQualityEvidence{}, errors.New("CI quality artifact digest does not match provenance")
 	}
+	if err := rejectDuplicateJSONKeys(data); err != nil {
+		return ImportedCIQualityEvidence{}, err
+	}
 
 	var artifact CIQualityArtifact
 	decoder := json.NewDecoder(bytes.NewReader(data))
@@ -172,4 +175,56 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return fmt.Errorf("decode CI quality artifact trailer: %w", err)
 	}
 	return errors.New("CI quality artifact contains multiple JSON values")
+}
+
+func rejectDuplicateJSONKeys(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var walk func() error
+	walk = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := map[string]bool{}
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return errors.New("CI quality artifact contains a non-string object key")
+				}
+				if seen[key] {
+					return fmt.Errorf("CI quality artifact contains duplicate JSON key %q", key)
+				}
+				seen[key] = true
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		case '[':
+			for decoder.More() {
+				if err := walk(); err != nil {
+					return err
+				}
+			}
+			_, err = decoder.Token()
+			return err
+		default:
+			return errors.New("CI quality artifact contains an unexpected JSON delimiter")
+		}
+	}
+	if err := walk(); err != nil {
+		return fmt.Errorf("validate CI quality JSON: %w", err)
+	}
+	return ensureJSONEOF(decoder)
 }

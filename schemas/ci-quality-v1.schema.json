@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Y4NN777/7review/schemas/ci-quality-v1.schema.json",
+  "title": "7review CI Quality Artifact V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "check_id", "method_id", "scope", "status", "summary", "signals"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "kind": { "enum": ["test", "lint", "security", "coverage"] },
+    "check_id": { "type": "string", "minLength": 1 },
+    "method_id": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["passed", "failed", "error", "skipped"] },
+    "summary": { "type": "string" },
+    "signals": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/signal" }
+    }
+  },
+  "$defs": {
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "rule_id", "severity", "strength", "message", "in_changed_scope"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "rule_id": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+        "strength": { "enum": ["confirmed", "human_check", "note"] },
+        "message": { "type": "string", "minLength": 1 },
+        "in_changed_scope": { "type": "boolean" }
+      }
+    }
+  }
+}

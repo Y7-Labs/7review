@@ -63,3 +63,15 @@ func TestImportCIQualityEvidenceRejectsUnknownShapeAndNormalizesFailure(t *testi
 		t.Fatalf("unknown artifact fields must fail closed: %v", err)
 	}
 }
+
+func TestImportCIQualityEvidenceRejectsDuplicateJSONKeys(t *testing.T) {
+	now := time.Now().UTC()
+	data := []byte(`{"schema_version":1,"kind":"test","kind":"security","check_id":"tests","method_id":"ci/tests","scope":"project","status":"passed","summary":"ok","signals":[]}`)
+	sum := sha256.Sum256(data)
+	snapshot := SnapshotIdentity{RepositoryID: "org/repo", BaseRevision: "base", HeadRevision: "head", FileManifestDigest: "sha256:" + strings.Repeat("a", 64)}
+	execution := ExecutionContext{Mode: ExecutionEphemeral, ProducerID: "ci", PipelineID: "1", JobID: "tests", ComparisonTree: "tree", Persistence: PersistenceJobLocal, TrustedBoundaryID: "ci:org/repo", DeadlineAt: now.Add(time.Hour)}
+	provenance := CIArtifactProvenance{PipelineID: "1", JobID: "tests", SourceRevision: "head", ComparisonTree: "tree", ArtifactDigest: "sha256:" + hex.EncodeToString(sum[:]), ProducerID: "ci", VerifiedAt: now, ProviderVerified: true}
+	if _, err := ImportCIQualityEvidence(data, provenance, snapshot, execution); err == nil || !strings.Contains(err.Error(), "duplicate JSON key") {
+		t.Fatalf("duplicate keys must fail closed: %v", err)
+	}
+}
