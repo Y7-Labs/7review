@@ -226,15 +226,15 @@ were made.
 
 ## Remaining Gates
 
-1. Continue Phase 2 by wiring typed CI evidence and deterministic gate results
-   into runtime/native adapters while preserving the characterized legacy runtime.
+1. Continue Phase 2 by exposing typed CI import/gate evaluation through the
+   ephemeral runner and runtime/native adapters while preserving legacy behavior.
 2. Follow ROADMAP's staged migration and preserve accepted design decisions unless
    implementation evidence requires an explicit amendment.
 3. Execute the remaining Phase 2 scenarios. S06, S22, S26 and S50 now have named
    assertions; the other specified scenarios remain unproven. Related legacy tests
    do not count as their execution.
 
-Current Phase 2 evidence (2026-09-25): `agent/review` validates immutable snapshot
+Current Phase 2 evidence (2026-10-03): `agent/review` validates immutable snapshot
 attestations and readiness provenance. `agent/policy` rejects unknown/missing or
 duplicate configuration, binds authority to an attested base, enforces runtime
 ceilings, contains delegated authority and resolves packs deterministically.
@@ -242,9 +242,12 @@ ceilings, contains delegated authority and resolves packs deterministically.
 loads policy at the attested base SHA in `preview` or `enforce`, exposes snapshot/
 policy state and stops rejected triggers before model work. Gate evaluation now
 preserves known violations under incomplete coverage, validates compatible
-baselines and maps advisory/blocking outcomes to CI exit codes. CI artifact
-provenance is revision/tree/job bound, but CI/native adapters do not yet import
-that evidence or publish V2 gate results.
+baselines and maps advisory/blocking outcomes to CI exit codes. CI quality payloads
+use a strict bounded V1 schema, reject ambiguous or tampered JSON, and remain bound
+to revision/tree/pipeline/job provenance. `agent/pipeline` converts verified tests,
+lint, security and coverage into canonical checks and gate signals, failing closed
+for missing, skipped or duplicate required checks. No executable CI command or
+native GitHub/GitLab gate publisher consumes that bridge yet.
 
 Document consolidation alone is not evidence that the redesigned runtime is
 complete; the remaining gates above require executable integration evidence.

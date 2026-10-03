@@ -52,7 +52,10 @@ and the complete design was accepted on 2026-09-25. Phase 1 canonical-domain wor
 is complete. Phase 2 is in progress: immutable intake attestations, typed readiness,
 strict policy V2 compilation, trusted-base GitHub/GitLab admission, deterministic
 quality-gate evaluation, baseline compatibility and CI artifact provenance contracts
-exist. Native CI delivery and the remaining scenario fixtures are not complete.
+exist. Verified CI quality artifacts now normalize tests, lint, security and
+coverage into deterministic gate inputs; their V1 schema lives at
+`schemas/ci-quality-v1.schema.json`. The executable CI runner, native provider
+delivery and remaining scenario fixtures are not complete.
 None of the later target runtime capabilities is implied complete.
 
 The target has autonomous local accounting and optional coordinated team/CI mode.

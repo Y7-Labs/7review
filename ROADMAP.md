@@ -134,15 +134,18 @@ Scope: repository snapshots, profile compatibility and policy resolution.
 Exit: S01-S09, S22, S24-S26 policy/input assertions pass without model calls.
 All schema fields have documented precedence, bounds and error behavior.
 
-Progress (2026-09-25): verified SCM/local snapshot attestations, revision-bound
+Progress (2026-10-03): verified SCM/local snapshot attestations, revision-bound
 test readiness, strict JSON/YAML `ReviewConfigV2`, explicit legacy projection,
 runtime ceilings, deterministic pack composition and offline validate/explain
 commands, deterministic trigger evaluation, GitHub/GitLab trusted-base intake,
 delegation containment, baseline compatibility, deterministic gate outcomes/CI
-exit codes and CI artifact identity validation are implemented. Remaining: wire
-typed quality evidence and gate results into CI/native adapters, compile verified
-independent prerequisites, finish corpus fixtures and execute every named scenario
-assertion required by the exit criterion.
+exit codes and CI artifact identity validation are implemented. Strict V1 CI
+quality imports now bind payload digests and normalize tests, lint, security and
+coverage into gate checks/signals; the pipeline bridge fails closed on missing,
+skipped or duplicate required checks. Remaining: expose this bridge through the
+ephemeral runner and native adapters, compile verified independent prerequisites,
+finish corpus fixtures and execute every named scenario assertion required by the
+exit criterion.
 
 ## Phase 3: Durable Attempts And Recovery
 
