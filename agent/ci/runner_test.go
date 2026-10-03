@@ -18,15 +18,7 @@ import (
 
 func TestRunProducesDeterministicPartialAssessmentForUntrustedFork(t *testing.T) {
 	repo, base, head := ciGitFixture(t)
-	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	result, err := Run(context.Background(), Options{
-		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
-		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	result := runPartialFixture(t, repo, base, head)
 	if result.Assessment.Completeness != review.AssessmentPartial || result.Gate.Outcome != review.GateIncomplete || ExitCode(result) != 2 {
 		t.Fatalf("fork without model access must be incomplete: assessment=%#v gate=%#v", result.Assessment, result.Gate)
 	}
@@ -36,6 +28,20 @@ func TestRunProducesDeterministicPartialAssessmentForUntrustedFork(t *testing.T)
 	if result.Attestation.Snapshot.HeadRevision != head || result.Execution.Mode != review.ExecutionEphemeral {
 		t.Fatalf("runner lost frozen execution identity: %#v", result)
 	}
+}
+
+func runPartialFixture(t *testing.T, repo, base, head string) Result {
+	t.Helper()
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	result, err := Run(context.Background(), Options{
+		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
+		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
+		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result
 }
 
 func TestRunCompletesArtifactOnlyReviewWithPolicyCoverage(t *testing.T) {

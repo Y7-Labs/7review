@@ -83,6 +83,9 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 	if err != nil {
 		return 2, err
 	}
+	if err := cirunner.Export(result, *output); err != nil {
+		return 2, err
+	}
 	fmt.Fprintf(out, "7review CI: outcome=%s mode=%s exit=%d output=%s\n", result.Gate.Outcome, result.Gate.Mode, cirunner.ExitCode(result), *output)
 	return cirunner.ExitCode(result), nil
 }
