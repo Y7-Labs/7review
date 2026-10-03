@@ -8,14 +8,16 @@ import (
 )
 
 type CIArtifactProvenance struct {
-	PipelineID       string    `json:"pipeline_id"`
-	JobID            string    `json:"job_id"`
-	SourceRevision   string    `json:"source_revision"`
-	ComparisonTree   string    `json:"comparison_tree"`
-	ArtifactDigest   string    `json:"artifact_digest"`
-	ProducerID       string    `json:"producer_id"`
-	VerifiedAt       time.Time `json:"verified_at"`
-	ProviderVerified bool      `json:"provider_verified"`
+	PipelineID            string    `json:"pipeline_id"`
+	JobID                 string    `json:"job_id"`
+	SourceRevision        string    `json:"source_revision"`
+	ComparisonTree        string    `json:"comparison_tree"`
+	ProviderArtifactID    string    `json:"provider_artifact_id,omitempty"`
+	ProviderArchiveDigest string    `json:"provider_archive_digest,omitempty"`
+	ArtifactDigest        string    `json:"artifact_digest"`
+	ProducerID            string    `json:"producer_id"`
+	VerifiedAt            time.Time `json:"verified_at"`
+	ProviderVerified      bool      `json:"provider_verified"`
 }
 
 func (p CIArtifactProvenance) Validate(snapshot SnapshotIdentity, execution ExecutionContext) error {
@@ -36,6 +38,9 @@ func (p CIArtifactProvenance) Validate(snapshot SnapshotIdentity, execution Exec
 	}
 	if !canonicalDigestPattern.MatchString(p.ArtifactDigest) {
 		return errors.New("CI artifact requires a canonical digest")
+	}
+	if p.ProviderArchiveDigest != "" && !canonicalDigestPattern.MatchString(p.ProviderArchiveDigest) {
+		return errors.New("CI artifact requires a canonical provider archive digest")
 	}
 	if p.SourceRevision != snapshot.HeadRevision {
 		return fmt.Errorf("CI artifact revision does not match snapshot head")
