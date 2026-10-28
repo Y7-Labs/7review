@@ -105,8 +105,12 @@ func (c *GitHubClient) ReadRepositoryFile(ctx context.Context, repositoryID, rev
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return nil, fmt.Errorf("github: repository file reader is not configured")
 	}
-	if repositoryID == "" || revision == "" || filePath == "" {
-		return nil, fmt.Errorf("github: repository, revision and path are required")
+	if err := validateRepositoryRead("github", repositoryID, revision, filePath); err != nil {
+		return nil, err
+	}
+	reader, err := newRepositoryHTTP("github", c.BaseURL, "Authorization", "Bearer "+c.Token, c.HTTPClient)
+	if err != nil {
+		return nil, err
 	}
 	var content struct {
 		Type     string `json:"type"`
@@ -114,10 +118,14 @@ func (c *GitHubClient) ReadRepositoryFile(ctx context.Context, repositoryID, rev
 		Content  string `json:"content"`
 	}
 	endpoint := fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath(repositoryID), escapeRepositoryPath(filePath), url.QueryEscape(revision))
-	if err := c.get(ctx, endpoint, &content); err != nil {
+	data, _, err := reader.get(ctx, endpoint, maxGitMetadataBytes)
+	if err != nil {
 		if isHTTPStatus(err, http.StatusNotFound) {
 			return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
 		}
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &content); err != nil {
 		return nil, err
 	}
 	if content.Type != "file" || content.Encoding != "base64" {

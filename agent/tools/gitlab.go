@@ -106,38 +106,19 @@ func (c *GitLabClient) ReadRepositoryFile(ctx context.Context, repositoryID, rev
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return nil, fmt.Errorf("gitlab: repository file reader is not configured")
 	}
-	if repositoryID == "" || revision == "" || filePath == "" {
-		return nil, fmt.Errorf("gitlab: repository, revision and path are required")
+	if err := validateRepositoryRead("gitlab", repositoryID, revision, filePath); err != nil {
+		return nil, err
+	}
+	reader, err := newRepositoryHTTP("gitlab", c.BaseURL, "PRIVATE-TOKEN", c.Token, c.HTTPClient)
+	if err != nil {
+		return nil, err
 	}
 	endpoint := fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw?ref=%s", url.PathEscape(repositoryID), url.PathEscape(filePath), url.QueryEscape(revision))
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("PRIVATE-TOKEN", c.Token)
-	client := c.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusNotFound {
+	data, _, err := reader.get(ctx, endpoint, repositoryFileReadLimit)
+	if isHTTPStatus(err, http.StatusNotFound) {
 		return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("gitlab: GET %s: %s: %s", endpoint, resp.Status, readToolErrorBody(resp.Body))
-	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, repositoryFileReadLimit+1))
-	if err != nil {
-		return nil, err
-	}
-	if len(data) > repositoryFileReadLimit {
-		return nil, fmt.Errorf("gitlab: repository file exceeds %d bytes", repositoryFileReadLimit)
-	}
-	return data, nil
+	return data, err
 }
 
 func (c *GitLabClient) PublishDraft(ctx context.Context, source *review.SCMContext, report string) error {

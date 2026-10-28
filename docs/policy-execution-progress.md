@@ -149,6 +149,20 @@ This is an incremental behavior ledger, not a completion declaration.
   a panic provider can run. Preview discloses the same error without enforcement.
 - Verification: uncached full Go suite and targeted pipeline/CI/review race tests.
 
+## Slice 10: Confined Repository-Read Transport
+
+- Red: remote readers sent traversal paths to providers and followed redirects
+  into another repository/origin while carrying credentials.
+- Green: trusted file reads require canonical bounded paths, provider-specific
+  repository identities and full immutable commit SHAs. Unsafe/ambiguous origins
+  fail before network I/O. Redirects are never followed, even same-origin.
+- A private copy of the configured HTTP client preserves caller ownership while
+  enforcing response/request/aggregate byte bounds and cancellation. Unrelated
+  SCM publishing/intake transport is unchanged.
+- Verification: full uncached suite and focused repository-reader race tests.
+- Still open at this slice: tree-mode/object binding, symlink/submodule handling
+  and frozen Git object confinement. Transport guards alone do not prove these.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
