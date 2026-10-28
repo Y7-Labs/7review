@@ -10,6 +10,11 @@ func applyTrustedRuleEvidence(rc *review.Context, rules []policy.ResolvedRule) {
 		return
 	}
 	declared := map[string]bool{}
+	for _, method := range rc.Source.Policy.MethodRegistry {
+		if method.Revision != "builtin" {
+			declared[method.Path] = true
+		}
+	}
 	for _, doc := range rc.Source.Policy.Documents {
 		if doc.Kind == "rule" {
 			declared[doc.Path] = true

@@ -53,6 +53,7 @@ type PolicyProjection struct {
 	SourceDigest        string           `json:"source_digest,omitempty"`
 	Methods             []string         `json:"methods,omitempty"`
 	ResolvedMethods     []PolicyMethod   `json:"resolved_methods,omitempty"`
+	MethodRegistry      []PolicyMethod   `json:"method_registry,omitempty"`
 	Documents           []PolicyDocument `json:"documents,omitempty"`
 	Rules               []PolicyDocument `json:"rules,omitempty"`
 	AllowedCapabilities []string         `json:"allowed_capabilities,omitempty"`

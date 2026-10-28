@@ -13,6 +13,10 @@ var (
 	currencyPattern = regexp.MustCompile(`^[A-Z]{3}$`)
 )
 
+func ValidateMethodChecks(methodID string, checks []string) error {
+	return uniqueIDs("method "+methodID+" required_checks", checks, 0, 128)
+}
+
 func Validate(c ReviewConfigV2) error {
 	if c.SchemaVersion != 2 {
 		return fmt.Errorf("policy: schema_version must be 2")

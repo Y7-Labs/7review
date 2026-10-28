@@ -134,6 +134,21 @@ This is an incremental behavior ledger, not a completion declaration.
   missing files without printing a successful validation receipt.
 - Verification: full uncached Go suite, targeted race tests and `go vet ./...`.
 
+## Slice 9: Complete Declared Method Registry
+
+- Red: unmatched missing/malformed/traversal/unknown-builtin methods were ignored,
+  model calls proceeded and preview showed no warning.
+- Green: SCM and frozen CI validate all unique methods declared by defaults and
+  the complete inline/imported pack registry before inference. Only effective
+  selected methods activate instructions/tools/checks; inactive methods remain
+  inspectable provenance, not execution authority.
+- Bound admission to 256 unique IDs and 1 MiB aggregate method content; shared
+  references read once. Check metadata IDs are valid/unique/bounded. Cancellation,
+  inactive-content digest binding and head-corpus exclusion have regressions.
+- A real Git fixture with an unmatched missing method fails CI admission before
+  a panic provider can run. Preview discloses the same error without enforcement.
+- Verification: uncached full Go suite and targeted pipeline/CI/review race tests.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
@@ -155,8 +170,8 @@ Method tool metadata cannot widen compiled runtime capabilities.
 
 ## Remaining
 
-Full method-reference registry qualification (including unmatched methods), further
-provider file-reader/confinement qualification, remaining effect capabilities;
+CLI method-registry qualification and provider file-reader/confinement qualification;
+remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

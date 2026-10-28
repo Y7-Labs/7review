@@ -23,14 +23,15 @@ type TrustedPolicyAdmission interface {
 }
 
 type TrustedPolicyResult struct {
-	Mode        string
-	Attestation review.SnapshotAttestation
-	Source      policy.Source
-	Effective   *policy.EffectivePolicy
-	Methods     []ResolvedPolicyMethod
-	Trigger     policy.TriggerDecision
-	Warning     string
-	Enforced    bool
+	Mode           string
+	Attestation    review.SnapshotAttestation
+	Source         policy.Source
+	Effective      *policy.EffectivePolicy
+	Methods        []ResolvedPolicyMethod
+	MethodRegistry []review.PolicyMethod
+	Trigger        policy.TriggerDecision
+	Warning        string
+	Enforced       bool
 }
 
 type SCMPolicyAdmission struct {
@@ -133,7 +134,7 @@ func (a SCMPolicyAdmission) Evaluate(ctx context.Context, req review.Request, sc
 		}
 		return TrustedPolicyResult{}, fmt.Errorf("trusted policy: compile: %w", err)
 	}
-	methods, err := resolvePolicyMethods(ctx, &effective, result.Source, func(ctx context.Context, path string) ([]byte, error) {
+	methods, registry, err := resolvePolicyMethodRegistry(ctx, &effective, result.Source, declaredPolicyMethods(config), func(ctx context.Context, path string) ([]byte, error) {
 		return a.Reader.ReadRepositoryFile(ctx, req.Provider, result.Source.RepositoryID, result.Source.Revision, path)
 	})
 	if err != nil {
@@ -146,6 +147,7 @@ func (a SCMPolicyAdmission) Evaluate(ctx context.Context, req review.Request, sc
 		return TrustedPolicyResult{}, err
 	}
 	result.Effective, result.Methods = &effective, methods
+	result.MethodRegistry = registry
 	return result, nil
 }
 
@@ -170,6 +172,7 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 		return projection
 	}
 	projection.Digest = result.Effective.Digest
+	projection.MethodRegistry = append([]review.PolicyMethod(nil), result.MethodRegistry...)
 	for _, rule := range result.Effective.Rules {
 		projection.Rules = append(projection.Rules, review.PolicyDocument{Kind: "rule", ID: rule.ID, Path: rule.Source.Path, Revision: result.Source.Revision, Digest: rule.Source.Digest})
 	}

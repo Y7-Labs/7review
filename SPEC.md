@@ -156,6 +156,15 @@ Proposed layout:
 All policy and method files are read from the trusted base snapshot. Head design
 documents are evidence for proposed intent, visibly distinct from existing
 authority. Paths are confined to the snapshot; symlinks cannot escape it.
+Method admission validates the complete unique registry declared by defaults and
+all inline/imported packs, including unmatched packs and inherited ancestors.
+The registry is bounded to 256 unique IDs and 1 MiB of aggregate method content;
+each method is read once per admission. Missing/invalid methods fail enforce
+admission before inference, while preview warns without activation. Method-declared
+check IDs must be unique valid IDs (maximum 128). Only effective selected methods
+contribute instructions, tools or required checks. Full registry provenance enters
+policy identity and persists separately from selected-method provenance. Proposed
+head corpus entries at declared method paths cannot activate an unmatched method.
 Unknown schema keys, duplicate IDs, missing references and inheritance cycles
 fail validation. No executable expressions, scripts or remote policy imports.
 ENG-D13: authority and delegation are evaluated before preference priority.
