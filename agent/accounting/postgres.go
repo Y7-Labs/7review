@@ -24,10 +24,11 @@ import (
 // Config is trusted host authority. Reconfiguration is deliberately refused in
 // v1 rather than creating a new allowance by changing currency/period/version.
 type Config struct {
-	BoundaryID string
-	ProjectID  string
-	Limits     review.ResourceLimits
-	Catalog    *Catalog
+	ReceiptVerifier ReceiptVerifier
+	BoundaryID      string
+	ProjectID       string
+	Limits          review.ResourceLimits
+	Catalog         *Catalog
 }
 type Authority struct {
 	db  *sql.DB
@@ -47,6 +48,9 @@ func NewAuthority(db *sql.DB, cfg Config) (*Authority, error) {
 
 //go:embed schema.sql
 var schemaSQL string
+
+//go:embed migration002.sql
+var migration002 string
 
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
@@ -70,17 +74,57 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(734021601)`); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, schemaSQL); err != nil {
+	var initialized bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname='budget_schema')`).Scan(&initialized); err != nil {
 		return err
+	}
+	if !initialized {
+		var existing int
+		if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND left(relname,7)='budget_'`).Scan(&existing); err != nil {
+			return err
+		}
+		if existing != 0 {
+			return errors.New("partial accounting schema requires recovery, not initialization")
+		}
+		if _, err = tx.ExecContext(ctx, schemaSQL); err != nil {
+			return err
+		}
 	}
 	var version int
 	if err = tx.QueryRowContext(ctx, `SELECT version FROM budget_schema WHERE singleton=true`).Scan(&version); err != nil {
 		return err
 	}
-	if version != 1 {
+	for _, table := range []string{"budget_attempts", "budget_scopes", "budget_actions", "budget_holds", "budget_routes"} {
+		if err = requireRelation(ctx, tx, table); err != nil {
+			return err
+		}
+	}
+	if version == 1 {
+		if _, err = tx.ExecContext(ctx, migration002); err != nil {
+			return err
+		}
+		version = 2
+	}
+	if version != 2 {
 		return errors.New("incompatible accounting schema")
 	}
+	for _, table := range []string{"budget_receipts", "budget_quarantine"} {
+		if err = requireRelation(ctx, tx, table); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func requireRelation(ctx context.Context, tx *sql.Tx, name string) error {
+	var present bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname=$1)`, name).Scan(&present); err != nil {
+		return err
+	}
+	if !present {
+		return fmt.Errorf("accounting relation %s missing; restore required", name)
+	}
+	return nil
 }
 
 func validateLimits(limits review.ResourceLimits) error {
@@ -317,6 +361,13 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 }
 
 func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested review.ResourceLimitScope) error {
+	var incident bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a JOIN budget_holds h ON h.action_id=a.id WHERE h.scope_id=$1 AND a.integrity_incident)`, ref.id).Scan(&incident); err != nil {
+		return err
+	}
+	if incident {
+		return ErrIntegrity
+	}
 	used := requested
 	if exceeds(used, ref.limit) {
 		return fmt.Errorf("%s budget exhausted", ref.kind)
@@ -362,7 +413,12 @@ func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPe
 	defer tx.Rollback()
 	var digest string
 	var previous []byte
-	if err = tx.QueryRowContext(ctx, `SELECT request_digest,outcome FROM budget_actions WHERE id=$1 FOR UPDATE`, p.ID).Scan(&digest, &previous); err != nil {
+	if err = lockActionScopes(ctx, tx, p.ID); err != nil {
+		return err
+	}
+	var upperJSON []byte
+	var incident bool
+	if err = tx.QueryRowContext(ctx, `SELECT request_digest,outcome,upper_amount,integrity_incident FROM budget_actions WHERE id=$1 FOR UPDATE`, p.ID).Scan(&digest, &previous, &upperJSON, &incident); err != nil {
 		return err
 	}
 	if digest != p.RequestDigest {
@@ -372,16 +428,30 @@ func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPe
 		if !bytes.Equal(previous, raw) {
 			return errors.New("outcome conflicts with durable receipt")
 		}
+		if incident {
+			return ErrIntegrity
+		}
 		return nil
 	}
 	state := "uncertain"
 	if o.ResponseReceived {
 		state = "result_recorded"
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE budget_actions SET outcome=$2,state=$3 WHERE id=$1`, p.ID, raw, state); err != nil {
+	var upper review.ResourceLimitScope
+	if err = json.Unmarshal(upperJSON, &upper); err != nil {
 		return err
 	}
-	return tx.Commit()
+	incident = incident || o.ElapsedMS > upper.ActiveMS
+	if _, err = tx.ExecContext(ctx, `UPDATE budget_actions SET outcome=$2,state=$3,integrity_incident=$4 WHERE id=$1`, p.ID, raw, state, incident); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if incident {
+		return ErrIntegrity
+	}
+	return nil
 }
 
 func limitScopes(l review.ResourceLimits) []review.ResourceLimitScope {
@@ -429,7 +499,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 1 {
+	if version != 2 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

@@ -361,6 +361,30 @@ This is an incremental behavior ledger, not a completion declaration.
   Final reconciliation, over-bound incidents, prospective reconfiguration and
   end-to-end intake/controller integration remain open. See `docs/accounting.md`.
 
+## Slice 22: Final Settlement, Integrity And Non-Destructive Migration
+
+- Red: real PostgreSQL final settlement was absent; receipt replay, origin-period
+  accounting, quarantine and over-bound usage had no implementation. A known
+  active-time overrun was ignored when token usage remained unknown.
+- Green: explicit trusted verification precedes final receipt settlement. One
+  atomic transaction replaces the three holds with actual usage in their origin
+  periods. Replay cannot double-charge or double-release. Partial/unverified
+  usage cannot settle; authenticated mismatches are quarantined. Closed attempts
+  remain closed after late settlement.
+- Over-bound actuals are recorded, not truncated, and an integrity incident
+  blocks new spend in every affected scope even after renewal. Known active-time
+  overruns block immediately without inventing token receipts.
+- Additional red: migration recreated a missing ledger table as empty accounting.
+  Migrations now distinguish initialization from repair, refuse missing/partial
+  stores and preserve existing sending actions/holds through the v1-to-v2 upgrade.
+- Tests include concurrent receipt replay, settlement rollback, late receipt
+  fencing, past-period actuals versus lifetime attempts and real-DB migration.
+- Verification: full uncached suite with PostgreSQL enabled, isolated real-DB
+  race script, formatting and `go vet ./...` passed.
+- Boundary: production verifier adapters, authenticated operator corrections,
+  end-to-end intake/currentness and non-model accounting remain open. Test
+  verifiers are not live provider-usage qualification.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

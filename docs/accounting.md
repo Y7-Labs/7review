@@ -23,12 +23,24 @@ does not authorize provider I/O. Provider calls run outside SQL transactions.
 Unknown usage and recorded responses without usage retain full holds, including
 across renewal periods. SQL failures never create an in-process allowance.
 
+Final settlement is a separate trusted reconciliation operation. It requires an
+explicit receipt verifier; no default implementation trusts worker flags. The
+transaction replaces a hold once, retaining the original period at every scope.
+Late settlement cannot reopen an attempt. Authenticated but unmatched receipts
+are quarantined. Over-bound actual usage is retained as actual, records an
+integrity incident and blocks further spending in the affected scopes across
+renewals. Known active-time overruns trigger the same block without waiting for
+token usage. Incident corrections still require a future authorized adjustment
+workflow; ordinary receipts cannot clear them.
+
 Migrations are explicit and versioned. Every accounting transaction checks schema
 compatibility and forces synchronous commit. Migration requires `fsync` and
 `full_page_writes` enabled. Use a dedicated restricted database/schema; request and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
+Schema v2 upgrades existing sending actions without clearing holds. A missing or
+partial ledger is an error, not permission to initialize an empty replacement.
 
 ## Token And Price Qualification
 
@@ -64,8 +76,8 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 ## Still Required
 
-- Verified final-usage reconciliation, origin-period settlement and over-bound
-  integrity handling.
+- Production receipt-verifier adapters and authenticated operator settlement
+  commands; library-level reconciliation tests use an explicit test verifier.
 - Canonical service/CI intake, durable currentness and action ownership wired
   end to end; prospective authority reconfiguration currently fails closed.
 - Live provider route qualification and attributable usage receipts.

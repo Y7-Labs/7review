@@ -431,7 +431,7 @@ func TestPostgresIncompatibleSchemaCannotSpendOrReinitialize(t *testing.T) {
 	if err := a.RegisterAttempt(context.Background(), i); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE budget_schema SET version=2`); err != nil {
+	if _, err := db.Exec(`UPDATE budget_schema SET version=999`); err != nil {
 		t.Fatal(err)
 	}
 	if err := Migrate(context.Background(), db); err == nil {
