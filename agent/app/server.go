@@ -99,6 +99,7 @@ func NewServer() (*Server, error) {
 		s.pipeline.TrustedPolicy = pipeline.SCMPolicyAdmission{
 			Mode: cfg.PolicyV2Mode, Path: cfg.PolicyV2Path, Reader: router,
 			RuntimeCapabilities: append([]string(nil), cfg.PolicyRuntimeCapabilities...),
+			RuntimeCeilings:     cfg.PolicyRuntimeCeilings,
 		}
 	}
 	s.pipeline.ContextReducer = tools.NewHeadroomReducer(cfg.HeadroomURL, time.Duration(cfg.HeadroomTimeout)*time.Millisecond)

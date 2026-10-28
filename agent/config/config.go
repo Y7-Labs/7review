@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/Y4NN777/7review/agent/policy"
 )
 
 // Config holds all runtime settings, loaded from environment variables.
@@ -43,6 +45,7 @@ type Config struct {
 	PolicyV2Mode                string
 	PolicyV2Path                string
 	PolicyRuntimeCapabilities   []string
+	PolicyRuntimeCeilings       *policy.LimitsV2
 
 	// ── GitLab ────────────────────────────────────────────────────────────
 	GitLabURL     string
@@ -157,6 +160,13 @@ func LoadConfig() (*Config, error) {
 	if c.ReviewModel == "" {
 		c.ReviewModel = defaultModel(c.Provider, true)
 	}
+	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {
+		limits, err := policy.DecodeOperatorCeilings([]byte(raw))
+		if err != nil {
+			return nil, fmt.Errorf("POLICY_RUNTIME_CEILINGS_JSON: %w", err)
+		}
+		c.PolicyRuntimeCeilings = &limits
+	}
 	if c.SmallModel == "" {
 		c.SmallModel = defaultModel(c.Provider, false)
 	}
@@ -165,6 +175,9 @@ func LoadConfig() (*Config, error) {
 	}
 
 	var missing []string
+	if c.PolicyV2Mode == "enforce" && c.PolicyRuntimeCeilings == nil {
+		missing = append(missing, "POLICY_RUNTIME_CEILINGS_JSON is required in enforce mode")
+	}
 	hasGitLab := c.GitLabURL != "" && c.GitLabToken != "" && c.WebhookSecret != ""
 	hasGitHub := c.GitHubAPIURL != "" && c.GitHubToken != "" && c.GitHubWebhookSecret != ""
 	if !hasGitLab && !hasGitHub {

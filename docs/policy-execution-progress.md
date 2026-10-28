@@ -255,6 +255,18 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: this is compilation authority, not runtime usage enforcement. Runtime
   wiring and dispatch authorization remain open at this slice.
 
+## Slice 17: Trusted Runtime Ceiling Configuration
+
+- Red: enforce-mode configuration accepted absent/malformed operator ceilings.
+- Green: closed versioned `POLICY_RUNTIME_CEILINGS_JSON` is host configuration,
+  never a repository default. Missing members, duplicate/unknown keys, unsupported
+  versions and invalid values fail; enforce-mode service configuration requires it.
+- Service and CI admission receive the trusted limits. Real CI fixtures prove
+  attempt/change/project increases are rejected before a panic provider can run.
+- Verification: full uncached suite and targeted policy/config/CI race tests.
+- Boundary: these checks do not reserve spend or police aggregate usage. Dispatch
+  must separately refuse missing/unavailable accounting authority.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

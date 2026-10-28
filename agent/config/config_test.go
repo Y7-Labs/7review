@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestEnforcedRuntimeRequiresValidOperatorCeilings(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "agent-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("POLICY_V2_MODE", "enforce")
+	for _, raw := range []string{"", `{"schema_version":1,"limits":{}}`, "malformed"} {
+		t.Setenv("POLICY_RUNTIME_CEILINGS_JSON", raw)
+		if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "POLICY_RUNTIME_CEILINGS_JSON") {
+			t.Fatalf("enforced runtime accepted missing/invalid operator ceilings: %v", err)
+		}
+	}
+}
+
 func TestLoadConfig_RequiresHeadroomAndMemPalace(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "token")
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")

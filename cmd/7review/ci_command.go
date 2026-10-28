@@ -5,11 +5,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	cirunner "github.com/Y4NN777/7review/agent/ci"
 	"github.com/Y4NN777/7review/agent/orchestrator"
+	"github.com/Y4NN777/7review/agent/policy"
 )
 
 type repeatedFlag []string
@@ -73,6 +75,14 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 		return 2, err
 	}
 	var orch *orchestrator.Orchestrator
+	var ceilings *policy.LimitsV2
+	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {
+		limits, err := policy.DecodeOperatorCeilings([]byte(raw))
+		if err != nil {
+			return 2, fmt.Errorf("POLICY_RUNTIME_CEILINGS_JSON: %w", err)
+		}
+		ceilings = &limits
+	}
 	if !environment.UntrustedFork {
 		orch, _, err = cirunner.BuildModelOrchestratorFromEnvironment()
 		if err != nil {
@@ -85,6 +95,7 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 		RepositoryDir: *repositoryDir, PolicyPath: *policyPath, SkillsPath: *skillsPath,
 		Offline: *offline, Environment: environment, DeadlineAt: time.Now().UTC().Add(*deadline),
 		Quality: artifactRefs, DependencyGraph: dependencyGraph, Orchestrator: orch,
+		RuntimeCeilings: ceilings,
 	})
 	if err != nil {
 		return 2, err

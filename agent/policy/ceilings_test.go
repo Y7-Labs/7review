@@ -1,6 +1,7 @@
 package policy
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,30 @@ func TestOperatorCeilingsRejectIncomparableOrInvalidLimits(t *testing.T) {
 				t.Fatalf("invalid operator authority accepted: err=%v", err)
 			}
 		})
+	}
+}
+
+func TestOperatorCeilingsDocumentIsClosedAndComplete(t *testing.T) {
+	data, err := json.Marshal(struct {
+		SchemaVersion int      `json:"schema_version"`
+		Limits        LimitsV2 `json:"limits"`
+	}{1, validConfig().Limits})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeOperatorCeilings(data); err != nil {
+		t.Fatal(err)
+	}
+	for _, raw := range []string{
+		strings.Replace(string(data), `"schema_version":1`, `"schema_version":2`, 1),
+		strings.Replace(string(data), `"schema_version":1`, `"schema_version":1,"unknown":true`, 1),
+		strings.Replace(string(data), `"model_calls":10`, `"model_calls":10,"model_calls":10`, 1),
+		strings.Replace(string(data), `"model_calls":10,`, ``, 1),
+		string(data) + "{}",
+	} {
+		if _, err := DecodeOperatorCeilings([]byte(raw)); err == nil {
+			t.Fatalf("invalid ceilings accepted: %s", raw)
+		}
 	}
 }
 

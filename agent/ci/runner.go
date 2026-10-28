@@ -40,6 +40,7 @@ type Options struct {
 	Orchestrator    *orchestrator.Orchestrator
 	HTTPClient      *http.Client
 	Now             func() time.Time
+	RuntimeCeilings *policy.LimitsV2
 }
 
 type Result struct {
@@ -108,7 +109,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 	admission := pipeline.FrozenPolicyAdmission{
-		Path: opts.PolicyPath, Reader: adapter, RuntimeCapabilities: []string{"repo.read", "model.review"}, Now: opts.Now,
+		Path: opts.PolicyPath, Reader: adapter, RuntimeCapabilities: []string{"repo.read", "model.review"}, RuntimeCeilings: opts.RuntimeCeilings, Now: opts.Now,
 	}
 	policyResult, err := admission.Evaluate(ctx, req, scm)
 	if err != nil {
