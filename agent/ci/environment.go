@@ -130,11 +130,14 @@ func detectGitHubEnvironment() (Environment, error) {
 		return env, fmt.Errorf("decode GitHub event: %w", err)
 	}
 	pr := event.PullRequest
+	if pr.Number <= 0 || pr.Base.Repo.FullName == "" || !strings.EqualFold(pr.Base.Repo.FullName, env.RepositoryID) {
+		return env, errors.New("GitHub pull request target identity does not match the hosted repository")
+	}
 	env.BaseRevision, env.HeadRevision = pr.Base.SHA, pr.Head.SHA
 	env.ChangeID = strconv.Itoa(pr.Number)
 	env.Title, env.Description, env.WebURL, env.Author = pr.Title, pr.Body, pr.HTMLURL, pr.User.Login
 	env.SourceBranch, env.TargetBranch = pr.Head.Ref, pr.Base.Ref
-	env.UntrustedFork = pr.Head.Repo.FullName != "" && pr.Base.Repo.FullName != "" && !strings.EqualFold(pr.Head.Repo.FullName, pr.Base.Repo.FullName)
+	env.UntrustedFork = pr.Head.Repo.FullName == "" || !strings.EqualFold(pr.Head.Repo.FullName, pr.Base.Repo.FullName)
 	if env.MergeRevision == env.HeadRevision || env.MergeRevision == env.BaseRevision {
 		env.MergeRevision = ""
 	}
@@ -146,6 +149,9 @@ func detectGitLabEnvironment() (Environment, error) {
 	if err != nil {
 		return Environment{}, err
 	}
+	if strings.TrimSpace(os.Getenv("CI_PROJECT_ID")) == "" {
+		return Environment{}, errors.New("GitLab CI_PROJECT_ID is required for stable project identity")
+	}
 	head := firstEnvironment("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA", "CI_COMMIT_SHA")
 	comparison := os.Getenv("CI_COMMIT_SHA")
 	if comparison == head || comparison == os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA") {
@@ -153,7 +159,7 @@ func detectGitLabEnvironment() (Environment, error) {
 	}
 	return Environment{
 		Host: host, RunAttempt: firstEnvironment("CI_JOB_ID"),
-		Provider: "gitlab", RepositoryID: firstEnvironment("CI_PROJECT_PATH", "CI_PROJECT_ID"),
+		Provider: "gitlab", RepositoryID: os.Getenv("CI_PROJECT_ID"),
 		BaseRevision: firstEnvironment("CI_MERGE_REQUEST_DIFF_BASE_SHA", "CI_MERGE_REQUEST_TARGET_BRANCH_SHA"),
 		HeadRevision: head, MergeRevision: comparison, PipelineID: os.Getenv("CI_PIPELINE_ID"), JobID: os.Getenv("CI_JOB_ID"),
 		ChangeID: os.Getenv("CI_MERGE_REQUEST_IID"), Title: os.Getenv("CI_MERGE_REQUEST_TITLE"),
@@ -166,7 +172,7 @@ func detectGitLabEnvironment() (Environment, error) {
 func sourceProjectDiffers() bool {
 	source := os.Getenv("CI_MERGE_REQUEST_SOURCE_PROJECT_ID")
 	target := os.Getenv("CI_PROJECT_ID")
-	return source != "" && target != "" && source != target
+	return source == "" || target == "" || source != target
 }
 
 func applyOverrides(env *Environment, values EnvironmentOverrides) error {
