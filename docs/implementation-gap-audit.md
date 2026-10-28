@@ -141,11 +141,16 @@ Requirements: R05, R10, R14; SPEC 6/10; ENG-D6-D11.
 - Wire operator ceilings into service/CI admission and enforce them at execution,
   not merely while parsing configuration.
 
-Evidence: [LimitScopeV2](../agent/policy/schema.go) and compiler validation exist.
-Service/CI admission do not populate runtime ceilings; no accounting executor
-consumes the configured limits. [Orchestrator](../agent/orchestrator/orchestrator.go)
-limits per-role output/parallelism, not total spend. The pipeline uses a constant
-three read-tool rounds, not the target budget controller.
+Evidence update (2026-10-28): trusted host ceilings now reach service/CI admission
+and bind effective identity. [Dispatch guard](../agent/orchestrator/budget.go)
+requires reservation before bounded model I/O, with terminal denial and unknown
+usage retention. No production accounting authority is installed: enforced
+inference fails closed rather than spending against local counters. PostgreSQL
+coordination, canonical attempt/action wiring, token/price qualification, usage
+receipts and non-model resource accounting remain missing. Test-only authorities
+demonstrate call ordering and shared admission, not the required real-DB exit.
+The pipeline still uses a constant three read-tool rounds, not the target budget
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-19.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/config"
@@ -185,8 +187,8 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 
 	findings, coverage, parseStatus, parseWarning, err := p.runReview(ctx, run.ID, rc)
 	if err != nil {
-		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-		return err
+		rc.Source.Model = modelReviewAudit(rc, nil, nil, parseStatus, err.Error())
+		return p.failModelReview(ctx, run.ID, rc, err)
 	}
 	rc.Source.SkillCoverage = coverage
 	rc.Findings = findings
@@ -203,7 +205,11 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	coverageWarnings := validateSkillCoverage(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	coverageErrors := coreSkillCoverageErrors(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	if len(coverageErrors) > 0 {
-		if repairedCoverage, repairErr := p.repairSkillCoverage(ctx, rc); repairErr == nil && len(repairedCoverage) > 0 {
+		repairedCoverage, repairErr := p.repairSkillCoverage(ctx, rc)
+		if terminalModelError(repairErr) {
+			return p.failModelReview(ctx, run.ID, rc, repairErr)
+		}
+		if repairErr == nil && len(repairedCoverage) > 0 {
 			rc.Source.SkillCoverage = repairedCoverage
 			coverageWarnings = validateSkillCoverage(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 			coverageErrors = coreSkillCoverageErrors(rc.Source.SkillActivations, rc.Source.SkillCoverage)
@@ -341,6 +347,20 @@ func mergeEffectivePolicyActivation(activations []review.SkillActivation, projec
 		Name: "effective-policy", Path: projection.SourceRevision, Category: "policy", ReviewDomain: "project",
 		RequiredChecks: missing, Required: true, Reason: "trusted effective policy requires auditable review coverage",
 	})
+}
+
+func terminalModelError(err error) bool {
+	return orchestrator.IsBudgetError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+func (p *Pipeline) failModelReview(ctx context.Context, runID string, rc *review.Context, cause error) error {
+	// This boundary precedes finding validation; candidates remain raw audit only.
+	rc.Source.Findings = nil
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	saveErr := p.Jobs.SaveContext(persistCtx, runID, rc)
+	updateErr := p.Jobs.Update(persistCtx, runID, StatusFailed, cause)
+	return errors.Join(cause, saveErr, updateErr)
 }
 
 func (p *Pipeline) publishInlineDraftComments(ctx context.Context, scm *review.SCMContext, rc *review.Context, findings []review.Finding) []review.InlineComment {
@@ -1295,7 +1315,11 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 		return findings, coverage, "tool_loop_incomplete", "model requested more tool rounds than the configured limit", nil
 	}
 	if status == "unparseable" && strings.TrimSpace(rawForRepair) != "" {
-		if repaired, repairStatus, repairErr := p.repairFindingsJSON(ctx, rc, rawForRepair); repairErr == nil {
+		repaired, repairStatus, repairErr := p.repairFindingsJSON(ctx, rc, rawForRepair)
+		if terminalModelError(repairErr) {
+			return nil, coverage, "error", "", repairErr
+		}
+		if repairErr == nil {
 			if repairedFindings, ok := parseRepairedFindings(repaired, repairStatus); ok {
 				rc.AddFindings(repaired)
 				return repairedFindings, coverage, repairStatus, "model returned malformed findings JSON; formatter repaired it before validation", nil

@@ -69,9 +69,14 @@ type budgetError struct{ err error }
 
 func (e *budgetError) Error() string { return "orchestrator: budget: " + e.err.Error() }
 func (e *budgetError) Unwrap() error { return e.err }
-func fatalDispatch(err error) bool {
+
+// IsBudgetError identifies terminal accounting failures across caller wrappers.
+func IsBudgetError(err error) bool {
 	var budget *budgetError
-	return errors.As(err, &budget) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return errors.As(err, &budget)
+}
+func fatalDispatch(err error) bool {
+	return IsBudgetError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec ModelSpec, role ModelRole, step string, req LLMRequest, invoke func(context.Context) (string, error)) (string, error) {

@@ -295,6 +295,27 @@ This is an incremental behavior ledger, not a completion declaration.
   usage receipts and non-model effect/tool accounting remain open. Scoped
   conflicts have not been started.
 
+## Slice 19: Terminal Budget Failure And Partial Audit Recovery
+
+- Red: a coverage-repair reservation denial was swallowed and the pipeline
+  synthesized coverage then drafted successfully. A JSON-repair denial triggered
+  another repair and obscured the budget failure. Initial model denial also lost
+  admitted policy/ceiling provenance in the failed service run.
+- Green: accounting failures and cancellation are terminal across both repair
+  callers. No synthesis, additional repair or draft follows denial. Partial model
+  audit and policy limits are saved using bounded cancellation-independent
+  persistence; persistence errors remain visible to the caller. CI recovers that
+  partial source on failure and keeps the gate incomplete.
+- An additional red fixture caught unvalidated model candidates escaping through
+  that partial snapshot. Failed pre-validation runs now retain raw audit only,
+  not accepted finding projections.
+- Verification: focused denial/repair/cancellation tests include a context-aware
+  failing store and a real frozen-Git CI run that retains its first model response
+  after repair-budget exhaustion. Full uncached suite, orchestrator/CI/pipeline
+  race tests, formatting and `go vet ./...` passed.
+- Boundary: this is conservative failure handling, not a durable ledger or a
+  claim that resource accounting is complete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

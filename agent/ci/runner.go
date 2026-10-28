@@ -150,6 +150,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		}
 		if runErr := reviewPipeline.Run(ctx, req); runErr != nil {
 			result.IncompleteReasons = append(result.IncompleteReasons, "review execution failed: "+runErr.Error())
+			recoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			runs, listErr := store.List(recoveryCtx)
+			cancel()
+			if listErr == nil && len(runs) == 1 && runs[0].Source != nil {
+				source = runs[0].Source.Clone()
+				source.Execution = execution
+			}
 		} else {
 			runs, listErr := store.List(ctx)
 			if listErr != nil || len(runs) != 1 || runs[0].Source == nil {

@@ -30,6 +30,15 @@ example now includes its method file. Verification is local deterministic/race/G
 fixture evidence; hosted-provider qualification, operator ceilings, scoped conflicts
 and the rest of G04 remain open.
 
+Operator-ceiling update: trusted host limits now bind service/CI admission and
+effective identity. Every bounded model dispatch requires a reservation receipt;
+parallel batches, fallbacks, formatter/repair and streaming calls share that
+boundary. Budget denial is terminal, and failed runs retain partial audit state.
+There is no production durable budget backend or trustworthy token/price receipt
+path yet: enforced inference intentionally fails closed. Test authorities do not
+qualify aggregate accounting. G01-G03 remain prerequisites for completing ceilings;
+scoped conflicts have not been started in this slice.
+
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
 running with healthy agent/Headroom/MemPalace containers, authenticated CLI/TUI
