@@ -333,7 +333,7 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: this is the bound calculator, not durable admission or live route
   qualification. No default service route becomes spend-authorized.
 - Verification: accounting unit and race tests pass. Full-suite verification is
-  temporarily blocked by an outside edit removing committed CI ceiling wiring;
+  temporarily blocked by an unattributed edit removing committed CI ceiling wiring;
   that unrelated removal is not included in this slice.
 
 ## Slice 21: Real PostgreSQL Shared Model Admission
@@ -355,7 +355,7 @@ This is an incremental behavior ledger, not a completion declaration.
 - PostgreSQL migrations and pgx are explicit. Go remains 1.24; no default service
   route or legacy attempt is silently promoted into coordinated accounting.
 - Verification: full uncached suite with real PostgreSQL enabled, isolated
-  PostgreSQL race script, formatting and `go vet ./...` pass. The outside CI
+  PostgreSQL race script, formatting and `go vet ./...` pass. The unattributed CI
   removal noted in slice 20 was restored with explicit user authorization.
 - Boundary: synchronous model admission only, not the complete action journal.
   Final reconciliation, over-bound incidents, prospective reconfiguration and
@@ -384,6 +384,25 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: production verifier adapters, authenticated operator corrections,
   end-to-end intake/currentness and non-model accounting remain open. Test
   verifiers are not live provider-usage qualification.
+
+## Slice 23: Expiring Authority And Cross-Project Receipt Races
+
+- Red: an expired reservation permit still reached the model provider. A real
+  PostgreSQL lock wait could outlive a price contract and commit a stale quote.
+  Concurrent conflicting receipt IDs in unrelated projects settled only once
+  but lost the losing receipt's quarantine record.
+- Green: permits carry the earliest execution/qualification deadline and
+  dispatch applies it before provider I/O. Admission rechecks the database clock
+  after qualification locking, then binds the current period and price. A
+  transaction-scoped receipt identity lock serializes receipt conflicts before
+  scope locks, preserving quarantine without double settlement.
+- Test evidence includes an actual blocked PostgreSQL session held through price
+  expiry and a delayed-insert trigger reproducing the cross-project receipt race.
+- Verification: full uncached suite with PostgreSQL enabled, isolated real-DB
+  race suite, formatting and `go vet ./...` passed.
+- Workspace note: earlier working-file drift was restored to verified commits
+  with user authorization. Its writer/root cause is not established; opening the
+  changes view was reported as correlated timing, not proven cause.
 
 ## Method File Example
 

@@ -144,13 +144,15 @@ Requirements: R05, R10, R14; SPEC 6/10; ENG-D6-D11.
 Evidence update (2026-10-28): trusted host ceilings now reach service/CI admission
 and bind effective identity. [Dispatch guard](../agent/orchestrator/budget.go)
 requires reservation before bounded model I/O, with terminal denial and unknown
-usage retention. No production accounting authority is installed: enforced
-inference fails closed rather than spending against local counters. PostgreSQL
-coordination, canonical attempt/action wiring, token/price qualification, usage
-receipts and non-model resource accounting remain missing. Test-only authorities
-demonstrate call ordering and shared admission, not the required real-DB exit.
+usage retention. The [PostgreSQL authority](../agent/accounting/postgres.go) now
+has real-DB concurrency, rollback, worker-death, receipt settlement and integrity
+tests. Conservative exact-route token/price bounds have no live-model defaults;
+receipt verifier adapters are not implemented. Canonical service/CI intake and
+currentness are not connected to this backend, so default enforced inference
+still fails closed. Non-model resource accounting, prospective reconfiguration,
+operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-19.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-23.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

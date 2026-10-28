@@ -49,6 +49,10 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Receipt identity precedes scope locks even for unrelated projects.
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, r.ReceiptID); err != nil {
+		return err
+	}
 	if err = lockActionScopes(ctx, tx, r.ActionID); err != nil {
 		return err
 	}

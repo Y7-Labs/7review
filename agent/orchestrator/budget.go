@@ -2,8 +2,8 @@ package orchestrator
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,7 +24,7 @@ type BudgetAuthority interface {
 }
 
 type DispatchIntent struct {
-	ActionID string
+	ActionID                                                 string
 	Provider, Model, Role, Step, RequestDigest, PolicyDigest string
 	Payload                                                  []byte
 	Attempt                                                  review.AttemptIdentity
@@ -34,10 +34,15 @@ type DispatchIntent struct {
 	OperatorCeilings                                         review.ResourceLimits
 }
 
-type DispatchPermit struct{ ID, RequestDigest string; AlreadyStarted bool; ActiveMS int64 }
+type DispatchPermit struct {
+	ID, RequestDigest string
+	AlreadyStarted    bool
+	ActiveMS          int64
+	NotAfter          time.Time
+}
 
 type DispatchOutcome struct {
-	Response []byte
+	Response         []byte
 	ResponseReceived bool
 	ResponseDigest   string
 	ElapsedMS        int64
@@ -124,9 +129,11 @@ func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec Mo
 	}
 	digest := sha256.Sum256(payload)
 	var actionBytes [16]byte
-	if _,err:=rand.Read(actionBytes[:]);err!=nil{return deny("cannot create action identity")}
-	requestDigest:="sha256:"+hex.EncodeToString(digest[:])
-	intent := DispatchIntent{ActionID:hex.EncodeToString(actionBytes[:]),Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
+	if _, err := rand.Read(actionBytes[:]); err != nil {
+		return deny("cannot create action identity")
+	}
+	requestDigest := "sha256:" + hex.EncodeToString(digest[:])
+	intent := DispatchIntent{ActionID: hex.EncodeToString(actionBytes[:]), Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
 	if rc != nil {
 		intent.Attempt = rc.Source.Attempt
 		intent.Execution = rc.Source.Execution
@@ -147,18 +154,29 @@ func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec Mo
 	if permit.ID == "" || permit.RequestDigest != requestDigest {
 		return deny("invalid reservation receipt")
 	}
-	if permit.AlreadyStarted{return deny("action already started; reconcile without resending")}
-	if permit.ActiveMS<0||permit.ActiveMS>active{return deny("invalid reserved active-time bound")}
-	if permit.ActiveMS>0{active=permit.ActiveMS}
+	if permit.AlreadyStarted {
+		return deny("action already started; reconcile without resending")
+	}
+	if permit.ActiveMS < 0 || permit.ActiveMS > active {
+		return deny("invalid reserved active-time bound")
+	}
+	if permit.ActiveMS > 0 {
+		active = permit.ActiveMS
+	}
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(active)*time.Millisecond)
 	defer cancel()
+	if !permit.NotAfter.IsZero() {
+		deadlineCtx, stop := context.WithDeadline(callCtx, permit.NotAfter)
+		defer stop()
+		callCtx = deadlineCtx
+	}
 	start := time.Now()
 	var result string
 	if err = callCtx.Err(); err == nil {
 		result, err = invoke(callCtx)
 	}
 	responseDigest := sha256.Sum256([]byte(result))
-	outcome := DispatchOutcome{Response:[]byte(result),ResponseReceived: err == nil, ResponseDigest: "sha256:"+hex.EncodeToString(responseDigest[:]), ElapsedMS: time.Since(start).Milliseconds()}
+	outcome := DispatchOutcome{Response: []byte(result), ResponseReceived: err == nil, ResponseDigest: "sha256:" + hex.EncodeToString(responseDigest[:]), ElapsedMS: time.Since(start).Milliseconds()}
 	recordCtx, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer stop()
 	if recordErr := o.budgetAuthority.RecordOutcome(recordCtx, permit, outcome); recordErr != nil {

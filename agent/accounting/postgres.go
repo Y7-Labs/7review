@@ -332,6 +332,17 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	if err = ensureRouteContract(ctx, tx, quote); err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
+	// Contract locking can wait across price expiry or a period boundary.
+	if err = tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	if !now.Before(i.Execution.DeadlineAt) {
+		return orchestrator.DispatchPermit{}, errors.New("execution deadline expired during admission")
+	}
+	quote, err = a.cfg.Catalog.Quote(i, now)
+	if err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
 	upper := review.ResourceLimitScope{ModelCalls: 1, InputTokens: quote.InputTokens, OutputTokens: quote.OutputTokens, MoneyMicro: quote.MoneyMicro, ActiveMS: quote.ActiveMS}
 	for n := range refs {
 		if refs[n].kind != "attempt" {
@@ -357,7 +368,11 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	if err = tx.Commit(); err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
-	return orchestrator.DispatchPermit{ID: i.ActionID, RequestDigest: i.RequestDigest, ActiveMS: quote.ActiveMS}, nil
+	notAfter := i.Execution.DeadlineAt
+	if quote.Qualification.ValidUntil.Before(notAfter) {
+		notAfter = quote.Qualification.ValidUntil
+	}
+	return orchestrator.DispatchPermit{ID: i.ActionID, RequestDigest: i.RequestDigest, ActiveMS: quote.ActiveMS, NotAfter: notAfter}, nil
 }
 
 func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested review.ResourceLimitScope) error {

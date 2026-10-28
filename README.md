@@ -378,7 +378,7 @@ fields, invalid values and requested increases are rejected. Enforce-mode servic
 configuration requires this document. Do not derive operator authority from the
 repository being reviewed.
 
-**Runtime limitation:** enforced model dispatch currently fails closed because
+**Runtime limitation:** default enforced model dispatch remains fail-closed because
 the default service/CI intake is not yet connected to canonical durable attempt
 registration and qualified routes. A PostgreSQL accounting package and conservative
 route-bound calculator exist with real database tests; they are not automatically

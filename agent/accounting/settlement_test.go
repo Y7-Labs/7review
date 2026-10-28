@@ -381,3 +381,55 @@ func TestPostgresMigrationCannotReplaceMissingLedgerWithEmptyStore(t *testing.T)
 		t.Fatal("damaged ledger silently recreated as empty accounting")
 	}
 }
+
+func TestPostgresConcurrentConflictingReceiptIdentityIsQuarantined(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	a := ledgerAuthority(t, db, l)
+	i := ledgerIntent(t, db, "one", "7", l)
+	admit(t, a, i)
+	cfg := a.cfg
+	cfg.ProjectID = "other-project"
+	b, err := NewAuthority(db, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	j := ledgerIntent(t, db, "two", "8", l)
+	admit(t, b, j)
+	if _, err = db.Exec(`CREATE FUNCTION delay_receipt() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.15); RETURN NEW; END $$; CREATE TRIGGER delay_receipt_insert BEFORE INSERT ON budget_receipts FOR EACH ROW EXECUTE FUNCTION delay_receipt()`); err != nil {
+		t.Fatal(err)
+	}
+	r1, r2 := finalReceipt(i), finalReceipt(j)
+	r2.ReceiptID = r1.ReceiptID
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errs := make(chan error, 2)
+	for n, r := range []FinalReceipt{r1, r2} {
+		wg.Add(1)
+		go func(n int, r FinalReceipt) {
+			defer wg.Done()
+			<-start
+			authority := a
+			if n == 1 {
+				authority = b
+			}
+			errs <- reconciler(authority).SettleFinal(context.Background(), r)
+		}(n, r)
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+	successes := 0
+	for err := range errs {
+		if err == nil {
+			successes++
+		}
+	}
+	var quarantined int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_quarantine`).Scan(&quarantined); err != nil {
+		t.Fatal(err)
+	}
+	if successes != 1 || quarantined != 1 {
+		t.Fatalf("racing receipt conflict lost audit: settled=%d quarantined=%d", successes, quarantined)
+	}
+}

@@ -58,6 +58,9 @@ not provider qualification: operators must establish the underlying contract.
 Unknown routes fail closed. Integer micro-prices round upward; overflow denies.
 The ledger preserves the complete qualified contract and refuses same-version
 price rewrites. Configured active-time holds are enforced by dispatch deadlines.
+Qualification is rechecked after lock waits. Permits expire at the earlier
+execution or qualification deadline, so a stalled sender cannot use stale price
+authority. Receipt identity conflicts are serialized even across project scopes.
 
 ## Verification
 

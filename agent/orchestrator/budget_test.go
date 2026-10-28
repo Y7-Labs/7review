@@ -27,6 +27,7 @@ type recordingBudget struct {
 	badReceipt bool
 	replay     bool
 	activeMS   int64
+	notAfter   time.Time
 }
 
 func (b *recordingBudget) ReserveAndBegin(_ context.Context, i DispatchIntent) (DispatchPermit, error) {
@@ -36,7 +37,7 @@ func (b *recordingBudget) ReserveAndBegin(_ context.Context, i DispatchIntent) (
 		return DispatchPermit{}, errors.New("shared capacity exhausted")
 	}
 	b.intents = append(b.intents, i)
-	p := DispatchPermit{ID: fmt.Sprint(len(b.intents)), RequestDigest: i.RequestDigest, AlreadyStarted: b.replay, ActiveMS: b.activeMS}
+	p := DispatchPermit{ID: fmt.Sprint(len(b.intents)), RequestDigest: i.RequestDigest, AlreadyStarted: b.replay, ActiveMS: b.activeMS, NotAfter: b.notAfter}
 	if b.badReceipt {
 		p.RequestDigest = "wrong"
 	}
@@ -225,6 +226,16 @@ func TestReservedActiveTimeBoundIsEnforcedByDispatch(t *testing.T) {
 	_, err := o.Complete(context.Background(), fundedContext(l), RoleReasoner, "test", "system", "user")
 	if !errors.Is(err, context.DeadlineExceeded) || len(authority.outcomes) != 1 {
 		t.Fatalf("reserved active bound lost: %v", err)
+	}
+}
+
+func TestExpiredReservationCannotSendUnderOldPriceAuthority(t *testing.T) {
+	l := budgetTestLimits()
+	authority := &recordingBudget{notAfter: time.Now().Add(-time.Second)}
+	o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": forbiddenPolicyProvider{t}}, WithOperatorCeilings(&l), WithBudgetAuthority(authority))
+	_, err := o.Complete(context.Background(), fundedContext(l), RoleReasoner, "test", "system", "user")
+	if err == nil || len(authority.outcomes) != 1 || authority.outcomes[0].ResponseReceived {
+		t.Fatalf("expired reservation reached I/O: %v %#v", err, authority.outcomes)
 	}
 }
 

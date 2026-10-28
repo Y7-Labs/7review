@@ -465,6 +465,75 @@ func TestPostgresRegisteredAttemptCannotSwitchProjects(t *testing.T) {
 	}
 }
 
+func TestPostgresExpiredPriceAfterLockWaitCannotCommitNewHold(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	a := ledgerAuthority(t, db, l)
+	var now time.Time
+	if err := db.QueryRow(`SELECT clock_timestamp()`).Scan(&now); err != nil {
+		t.Fatal(err)
+	}
+	r := a.cfg.Catalog.routes[0]
+	r.Version = "expiring-version"
+	r.ValidFrom = now.Add(-time.Hour)
+	r.ValidUntil = now.Add(time.Second)
+	c, _ := NewCatalog([]RouteBound{r})
+	cfg := a.cfg
+	cfg.Catalog = c
+	var err error
+	a, err = NewAuthority(db, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := ledgerIntent(t, db, "one", "7", l)
+	admit(t, a, i)
+	j := ledgerIntent(t, db, "two", "8", l)
+	if err = a.RegisterAttempt(context.Background(), j); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var id string
+	if err = tx.QueryRow(`SELECT id FROM budget_routes FOR UPDATE`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := a.ReserveAndBegin(ctx, j); done <- err }()
+	blocked := false
+	for deadline := time.Now().Add(500 * time.Millisecond); time.Now().Before(deadline); {
+		var count int
+		if err = db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE '%qualification_digest FROM budget_routes%'`).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count > 0 {
+			blocked = true
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if !blocked {
+		t.Fatal("fixture did not reach price-contract lock wait")
+	}
+	if delay := time.Until(r.ValidUntil.Add(20 * time.Millisecond)); delay > 0 {
+		time.Sleep(delay)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err = <-done; err == nil {
+		t.Fatal("expired price contract authorized a new reservation after lock wait")
+	}
+	var actions int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_actions`).Scan(&actions); err != nil || actions != 1 {
+		t.Fatalf("expired price left a new hold: actions=%d err=%v", actions, err)
+	}
+}
+
 func TestPostgresRollbackLeavesNoActionOrPartialHold(t *testing.T) {
 	db, _ := postgresFixture(t)
 	limits := ledgerLimits()
