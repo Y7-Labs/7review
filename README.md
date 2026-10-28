@@ -105,6 +105,9 @@ requirements differ from the target's independent effects and optional enrichmen
 
 ## Existing Runtime
 
+For the isolated local Docker deployment, architecture and behavior-test checklist,
+see [Local Alpha](docs/local-alpha.md).
+
 7review is usable as a local-first draft review agent for GitHub pull requests
 and GitLab merge requests. Operators can manually request a review for a
 specific PR/MR, while SCM webhooks are policy-gated before they enqueue work.

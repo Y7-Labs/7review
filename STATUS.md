@@ -5,6 +5,15 @@ Current phase: PHASE 1 COMPLETE; PHASE 2 IN PROGRESS.
 
 ## Current Direction
 
+Local alpha update (2026-10-28): channel protocol/authentication hardening and
+retried-callback deduplication are implemented. The isolated Docker stack is
+running with healthy agent/Headroom/MemPalace containers, authenticated CLI/TUI
+status, real sidecar reduce/write/recall smoke and a local formatter inference.
+Cold MemPalace initialization and health blocking behind memory work were fixed
+with regression tests. See [Local Alpha](docs/local-alpha.md) for the architecture,
+executed behavior checks and launch commands. This qualifies local infrastructure,
+not live PR/MR delivery, all providers, review accuracy or the unfinished redesign.
+
 The target is an adaptive, team-configurable review engine shared by local
 changes, GitHub/GitLab PRs/MRs and non-interactive CI. Design contracts guide
 intended behavior, concrete code invariants can establish ordinary defects,

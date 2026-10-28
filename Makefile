@@ -2,6 +2,25 @@ GO_FILES := $(shell find cmd agent -type f -name '*.go' -print)
 GOCACHE ?= /tmp/7review-go-build
 HTTP_PORT ?= 8080
 SERVER_URL ?= http://localhost:$(HTTP_PORT)
+LOCAL_COMPOSE := docker compose -p 7review-alpha -f docker-compose.yml -f docker-compose.local.yml
+
+.PHONY: local-up local-status local-tui local-logs local-stop
+
+local-up:
+	@test -f .env || { printf 'Run make setup to create local configuration first.\n'; exit 1; }
+	$(LOCAL_COMPOSE) up -d --build --wait --wait-timeout 180
+
+local-status:
+	$(LOCAL_COMPOSE) exec -T 7review /app/7review status --plain --server http://127.0.0.1:8080
+
+local-tui:
+	$(LOCAL_COMPOSE) exec 7review /app/7review tui --server http://127.0.0.1:8080
+
+local-logs:
+	$(LOCAL_COMPOSE) logs --tail=100
+
+local-stop:
+	$(LOCAL_COMPOSE) stop
 
 .PHONY: setup setup-force fmt test live-smoke-openrouter site-install site-dev site-build site-serve docker-config docker-build docker-up docker-down docker-restart docker-logs docker-status docker-ready docker-review-gitlab docker-review-github docker-tui docker-smoke compose-smoke bridge-check verify
 
