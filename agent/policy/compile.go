@@ -100,7 +100,7 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		},
 		AllowedTools:  allowed,
 		RequiredTools: append([]string(nil), config.Capabilities.Required...),
-		Limits:        config.Limits,
+		Limits:        config.Limits.Clone(),
 		Explanation: []ExplanationEntry{
 			{Field: "methods", Value: strings.Join(config.Defaults.Methods, ","), Source: "defaults", Reason: "trusted project defaults", Precedence: -1},
 			{Field: "publication", Value: config.Defaults.Publication, Source: "defaults", Reason: "trusted project default", Precedence: -1},
@@ -171,7 +171,7 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		RuntimeInventoryKnown bool
 		Documents             []DocumentSource
 		DefaultRuleRefs       []string
-	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil, config.documents, config.defaultRuleRefs})
+	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed), RuntimeCeilings: ctx.RuntimeCeilings}, ctx.RuntimeAllowed != nil, config.documents, config.defaultRuleRefs})
 	if err != nil {
 		return EffectivePolicy{}, fmt.Errorf("policy: canonicalize: %w", err)
 	}
@@ -184,6 +184,18 @@ func enforceRuntimeCeilings(requested LimitsV2, ceilings *LimitsV2) error {
 	if ceilings == nil {
 		return nil
 	}
+	if err := validateLimits(*ceilings); err != nil {
+		return fmt.Errorf("policy: invalid operator ceilings: %w", err)
+	}
+	if requested.Currency != ceilings.Currency {
+		return fmt.Errorf("policy: requested currency does not match operator ceilings currency")
+	}
+	for name, pair := range map[string][2]LimitScopeV2{"change": {requested.Change, ceilings.Change}, "project": {requested.Project, ceilings.Project}} {
+		a, b := pair[0].Period, pair[1].Period
+		if a == nil || b == nil || a.Kind != b.Kind || !a.Anchor.Equal(b.Anchor) || a.DurationMS != b.DurationMS {
+			return fmt.Errorf("policy: limits.%s period does not match operator ceilings", name)
+		}
+	}
 	for name, pair := range map[string][2]LimitScopeV2{"attempt": {requested.Attempt, ceilings.Attempt}, "change": {requested.Change, ceilings.Change}, "project": {requested.Project, ceilings.Project}} {
 		r, c := pair[0], pair[1]
 		values := map[string][2]int64{
@@ -193,7 +205,7 @@ func enforceRuntimeCeilings(requested LimitsV2, ceilings *LimitsV2) error {
 			"observation_bytes": {r.ObservationBytes, c.ObservationBytes},
 		}
 		for resource, value := range values {
-			if value[1] >= 0 && value[0] > value[1] {
+			if value[0] > value[1] {
 				return fmt.Errorf("policy: limits.%s.%s exceeds operator ceiling", name, resource)
 			}
 		}

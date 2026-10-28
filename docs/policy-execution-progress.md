@@ -243,6 +243,18 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: full uncached suite, tools race tests and `go vet ./...`.
   Contract source: [GitLab single-commit API](https://docs.gitlab.com/api/commits/#get-a-single-commit).
 
+## Slice 16: Comparable Operator Ceilings
+
+- Red: currency and shared-period mismatches passed numeric ceiling checks;
+  negative operator limits acted as unlimited and changed ceilings did not change
+  effective identity.
+- Green: validate the operator limit structure, require comparable currency and
+  fixed periods, reject every requested resource above its ceiling and bind the
+  operator ceilings into effective identity. Compiled limits detach period pointers.
+- Verification: full uncached suite and policy race tests.
+- Boundary: this is compilation authority, not runtime usage enforcement. Runtime
+  wiring and dispatch authorization remain open at this slice.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
