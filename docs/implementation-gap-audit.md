@@ -5,6 +5,10 @@ Audited revision: `462f97c` (clean checkout before this report).
 Authority: accepted R01-R23, ENG-D1-D13, SPEC contracts and ROADMAP exit gates.
 Scope: implementation and verification audit, not a new product design.
 
+This is the point-in-time baseline. Subsequent verified slices are tracked in
+[Policy Execution Progress](policy-execution-progress.md); they do not close
+an entire work package merely by changing one part of its implementation.
+
 ## Finding
 
 The running Docker server is the legacy review baseline with selected target

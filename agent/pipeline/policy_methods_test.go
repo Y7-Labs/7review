@@ -98,6 +98,8 @@ func TestPolicyMethodFailuresStopBeforeModel(t *testing.T) {
 		{"traversal", "repo/../../escape", backendMethod},
 		{"unknown builtin", "builtin/unknown", ""},
 		{"mismatched name", "repo/backend", strings.Replace(backendMethod, "name: backend", "name: correctness", 1)},
+		{"duplicate frontmatter", "repo/backend", strings.Replace(backendMethod, "name: backend", "name: backend\nname: backend", 1)},
+		{"unknown frontmatter", "repo/backend", strings.Replace(backendMethod, "name: backend", "name: backend\nexecute: shell", 1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, scm := trustedPolicyFixture()

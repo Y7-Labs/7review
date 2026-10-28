@@ -109,12 +109,10 @@ func loadSkill(path string) (Skill, error) {
 	if err != nil {
 		return Skill{}, fmt.Errorf("skills: read %s: %w", path, err)
 	}
-	return Parse(path, data)
+	return parseSkill(path, data)
 }
 
-// Parse validates a skill from an already selected immutable source without
-// consulting the working directory or following local filesystem links.
-func Parse(path string, data []byte) (Skill, error) {
+func parseSkill(path string, data []byte) (Skill, error) {
 	text := string(data)
 	parts := strings.SplitN(text, "---", 3)
 	if len(parts) != 3 || strings.TrimSpace(parts[0]) != "" {

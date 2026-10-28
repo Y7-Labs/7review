@@ -1,9 +1,18 @@
 # 7review Status
 
-Updated: 2026-10-03
+Updated: 2026-10-28
 Current phase: PHASE 1 COMPLETE; PHASE 2 IN PROGRESS.
 
 ## Current Direction
+
+Target gap closure update (2026-10-28): policy preview no longer activates
+execution obligations. Effective capabilities now guard model and reasoner-tool
+dispatch. SCM and frozen CI resolve selected method content from the attested
+base, retain provenance and require method-specific coverage. Proposed head skills
+cannot replace or veto that method selection. Strict method-frontmatter rejection
+has behavioral regression tests. See [Policy Execution Progress](docs/policy-execution-progress.md)
+for red/green evidence and remaining G04 work. This does not complete Phase 2,
+the adaptive controller, publication authority or accepted-target qualification.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
@@ -56,7 +65,7 @@ during consolidation.
 | --- | --- |
 | Immutable attempts, full freshness and scoped resume | Legacy per-change stores/reruns do not provide these contracts |
 | Transactional accepted work and separate effects | In-process accepted jobs can be lost on restart; full recovery/outbox semantics remain proposed |
-| Adaptive methods, triage and independent omission review | Existing skills, roles and tools are reusable; new controller/policy contracts not implemented |
+| Adaptive methods, triage and independent omission review | Trusted selected methods and model/tool capability wiring exist; scoped conflicts, ceilings, adaptive controller and independent omission review remain open |
 | CI-native runner, native feedback and gate evaluator | Ephemeral artifact-only runner and deterministic gate are implemented; native shared-context publication and hosted qualification remain open |
 | Governed memory and evidence graph | Existing recall/corpus are foundations; lineage, revocation and activation semantics remain target |
 | Optional Headroom/MemPalace/code intelligence | Setup and required-capability behavior still need implementation and tests |

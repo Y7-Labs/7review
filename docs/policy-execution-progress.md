@@ -69,6 +69,17 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: loading instructions and retaining model coverage are not proof of
   investigation completeness. The adaptive controller/evidence gates remain open.
 
+## Slice 5: Strict Method Frontmatter
+
+- Red: duplicate names/metadata, unknown fields and malformed YAML were accepted;
+  `---` inside a quoted description incorrectly split the document.
+- Green: policy-selected methods use the structured YAML decoder with known
+  fields, duplicate-key rejection and line-delimited frontmatter. Legacy heuristic
+  skills keep their historical parser; that path is not authority in enforce mode.
+- Pipeline regressions prove invalid frontmatter stops before provider calls.
+- Verification: uncached full Go suite, targeted race tests across changed
+  behavior in skills/pipeline/CI/review/orchestrator, and `go vet ./...`.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
