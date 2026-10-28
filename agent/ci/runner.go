@@ -9,8 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -21,7 +19,6 @@ import (
 	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/policy"
 	"github.com/Y4NN777/7review/agent/review"
-	"github.com/Y4NN777/7review/agent/skills"
 	"github.com/Y4NN777/7review/agent/tools"
 )
 
@@ -69,6 +66,9 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	result := Result{StartedAt: now}
 	if strings.TrimSpace(opts.RepositoryDir) == "" || strings.TrimSpace(opts.PolicyPath) == "" || opts.DeadlineAt.IsZero() {
 		return result, errors.New("CI runner requires repository, policy path and deadline")
+	}
+	if opts.SkillsPath != "" && opts.SkillsPath != ".7review/skills" {
+		return result, errors.New("CI methods are selected by trusted base policy; --skills-path cannot override method selection")
 	}
 	if opts.DependencyGraph != nil {
 		if err := ValidateDependencyGraph(opts.Environment.JobID, opts.DependencyGraph); err != nil {
@@ -135,21 +135,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		if err := adapter.ExportSnapshot(ctx, temporaryRoot); err != nil {
 			return result, err
 		}
-		skillPath := opts.SkillsPath
-		if skillPath == "" {
-			skillPath = ".7review/skills"
-		}
-		if path.IsAbs(skillPath) || path.Clean(skillPath) == ".." || strings.HasPrefix(path.Clean(skillPath), "../") {
-			return result, errors.New("CI skills path must stay inside the frozen snapshot")
-		}
-		loader := &skills.Loader{SkillsDir: filepath.Join(temporaryRoot, filepath.FromSlash(skillPath))}
-		if err := loader.Load(); err != nil {
-			return result, err
-		}
 		store := pipeline.NewMemoryRunStore()
 		reviewPipeline := &pipeline.Pipeline{
-			Config:      &config.Config{CorpusRoot: temporaryRoot, MaxDiffTokens: 6000, MaxSupportingCorpusSections: 3},
-			SkillLoader: loader, Orchestrator: opts.Orchestrator, Jobs: store,
+			Config:       &config.Config{CorpusRoot: temporaryRoot, MaxDiffTokens: 6000, MaxSupportingCorpusSections: 3},
+			Orchestrator: opts.Orchestrator, Jobs: store,
 			Policy: pipeline.DefaultPolicyFilter{}, FindingValidator: pipeline.DefaultFindingValidator{},
 			Memory: pipeline.NoopMemoryStore{}, SCM: adapter, ContextReducer: pipeline.NoopContextReducer{},
 			TrustedPolicy: fixedPolicyAdmission{result: policyResult}, DeliveryMode: pipeline.DeliveryArtifactOnly,
@@ -252,6 +241,9 @@ func minimalSource(req review.Request, scm *review.SCMContext, admitted pipeline
 		source.Policy = review.PolicyProjection{Mode: admitted.Mode, Digest: admitted.Effective.Digest, SourceRevision: admitted.Source.Revision, SourceDigest: admitted.Source.Digest, Methods: append([]string(nil), admitted.Effective.Methods...), RequiredChecks: append([]string(nil), admitted.Effective.RequiredChecks...), MatchedPacks: append([]string(nil), admitted.Effective.MatchedPacks...), RiskFloor: admitted.Effective.RiskFloor, IndependentReview: admitted.Effective.IndependentReview, TriggerAccepted: true}
 		source.Policy.Enforced = admitted.Enforced
 		source.Policy.AllowedCapabilities = append([]string(nil), admitted.Effective.AllowedTools...)
+		for _, method := range admitted.Methods {
+			source.Policy.ResolvedMethods = append(source.Policy.ResolvedMethods, method.Provenance)
+		}
 	}
 	return source
 }

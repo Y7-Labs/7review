@@ -27,6 +27,7 @@ type TrustedPolicyResult struct {
 	Attestation review.SnapshotAttestation
 	Source      policy.Source
 	Effective   *policy.EffectivePolicy
+	Methods     []ResolvedPolicyMethod
 	Trigger     policy.TriggerDecision
 	Warning     string
 	Enforced    bool
@@ -127,7 +128,19 @@ func (a SCMPolicyAdmission) Evaluate(ctx context.Context, req review.Request, sc
 		}
 		return TrustedPolicyResult{}, fmt.Errorf("trusted policy: compile: %w", err)
 	}
-	result.Effective = &effective
+	methods, err := resolvePolicyMethods(ctx, &effective, result.Source, func(ctx context.Context, path string) ([]byte, error) {
+		return a.Reader.ReadRepositoryFile(ctx, req.Provider, result.Source.RepositoryID, result.Source.Revision, path)
+	})
+	if err != nil {
+		if mode == "preview" {
+			result.Warning = err.Error()
+			result.Trigger.Accepted = true
+			result.Trigger.Reasons = append(result.Trigger.Reasons, "preview method resolution failure did not alter admission")
+			return result, nil
+		}
+		return TrustedPolicyResult{}, err
+	}
+	result.Effective, result.Methods = &effective, methods
 	return result, nil
 }
 
@@ -153,6 +166,9 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 	}
 	projection.Digest = result.Effective.Digest
 	projection.Methods = append([]string(nil), result.Effective.Methods...)
+	for _, method := range result.Methods {
+		projection.ResolvedMethods = append(projection.ResolvedMethods, method.Provenance)
+	}
 	projection.AllowedCapabilities = append([]string(nil), result.Effective.AllowedTools...)
 	projection.RequiredChecks = append([]string(nil), result.Effective.RequiredChecks...)
 	projection.MatchedPacks = append([]string(nil), result.Effective.MatchedPacks...)

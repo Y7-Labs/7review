@@ -21,6 +21,8 @@ type fakePolicyReader struct {
 	repository string
 	revision   string
 	path       string
+	rootPath   string
+	files      map[string][]byte
 }
 
 type staticAdmission struct {
@@ -64,6 +66,12 @@ func TestPipelineEnforcedTriggerStopsBeforeModel(t *testing.T) {
 
 func (r *fakePolicyReader) ReadRepositoryFile(_ context.Context, provider, repository, revision, path string) ([]byte, error) {
 	r.provider, r.repository, r.revision, r.path = provider, repository, revision, path
+	if r.rootPath == "" {
+		r.rootPath = path
+	}
+	if data, ok := r.files[path]; ok {
+		return append([]byte(nil), data...), nil
+	}
 	return append([]byte(nil), r.data...), r.err
 }
 
@@ -72,7 +80,7 @@ func TestTrustedPolicyAdmissionLoadsBasePolicyAndCompilesScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader := &fakePolicyReader{data: data}
+	reader := &fakePolicyReader{data: data, files: map[string][]byte{".7review/methods/backend/SKILL.md": []byte(backendMethod)}}
 	admission := SCMPolicyAdmission{
 		Mode: "enforce", Path: ".7review/review.yaml", Reader: reader,
 		RuntimeCapabilities: []string{"repo.read", "model.review"},
@@ -83,7 +91,7 @@ func TestTrustedPolicyAdmissionLoadsBasePolicyAndCompilesScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.revision != "base-sha" || reader.path != ".7review/review.yaml" {
+	if reader.revision != "base-sha" || reader.rootPath != ".7review/review.yaml" || reader.path != ".7review/methods/backend/SKILL.md" {
 		t.Fatalf("policy was not loaded from trusted base: %#v", reader)
 	}
 	if result.Effective == nil || result.Source.Revision != "base-sha" || result.Effective.RiskFloor != "medium" || strings.Join(result.Effective.MatchedPacks, ",") != "backend" {
@@ -120,7 +128,7 @@ func TestTrustedPolicyAdmissionRejectsAutomaticTriggerWithoutChangingManualRevie
 	}
 	data = []byte(strings.Replace(string(data), "enabled: true", "enabled: false", 1))
 	req, scm := trustedPolicyFixture()
-	admission := SCMPolicyAdmission{Mode: "enforce", Path: ".7review/review.yaml", Reader: &fakePolicyReader{data: data}, RuntimeCapabilities: []string{"repo.read", "model.review"}}
+	admission := SCMPolicyAdmission{Mode: "enforce", Path: ".7review/review.yaml", Reader: &fakePolicyReader{data: data, files: map[string][]byte{".7review/methods/backend/SKILL.md": []byte(backendMethod)}}, RuntimeCapabilities: []string{"repo.read", "model.review"}}
 	result, err := admission.Evaluate(context.Background(), req, scm)
 	if err != nil {
 		t.Fatal(err)

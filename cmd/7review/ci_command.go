@@ -29,7 +29,7 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 	policyPath := flags.String("policy-path", ".7review/review.yaml", "policy path at the base revision")
 	output := flags.String("output", ".7review/out", "artifact output directory")
 	repositoryDir := flags.String("repo-dir", ".", "local Git repository")
-	skillsPath := flags.String("skills-path", ".7review/skills", "skills path in the frozen analysis tree")
+	skillsPath := flags.String("skills-path", ".7review/skills", "deprecated compatibility flag; methods are selected by trusted base policy")
 	deadline := flags.Duration("deadline", 10*time.Minute, "maximum review duration")
 	offline := flags.Bool("offline", false, "forbid fetching missing Git objects")
 	provider := flags.String("provider", "", "CI provider override")

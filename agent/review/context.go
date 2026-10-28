@@ -52,6 +52,7 @@ type PolicyProjection struct {
 	SourceRevision      string           `json:"source_revision,omitempty"`
 	SourceDigest        string           `json:"source_digest,omitempty"`
 	Methods             []string         `json:"methods,omitempty"`
+	ResolvedMethods     []PolicyMethod   `json:"resolved_methods,omitempty"`
 	AllowedCapabilities []string         `json:"allowed_capabilities,omitempty"`
 	RequiredChecks      []string         `json:"required_checks,omitempty"`
 	MatchedPacks        []string         `json:"matched_packs,omitempty"`
@@ -61,6 +62,13 @@ type PolicyProjection struct {
 	TriggerReasons      []string         `json:"trigger_reasons,omitempty"`
 	Warnings            []string         `json:"warnings,omitempty"`
 	Decisions           []PolicyDecision `json:"decisions,omitempty"`
+}
+
+type PolicyMethod struct {
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Digest   string `json:"digest"`
 }
 
 // AllowsCapability keeps preview and legacy policy observational. An enforced

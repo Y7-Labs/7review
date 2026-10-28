@@ -75,8 +75,14 @@ func (a FrozenPolicyAdmission) Evaluate(ctx context.Context, req review.Request,
 	if err != nil {
 		return TrustedPolicyResult{}, err
 	}
+	methods, err := resolvePolicyMethods(ctx, &effective, source, func(ctx context.Context, path string) ([]byte, error) {
+		return a.Reader.ReadRepositoryFile(ctx, source.RepositoryID, source.Revision, path)
+	})
+	if err != nil {
+		return TrustedPolicyResult{}, err
+	}
 	return TrustedPolicyResult{
-		Mode: "enforce", Attestation: attestation, Source: source, Effective: &effective, Enforced: true,
+		Mode: "enforce", Attestation: attestation, Source: source, Effective: &effective, Methods: methods, Enforced: true,
 		Trigger: policy.TriggerDecision{Accepted: true, Reasons: []string{"ephemeral CI review was explicitly requested"}},
 	}, nil
 }

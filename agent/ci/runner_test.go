@@ -3,6 +3,7 @@ package ci
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -51,24 +52,40 @@ func runPartialFixture(t *testing.T, repo, base, head string) Result {
 func TestRunCompletesArtifactOnlyReviewWithPolicyCoverage(t *testing.T) {
 	repo, base, head := ciGitFixture(t)
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	response := `{"findings":[],"skill_coverage":[{"name":"effective-policy","status":"covered","evidence":["diff:service.go"],"tools":[],"checks":["correctness"],"notes":"changed code inspected"}]}`
-	orch := orchestrator.NewOrchestrator(
-		orchestrator.DefaultOrchestratorConfig("review", "small", "fake"),
-		map[string]orchestrator.LLMProvider{"fake": ciStaticProvider{response: response}},
-	)
-	result, err := Run(context.Background(), Options{
-		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
-		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Assessment.Completeness != review.AssessmentComplete || result.Gate.Outcome != review.GatePass || ExitCode(result) != 0 {
-		t.Fatalf("complete artifact-only review should pass: assessment=%#v coverage=%#v gate=%#v", result.Assessment, result.Coverage, result.Gate)
-	}
-	if strings.TrimSpace(result.Report) == "" || result.Source.Report.Draft == "" {
-		t.Fatal("complete runner did not retain its draft report")
+	for _, tc := range []struct {
+		name         string
+		method       string
+		outcome      review.GateOutcome
+		completeness review.AssessmentCompleteness
+		exit         int
+	}{
+		{"selected method", "builtin/correctness", review.GatePass, review.AssessmentComplete, 0},
+		{"obsolete synthetic method cannot satisfy coverage", "effective-policy", review.GateIncomplete, review.AssessmentPartial, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := fmt.Sprintf(`{"findings":[],"skill_coverage":[{"name":%q,"status":"covered","evidence":["diff:service.go"],"tools":[],"checks":["correctness"],"notes":"changed code inspected"}]}`, tc.method)
+			orch := orchestrator.NewOrchestrator(
+				orchestrator.DefaultOrchestratorConfig("review", "small", "fake"),
+				map[string]orchestrator.LLMProvider{"fake": ciStaticProvider{response: response}},
+			)
+			result, err := Run(context.Background(), Options{
+				RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
+				Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
+				DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Assessment.Completeness != tc.completeness || result.Gate.Outcome != tc.outcome || ExitCode(result) != tc.exit {
+				t.Fatalf("method-specific coverage mismatch: assessment=%#v coverage=%#v gate=%#v", result.Assessment, result.Coverage, result.Gate)
+			}
+			if strings.TrimSpace(result.Report) == "" || result.Source.Report.Draft == "" {
+				t.Fatal("complete runner did not retain its draft report")
+			}
+			if len(result.Source.Policy.ResolvedMethods) != 1 || result.Source.Policy.ResolvedMethods[0].ID != "builtin/correctness" {
+				t.Fatalf("runner lost resolved method provenance: %#v", result.Source.Policy)
+			}
+		})
 	}
 }
 
@@ -140,4 +157,67 @@ type panicProvider struct{}
 func (panicProvider) Name() string { return "panic" }
 func (panicProvider) Complete(context.Context, llm.LLMRequest) (string, error) {
 	panic("untrusted fork invoked a model provider")
+}
+
+type baseMethodProvider struct{ t *testing.T }
+
+func (baseMethodProvider) Name() string { return "fake" }
+func (p baseMethodProvider) Complete(_ context.Context, req llm.LLMRequest) (string, error) {
+	if !strings.Contains(req.SystemPrompt, "TRUSTED_BASE_METHOD") || strings.Contains(req.SystemPrompt, "HEAD_METHOD_INJECTION") {
+		p.t.Error("frozen runner used head method content or omitted base method")
+	}
+	return `{"findings":[],"skill_coverage":[{"name":"repo/backend","status":"covered","evidence":["diff:service.go"],"checks":["correctness"],"notes":"checked selected method"}]}`, nil
+}
+
+func TestFrozenRunnerExecutesBaseMethodDespiteHeadReplacement(t *testing.T) {
+	repo, base, _ := ciGitFixture(t)
+	ciGitRun(t, repo, "checkout", "-b", "method-base", base)
+	path := filepath.Join(repo, ".7review/review.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config policy.ReviewConfigV2
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	config.Defaults.Methods = []string{"repo/backend"}
+	data, err = json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciWriteFile(t, repo, ".7review/review.json", string(data))
+	method := "---\nname: backend\ndescription: Verify backend behavior.\nallowed-tools: diff-analyzer\nrequired-checks: correctness\n---\nTRUSTED_BASE_METHOD\n"
+	ciWriteFile(t, repo, ".7review/methods/backend/SKILL.md", method)
+	ciGitRun(t, repo, "add", ".")
+	ciGitRun(t, repo, "commit", "-m", "trusted method")
+	base = strings.TrimSpace(ciGitRun(t, repo, "rev-parse", "HEAD"))
+	ciWriteFile(t, repo, ".7review/methods/backend/SKILL.md", strings.Replace(method, "TRUSTED_BASE_METHOD", "HEAD_METHOD_INJECTION", 1))
+	ciWriteFile(t, repo, ".7review/skills/hostile/SKILL.md", "malformed proposed legacy skill must not veto trusted method execution")
+	ciWriteFile(t, repo, "service.go", "package service\nfunc Added() {}\n")
+	ciGitRun(t, repo, "add", ".")
+	ciGitRun(t, repo, "commit", "-m", "proposed method replacement")
+	head := strings.TrimSpace(ciGitRun(t, repo, "rev-parse", "HEAD"))
+	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
+	orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": baseMethodProvider{t}})
+	result, err := Run(context.Background(), Options{
+		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
+		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
+		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Gate.Outcome != review.GatePass || len(result.Source.Policy.ResolvedMethods) != 1 || result.Source.Policy.ResolvedMethods[0].Revision != base {
+		t.Fatalf("base-method execution or provenance lost: gate=%#v policy=%#v", result.Gate, result.Source.Policy)
+	}
+}
+
+func TestCISkillsPathCannotOverrideTrustedMethodSelection(t *testing.T) {
+	for _, path := range []string{"../escape", "/tmp/methods", ".7review/other-skills"} {
+		_, err := Run(context.Background(), Options{RepositoryDir: t.TempDir(), PolicyPath: ".7review/review.yaml", DeadlineAt: time.Now().Add(time.Minute), SkillsPath: path})
+		if err == nil || !strings.Contains(err.Error(), "trusted base policy") {
+			t.Fatalf("legacy skills override was not rejected explicitly: path=%s err=%v", path, err)
+		}
+	}
 }

@@ -42,9 +42,55 @@ This is an incremental behavior ledger, not a completion declaration.
   inventory; a failing identity regression exposed that collision too.
 - Verification: full `go test ./...` and policy race tests.
 
+## Slice 4: Execute Base-Owned Method Content
+
+- Red: selected repository method instructions never reached the model; missing,
+  malformed, traversal and unknown-builtin references still allowed inference.
+- Green: both SCM and frozen-CI admission resolve the selected `repo/<name>`
+  method from `.7review/methods/<name>/SKILL.md` at the attested base. Names use
+  the existing lowercase skill-name grammar. No working-directory method fallback.
+- Register the runtime-owned `builtin/correctness` method without repository
+  shadowing. The selected method bodies, namespaced activations, content digests
+  and source revisions reach execution and persisted projections. Aggregate method
+  content is bounded to 1 MiB and contributes to effective policy identity.
+- Enforce mode uses the policy-selected methods instead of the legacy heuristic
+  skill plan; preview retains the legacy plan and exposes resolution/warnings only.
+- A real Git fixture replaces the method on head and introduces a malformed
+  legacy head skill. CI still executes the base method. CI no longer loads head
+  legacy skills, and custom `--skills-path` overrides are explicitly rejected;
+  the old default is accepted as a compatibility no-op.
+- CI coverage must name the actual selected method: the obsolete synthetic name
+  cannot satisfy a builtin method's obligation. Missing coverage stays incomplete.
+- Checks declared by a selected method join both effective required checks and
+  gate-required coverage, with explanation provenance; they cannot become optional
+  just because the root configuration did not repeat them.
+- Verification: full `go test ./...`, focused uncached method/CI tests and race
+  tests for pipeline, CI, review and skills.
+- Boundary: loading instructions and retaining model coverage are not proof of
+  investigation completeness. The adaptive controller/evidence gates remain open.
+
+## Method File Example
+
+Policy selects `repo/backend`; commit this file at
+`.7review/methods/backend/SKILL.md` in the trusted base:
+
+```markdown
+---
+name: backend
+description: Verify backend authorization and state transitions.
+allowed-tools: scm-api diff-analyzer corpus-selector
+required-checks: backend-contract
+---
+Check authorization before privileged state mutation. Identify the concrete
+contract or invariant and evidence for each finding; preserve unknown coverage.
+```
+
+Only `builtin/correctness` is registered initially. Unknown builtins fail closed.
+Method tool metadata cannot widen compiled runtime capabilities.
+
 ## Remaining
 
-Trusted method-content resolution and execution; remaining effect capabilities;
+Pack/rule references and inheritance representation; remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

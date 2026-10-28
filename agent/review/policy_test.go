@@ -6,9 +6,13 @@ import (
 )
 
 func TestPolicyCapabilitiesSurvivePersistenceWithoutSharingAuthority(t *testing.T) {
-	source := Source{Policy: PolicyProjection{Mode: "enforce", Enforced: true, AllowedCapabilities: []string{"repo.read"}}}
+	source := Source{Policy: PolicyProjection{Mode: "enforce", Enforced: true, AllowedCapabilities: []string{"repo.read"}, ResolvedMethods: []PolicyMethod{{ID: "repo/backend", Revision: "base"}}}}
 	clone := source.Clone()
 	clone.Policy.AllowedCapabilities[0] = "model.review"
+	clone.Policy.ResolvedMethods[0].Revision = "head"
+	if source.Policy.ResolvedMethods[0].Revision != "base" {
+		t.Fatal("cloned method provenance mutated original authority")
+	}
 	if source.Policy.AllowsCapability("model.review") || !source.Policy.AllowsCapability("repo.read") {
 		t.Fatal("cloned projection mutated original permissions")
 	}
