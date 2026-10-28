@@ -35,6 +35,7 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 	deadline := flags.Duration("deadline", 10*time.Minute, "maximum review duration")
 	offline := flags.Bool("offline", false, "forbid fetching missing Git objects")
 	provider := flags.String("provider", "", "CI provider override")
+	host := flags.String("provider-host", "", "trusted provider host override")
 	repository := flags.String("repository", "", "repository identity override")
 	base := flags.String("base", "", "base revision override")
 	head := flags.String("head", "", "source head revision override")
@@ -53,6 +54,7 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 		return 2, fmt.Errorf("CI review has unexpected arguments or a non-positive deadline")
 	}
 	environment, err := cirunner.DetectEnvironment(cirunner.EnvironmentOverrides{
+		Host:     *host,
 		Provider: *provider, RepositoryID: *repository, BaseRevision: *base, HeadRevision: *head,
 		MergeRevision: *merge, PipelineID: *pipelineID, JobID: *jobID, ChangeID: *changeID,
 	})

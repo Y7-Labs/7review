@@ -30,7 +30,7 @@ func TestScenario_S45_CIRunnerOutcomesAndDeadline(t *testing.T) {
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	result, err := Run(ctx, Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
+		Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
 		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestScenario_S52_CIMergeTreeIdentity(t *testing.T) {
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	result, err := Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, MergeRevision: merge, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
+		Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, MergeRevision: merge, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
 		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now },
 	})
 	if err != nil {
@@ -87,7 +87,7 @@ func TestScenario_S52_CIMergeTreeIdentity(t *testing.T) {
 
 	_, err = Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: strings.Repeat("f", 40), HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
+		Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: strings.Repeat("f", 40), HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
 		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now },
 	})
 	if err == nil || !strings.Contains(err.Error(), "offline mode") {

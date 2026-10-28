@@ -39,7 +39,7 @@ func TestFrozenRunnerRejectsUnmatchedMissingMethodBeforeModel(t *testing.T) {
 	head := strings.TrimSpace(ciGitRun(t, repo, "rev-parse", "HEAD"))
 	now := time.Now().UTC()
 	orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "panic"), map[string]orchestrator.LLMProvider{"panic": panicProvider{}})
-	_, err = Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
+	_, err = Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
 	if err == nil || !strings.Contains(err.Error(), "repo/backend") {
 		t.Fatalf("inactive missing method crossed CI admission: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestFrozenRunnerRejectsBaseMethodSymlinkEvenWhenHeadIsRegular(t *testing.T)
 	head := strings.TrimSpace(ciGitRun(t, repo, "rev-parse", "HEAD"))
 	now := time.Now().UTC()
 	orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "panic"), map[string]orchestrator.LLMProvider{"panic": panicProvider{}})
-	_, err = Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
+	_, err = Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
 	if err == nil || !strings.Contains(err.Error(), "regular blob") {
 		t.Fatalf("base symlink method crossed frozen admission: %v", err)
 	}

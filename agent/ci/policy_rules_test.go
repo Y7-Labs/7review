@@ -91,7 +91,7 @@ func TestFrozenPackAndRuleReferencesGovernCoverageAndGate(t *testing.T) {
 			provider := &ruleCIProvider{t: t, response: string(response)}
 			orch := fundedCIOrchestrator("fake", provider)
 			now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-			result, err := Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch})
+			result, err := Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -29,6 +29,8 @@ type ArtifactRef struct {
 }
 
 type Options struct {
+	Intake          review.AttemptIntake
+	BoundaryID      string
 	RepositoryDir   string
 	PolicyPath      string
 	SkillsPath      string
@@ -71,6 +73,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if opts.SkillsPath != "" && opts.SkillsPath != ".7review/skills" {
 		return result, errors.New("CI methods are selected by trusted base policy; --skills-path cannot override method selection")
 	}
+	host, err := review.ProviderHost(opts.Environment.Provider, "https://"+opts.Environment.Host)
+	if err != nil || opts.Environment.Host == "" {
+		return result, errors.New("CI trusted provider host is required")
+	}
+	opts.Environment.Host = host
 	if opts.DependencyGraph != nil {
 		if err := ValidateDependencyGraph(opts.Environment.JobID, opts.DependencyGraph); err != nil {
 			return result, err
@@ -90,7 +97,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Mode: review.ExecutionEphemeral, ProducerID: opts.Environment.Provider + ":7review-ci",
 		PipelineID: opts.Environment.PipelineID, JobID: opts.Environment.JobID,
 		ComparisonTree: snapshot.AnalysisRevision(), Persistence: review.PersistenceJobLocal,
-		TrustedBoundaryID: opts.Environment.Provider + ":" + opts.Environment.RepositoryID,
+		TrustedBoundaryID: firstNonEmptyValue(opts.BoundaryID, opts.Environment.Provider+":"+host+":"+opts.Environment.RepositoryID),
 		DeadlineAt:        opts.DeadlineAt.UTC(),
 	}
 	if err := execution.Validate(); err != nil {
@@ -103,6 +110,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Title: opts.Environment.Title, Description: opts.Environment.Description, WebURL: opts.Environment.WebURL,
 		SourceSHA: snapshot.HeadRevision, TargetSHA: snapshot.BaseRevision,
 		SourceBranch: opts.Environment.SourceBranch, TargetBranch: opts.Environment.TargetBranch, Author: opts.Environment.Author,
+	}
+	if opts.Environment.RunAttempt != "" {
+		raw, _ := json.Marshal([]string{opts.Environment.PipelineID, opts.Environment.JobID, opts.Environment.RunAttempt})
+		sum := sha256.Sum256(raw)
+		req.DeliveryID = "ci-" + hex.EncodeToString(sum[:])
 	}
 	scm, err := adapter.Enrich(ctx, req)
 	if err != nil {
@@ -127,6 +139,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	result.IncompleteReasons = append(result.IncompleteReasons, evidenceErrors...)
 
 	source := minimalSource(req, scm, policyResult, execution)
+	canonical := &pipeline.CanonicalIntake{Authority: opts.Intake, ProviderHosts: map[string]string{req.Provider: host}, Execution: execution, Now: opts.Now}
+	if opts.Environment.UntrustedFork || opts.Orchestrator == nil {
+		receipt, err := review.NewEphemeralReceipt(review.Admission{Request: req, Change: review.ChangeKey{Provider: req.Provider, Host: host, RepositoryID: req.ProjectID, ChangeNumber: req.ChangeID}, Attestation: policyResult.Attestation, Policy: source.Policy, Execution: execution, IntentKind: review.IntentManual}, now)
+		if err != nil {
+			return result, err
+		}
+		source.Attempt = receipt.Attempt
+	}
 	if opts.Environment.UntrustedFork {
 		result.IncompleteReasons = append(result.IncompleteReasons, "model execution is disabled for an untrusted fork")
 	} else if opts.Orchestrator == nil {
@@ -147,6 +167,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			Policy: pipeline.DefaultPolicyFilter{}, FindingValidator: pipeline.DefaultFindingValidator{},
 			Memory: pipeline.NoopMemoryStore{}, SCM: adapter, ContextReducer: pipeline.NoopContextReducer{},
 			TrustedPolicy: fixedPolicyAdmission{result: policyResult}, DeliveryMode: pipeline.DeliveryArtifactOnly,
+			Canonical: canonical,
 		}
 		if runErr := reviewPipeline.Run(ctx, req); runErr != nil {
 			result.IncompleteReasons = append(result.IncompleteReasons, "review execution failed: "+runErr.Error())
@@ -155,7 +176,6 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			cancel()
 			if listErr == nil && len(runs) == 1 && runs[0].Source != nil {
 				source = runs[0].Source.Clone()
-				source.Execution = execution
 			}
 		} else {
 			runs, listErr := store.List(ctx)
@@ -163,8 +183,13 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 				return result, errors.New("CI runner could not recover the artifact-only review result")
 			}
 			source = runs[0].Source.Clone()
-			source.Execution = execution
+			if runs[0].Status == pipeline.StatusIgnored {
+				result.IncompleteReasons = append(result.IncompleteReasons, "duplicate intake was not re-executed; original outcome must be retrieved separately")
+			}
 		}
+	}
+	if source.Attempt.AttemptID != "" {
+		result.Execution = source.Execution
 	}
 
 	assessment := buildAssessment(result, source, now)

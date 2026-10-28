@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Y4NN777/7review/agent/review"
 	"os"
 	"strconv"
 	"strings"
 )
 
 type Environment struct {
+	Host          string
+	RunAttempt    string
 	Provider      string
 	RepositoryID  string
 	BaseRevision  string
@@ -29,6 +32,7 @@ type Environment struct {
 }
 
 type EnvironmentOverrides struct {
+	Host                                                              string
 	Provider, RepositoryID, BaseRevision, HeadRevision, MergeRevision string
 	PipelineID, JobID, ChangeID                                       string
 }
@@ -53,6 +57,16 @@ func DetectEnvironment(overrides EnvironmentOverrides) (Environment, error) {
 	if detected.Provider != "github" && detected.Provider != "gitlab" {
 		return Environment{}, errors.New("CI provider must be github or gitlab")
 	}
+	if detected.Host == "" {
+		endpoint := firstEnvironment("CI_SERVER_URL", "GITLAB_URL")
+		if detected.Provider == "github" {
+			endpoint = firstNonEmptyValue(os.Getenv("GITHUB_SERVER_URL"), "https://github.com")
+		}
+		detected.Host, err = review.ProviderHost(detected.Provider, endpoint)
+		if err != nil {
+			return Environment{}, fmt.Errorf("CI trusted provider host: %w", err)
+		}
+	}
 	for name, value := range map[string]string{
 		"repository": detected.RepositoryID, "base revision": detected.BaseRevision,
 		"head revision": detected.HeadRevision, "pipeline ID": detected.PipelineID,
@@ -73,6 +87,12 @@ func detectGitHubEnvironment() (Environment, error) {
 		PipelineID: os.Getenv("GITHUB_RUN_ID"), JobID: os.Getenv("GITHUB_JOB"),
 		MergeRevision: os.Getenv("GITHUB_SHA"), Hosted: true,
 	}
+	var err error
+	env.Host, err = review.ProviderHost("github", firstNonEmptyValue(os.Getenv("GITHUB_SERVER_URL"), "https://github.com"))
+	if err != nil {
+		return env, err
+	}
+	env.RunAttempt = firstNonEmptyValue(os.Getenv("GITHUB_RUN_ATTEMPT"), "1")
 	path := strings.TrimSpace(os.Getenv("GITHUB_EVENT_PATH"))
 	if path == "" {
 		return env, errors.New("GITHUB_EVENT_PATH is required for immutable pull request identity")
@@ -122,12 +142,17 @@ func detectGitHubEnvironment() (Environment, error) {
 }
 
 func detectGitLabEnvironment() (Environment, error) {
+	host, err := review.ProviderHost("gitlab", firstEnvironment("CI_SERVER_URL", "GITLAB_URL"))
+	if err != nil {
+		return Environment{}, err
+	}
 	head := firstEnvironment("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA", "CI_COMMIT_SHA")
 	comparison := os.Getenv("CI_COMMIT_SHA")
 	if comparison == head || comparison == os.Getenv("CI_MERGE_REQUEST_DIFF_BASE_SHA") {
 		comparison = ""
 	}
 	return Environment{
+		Host: host, RunAttempt: firstEnvironment("CI_JOB_ID"),
 		Provider: "gitlab", RepositoryID: firstEnvironment("CI_PROJECT_PATH", "CI_PROJECT_ID"),
 		BaseRevision: firstEnvironment("CI_MERGE_REQUEST_DIFF_BASE_SHA", "CI_MERGE_REQUEST_TARGET_BRANCH_SHA"),
 		HeadRevision: head, MergeRevision: comparison, PipelineID: os.Getenv("CI_PIPELINE_ID"), JobID: os.Getenv("CI_JOB_ID"),
@@ -150,6 +175,7 @@ func applyOverrides(env *Environment, values EnvironmentOverrides) error {
 		target *string
 		value  string
 	}{
+		{"host", &env.Host, values.Host},
 		{"provider", &env.Provider, values.Provider}, {"repository", &env.RepositoryID, values.RepositoryID},
 		{"base revision", &env.BaseRevision, values.BaseRevision}, {"head revision", &env.HeadRevision, values.HeadRevision},
 		{"merge revision", &env.MergeRevision, values.MergeRevision}, {"pipeline ID", &env.PipelineID, values.PipelineID},

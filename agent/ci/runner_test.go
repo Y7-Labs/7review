@@ -40,7 +40,7 @@ func runPartialFixture(t *testing.T, repo, base, head string) Result {
 	)
 	result, err := Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
+		Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7", UntrustedFork: true},
 		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestRunCompletesArtifactOnlyReviewWithPolicyCoverage(t *testing.T) {
 			orch := fundedCIOrchestrator("fake", ciStaticProvider{response: response})
 			result, err := Run(context.Background(), Options{
 				RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-				Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
+				Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
 				DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
 			})
 			if err != nil {
@@ -199,7 +199,7 @@ func TestFrozenRunnerExecutesBaseMethodDespiteHeadReplacement(t *testing.T) {
 	orch := fundedCIOrchestrator("fake", baseMethodProvider{t})
 	result, err := Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
-		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
+		Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
 		DeadlineAt:  now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch,
 	})
 	if err != nil {

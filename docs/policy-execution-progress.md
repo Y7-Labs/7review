@@ -435,6 +435,28 @@ This is an incremental behavior ledger, not a completion declaration.
   This adds the durable operation; pipeline/app wiring follows separately. It is
   not durable HTTP inbox acknowledgement or complete action recovery.
 
+## Slice 26: Canonical Pipeline And Frozen CI Checkpointing
+
+- Red: model calls preceded canonical identity/checkpointing; mutable change-key
+  runs overwrote history; intake failures, duplicate receipts and failed saves
+  did not stop inference. CI only attached execution identity after model return.
+- Green: opt-in canonical pipeline execution checkpoints verified identity before
+  model dispatch, uses non-overwriting run IDs and rejects missing intake/storage
+  authority. Trusted endpoint hosts cannot be replaced by report URLs. Receipt
+  checks reject host/boundary/producer changes and deadline extensions.
+- Frozen CI supplies provider host, pipeline/job identity, deadline and per-job
+  persistence before inference. Standalone CI has only a local ephemeral receipt;
+  an explicit shared intake can checkpoint accounting without taking ownership of
+  the service tracking pointer. Replayed CI does not infer again or claim a final
+  pass without retrieving the original outcome.
+- Canonical publication remains blocked pending governed outbox/currentness;
+  these executions are artifact-only. Legacy mode is not silently promoted.
+- Verification: full uncached suite with PostgreSQL; pipeline/CI/accounting/
+  orchestrator race tests, including real frozen-Git + PostgreSQL CI dispatch,
+  duplicate refusal and a new job unable to reset the shared hold.
+- Boundary: application construction and operational runtime configuration follow
+  separately. This is not durable HTTP inbox acknowledgement or native delivery.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

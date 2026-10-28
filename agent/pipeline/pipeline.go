@@ -39,6 +39,7 @@ type Pipeline struct {
 	SCMPublisher     tools.Publisher
 	TrustedPolicy    TrustedPolicyAdmission
 	DeliveryMode     DeliveryMode
+	Canonical        *CanonicalIntake
 }
 
 type DeliveryMode string
@@ -50,6 +51,17 @@ const (
 
 // Run executes the automated review pipeline.
 func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
+	return p.run(ctx, req, "")
+}
+
+func (p *Pipeline) RunIdentified(ctx context.Context, req review.Request, id string) error {
+	if p == nil || p.Canonical == nil {
+		return fmt.Errorf("identified runs require canonical intake")
+	}
+	return p.run(ctx, req, id)
+}
+
+func (p *Pipeline) run(ctx context.Context, req review.Request, id string) error {
 	if p == nil || p.Orchestrator == nil {
 		return fmt.Errorf("pipeline: orchestrator is not configured")
 	}
@@ -58,7 +70,23 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		return err
 	}
 
-	run, err := p.Jobs.Start(ctx, req)
+	var run *Run
+	var err error
+	if p.Canonical != nil {
+		if id == "" {
+			id, err = review.NewOpaqueID("run-")
+			if err != nil {
+				return err
+			}
+		}
+		store, ok := p.Jobs.(identifiedRunStore)
+		if !ok {
+			return fmt.Errorf("canonical intake requires an identified run store")
+		}
+		run, err = store.StartIdentified(ctx, req, id)
+	} else {
+		run, err = p.Jobs.Start(ctx, req)
+	}
 	if err != nil {
 		return err
 	}
@@ -71,6 +99,25 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	rc := review.NewContext(req)
 	rc.Source.Run.ID = run.ID
 	rc.Source.Run.AvailableTools = []string{"scm", "diff", "context", "review", "report", "memory"}
+	var generation uint64
+	if p.Canonical != nil {
+		if p.DeliveryMode != DeliveryArtifactOnly {
+			return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical publication requires governed outbox; artifact-only execution is required"))
+		}
+		change, err := p.Canonical.change(req)
+		if err != nil {
+			return p.failModelReview(ctx, run.ID, rc, err)
+		}
+		if p.Canonical.Execution.Mode == review.ExecutionService {
+			if p.Canonical.Authority == nil {
+				return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical service intake authority is unavailable"))
+			}
+			generation, err = p.Canonical.Authority.ObserveGeneration(ctx, change)
+			if err != nil {
+				return p.failModelReview(ctx, run.ID, rc, err)
+			}
+		}
+	}
 
 	scmContext, err := p.SCM.Enrich(ctx, req)
 	if err != nil {
@@ -122,6 +169,18 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 				_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 				return err
 			}
+			return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
+		}
+	}
+	if p.Canonical != nil {
+		duplicate, err := p.Canonical.admit(ctx, rc, generation)
+		if err != nil {
+			return p.failModelReview(ctx, run.ID, rc, err)
+		}
+		if err = p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
+			return p.failModelReview(ctx, run.ID, rc, err)
+		}
+		if duplicate {
 			return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
 		}
 	}
@@ -922,10 +981,17 @@ func (p *Pipeline) RerunReview(ctx context.Context, id string, reason string) er
 	if req.ProjectID == "" {
 		return fmt.Errorf("pipeline: run request is incomplete")
 	}
+	if p.Canonical != nil {
+		req.DeliveryID = ""
+		req.EventAction = "manual"
+	}
 	return p.Run(ctx, req)
 }
 
 func (p *Pipeline) publishFinal(ctx context.Context, rc *review.Context, finalReport string) error {
+	if rc != nil && rc.Source.Attempt.AttemptID != "" {
+		return fmt.Errorf("canonical publication requires governed outbox")
+	}
 	if rc == nil || !rc.HILApproved {
 		return fmt.Errorf("pipeline: HIL approval required before final publish")
 	}

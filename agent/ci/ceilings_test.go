@@ -35,7 +35,7 @@ func TestCIOperatorCeilingsRejectRepositoryIncreaseBeforeModel(t *testing.T) {
 			}
 			orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "panic"), map[string]orchestrator.LLMProvider{"panic": panicProvider{}})
 			now := time.Now().UTC()
-			_, err := Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, RuntimeCeilings: &ceilings, Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
+			_, err := Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, RuntimeCeilings: &ceilings, Environment: Environment{Provider: "github", Host: "github.com", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Orchestrator: orch})
 			if err == nil || !strings.Contains(err.Error(), "limits."+scope+".model_calls exceeds operator ceiling") {
 				t.Fatalf("operator ceilings did not reach CI admission: %v", err)
 			}
