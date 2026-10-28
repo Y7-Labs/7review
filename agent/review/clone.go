@@ -46,6 +46,7 @@ func (s Source) Clone() Source {
 	out.Policy.Methods = cloneStrings(s.Policy.Methods)
 	out.Policy.ResolvedMethods = append([]PolicyMethod(nil), s.Policy.ResolvedMethods...)
 	out.Policy.Documents = append([]PolicyDocument(nil), s.Policy.Documents...)
+	out.Policy.Rules = append([]PolicyDocument(nil), s.Policy.Rules...)
 	out.Policy.AllowedCapabilities = cloneStrings(s.Policy.AllowedCapabilities)
 	out.Policy.RequiredChecks = cloneStrings(s.Policy.RequiredChecks)
 	out.Policy.MatchedPacks = cloneStrings(s.Policy.MatchedPacks)

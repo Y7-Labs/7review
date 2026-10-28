@@ -54,6 +54,7 @@ type PolicyProjection struct {
 	Methods             []string         `json:"methods,omitempty"`
 	ResolvedMethods     []PolicyMethod   `json:"resolved_methods,omitempty"`
 	Documents           []PolicyDocument `json:"documents,omitempty"`
+	Rules               []PolicyDocument `json:"rules,omitempty"`
 	AllowedCapabilities []string         `json:"allowed_capabilities,omitempty"`
 	RequiredChecks      []string         `json:"required_checks,omitempty"`
 	MatchedPacks        []string         `json:"matched_packs,omitempty"`

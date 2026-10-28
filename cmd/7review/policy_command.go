@@ -44,6 +44,7 @@ type policyExplanationOutput struct {
 	MatchedPacks        []string                       `json:"matched_packs"`
 	Decisions           []policy.ExplanationEntry      `json:"decisions"`
 	Documents           []policy.DocumentSource        `json:"documents,omitempty"`
+	Rules               []policy.ResolvedRule          `json:"rules,omitempty"`
 }
 
 func runPolicyCommand(args []string, out io.Writer) error {
@@ -62,7 +63,11 @@ func runPolicyCommand(args []string, out io.Writer) error {
 	if err != nil {
 		return err
 	}
-	if len(config.PackRefs) > 0 {
+	hasReferences := len(config.PackRefs) > 0 || len(config.RuleRefs) > 0
+	for _, pack := range config.Packs {
+		hasReferences = hasReferences || len(pack.RuleRefs) > 0
+	}
+	if hasReferences {
 		if opts.repositoryRoot == "" {
 			return fmt.Errorf("policy: referenced documents require --repository-root for unbound local preview")
 		}
@@ -111,6 +116,7 @@ func runPolicyCommand(args []string, out io.Writer) error {
 			AllowedCapabilities: effective.AllowedTools, MatchedPacks: effective.MatchedPacks,
 			Decisions: effective.Explanation,
 			Documents: effective.Documents,
+			Rules:     effective.Rules,
 		})
 	default:
 		return fmt.Errorf("policy: unsupported command %q", action)

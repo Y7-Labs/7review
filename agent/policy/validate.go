@@ -84,6 +84,9 @@ func Validate(c ReviewConfigV2) error {
 	if err := validateDocumentRefs("pack_refs", c.PackRefs, "packs"); err != nil {
 		return err
 	}
+	if err := validateDocumentRefs("rule_refs", c.RuleRefs, "rules"); err != nil {
+		return err
+	}
 	if len(c.PackRefs) == 0 {
 		if _, err := expandPacks(c.Packs); err != nil {
 			return err
@@ -237,6 +240,9 @@ func validatePack(index int, p MethodPackV2, c ReviewConfigV2, delegations map[s
 	if err := uniqueIDs(prefix+".inherits", p.Inherits, 0, 32); err != nil {
 		return err
 	}
+	if err := validateDocumentRefs(prefix+".rule_refs", p.RuleRefs, "rules"); err != nil {
+		return err
+	}
 	if err := uniqueIDs(prefix+".methods", p.Methods, 0, 32); err != nil {
 		return err
 	}
@@ -246,7 +252,7 @@ func validatePack(index int, p MethodPackV2, c ReviewConfigV2, delegations map[s
 	if err := enum(prefix+".risk_floor", p.RiskFloor, "none", "low", "medium", "high", "critical"); err != nil {
 		return err
 	}
-	if len(p.Methods) == 0 && len(p.Checks) == 0 && p.RiskFloor == "none" && len(p.Inherits) == 0 {
+	if len(p.Methods) == 0 && len(p.Checks) == 0 && p.RiskFloor == "none" && len(p.Inherits) == 0 && len(p.RuleRefs) == 0 {
 		return fmt.Errorf("policy: %s has no effective obligation", prefix)
 	}
 	if err := validateMatch(prefix+".match", p.Match, c); err != nil {

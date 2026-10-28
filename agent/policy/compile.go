@@ -39,6 +39,7 @@ type EffectivePolicy struct {
 	MatchedPacks      []string
 	Explanation       []ExplanationEntry
 	Documents         []DocumentSource
+	Rules             []ResolvedRule
 }
 
 type ExplanationEntry struct {
@@ -52,6 +53,9 @@ type ExplanationEntry struct {
 func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error) {
 	if len(config.PackRefs) > 0 {
 		return EffectivePolicy{}, fmt.Errorf("policy: unresolved pack references; resolve trusted documents before compilation")
+	}
+	if err := requireResolvedRules(config); err != nil {
+		return EffectivePolicy{}, err
 	}
 	if err := Validate(config); err != nil {
 		return EffectivePolicy{}, err
@@ -103,6 +107,9 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		},
 	}
 
+	for _, ref := range config.defaultRuleRefs {
+		applyRule(&effective, config, ref, -1)
+	}
 	packs, err := expandPacks(config.Packs)
 	if err != nil {
 		return EffectivePolicy{}, err
@@ -134,6 +141,9 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 			}
 		}
 		effective.MatchedPacks = append(effective.MatchedPacks, pack.ID)
+		for _, ref := range pack.RuleRefs {
+			applyRule(&effective, config, ref, pack.Priority)
+		}
 		if len(pack.Inherits) > 0 {
 			effective.Explanation = append(effective.Explanation, ExplanationEntry{
 				Field: "inherits", Value: strings.Join(sortedCopy(pack.Inherits), ","), Source: "packs/" + pack.ID,
@@ -160,7 +170,8 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		Context               CompileContext
 		RuntimeInventoryKnown bool
 		Documents             []DocumentSource
-	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil, config.documents})
+		DefaultRuleRefs       []string
+	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil, config.documents, config.defaultRuleRefs})
 	if err != nil {
 		return EffectivePolicy{}, fmt.Errorf("policy: canonicalize: %w", err)
 	}

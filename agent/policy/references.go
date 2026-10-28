@@ -46,6 +46,10 @@ func validateDocumentRefs(field string, refs []string, directory string) error {
 		}
 		switch path.Ext(ref) {
 		case ".json", ".yaml", ".yml":
+		case ".md":
+			if directory != "rules" {
+				return fmt.Errorf("policy: %s forbids markdown pack documents", field)
+			}
 		default:
 			return fmt.Errorf("policy: %s unsupported document extension %q", field, path.Ext(ref))
 		}
@@ -64,19 +68,9 @@ func ResolveReferences(ctx context.Context, config ReviewConfigV2, read Document
 	resolved.documents = append([]DocumentSource(nil), config.documents...)
 	total := 0
 	for _, ref := range sortedCopy(config.PackRefs) {
-		if err := ctx.Err(); err != nil {
-			return ReviewConfigV2{}, err
-		}
-		if read == nil {
-			return ReviewConfigV2{}, fmt.Errorf("policy: document reader is not configured")
-		}
-		data, err := read(ctx, ref)
+		data, err := readReferencedDocument(ctx, read, ref, &total)
 		if err != nil {
-			return ReviewConfigV2{}, fmt.Errorf("policy: read policy document %s: %w", ref, err)
-		}
-		total += len(data)
-		if total > MaxConfigBytes {
-			return ReviewConfigV2{}, fmt.Errorf("policy: referenced documents exceed %d bytes", MaxConfigBytes)
+			return ReviewConfigV2{}, err
 		}
 		var document struct {
 			SchemaVersion int          `json:"schema_version" yaml:"schema_version"`
@@ -103,7 +97,61 @@ func ResolveReferences(ctx context.Context, config ReviewConfigV2, read Document
 	if err := Validate(resolved); err != nil {
 		return ReviewConfigV2{}, err
 	}
+	resolved.defaultRuleRefs = stableUnion(config.defaultRuleRefs, config.RuleRefs)
+	allRules := append([]string(nil), resolved.defaultRuleRefs...)
+	for _, pack := range resolved.Packs {
+		allRules = stableUnion(allRules, pack.RuleRefs)
+	}
+	if len(allRules) > 256 {
+		return ReviewConfigV2{}, fmt.Errorf("policy: referenced rules exceed maximum 256")
+	}
+	resolved.rules = make(map[string]ResolvedRule, len(allRules))
+	ids := map[string]string{}
+	for ref, rule := range config.rules {
+		resolved.rules[ref] = rule
+		ids[rule.ID] = ref
+	}
+	for _, ref := range sortedCopy(allRules) {
+		if _, ok := resolved.rules[ref]; ok {
+			continue
+		}
+		data, err := readReferencedDocument(ctx, read, ref, &total)
+		if err != nil {
+			return ReviewConfigV2{}, err
+		}
+		rule, err := decodeRule(ref, data)
+		if err != nil {
+			return ReviewConfigV2{}, err
+		}
+		if old, ok := ids[rule.ID]; ok {
+			return ReviewConfigV2{}, fmt.Errorf("policy: duplicate rule id %q in %s and %s", rule.ID, old, ref)
+		}
+		sum := sha256.Sum256(data)
+		source := DocumentSource{Kind: "rule", ID: rule.ID, Path: ref, Digest: "sha256:" + hex.EncodeToString(sum[:])}
+		resolved.rules[ref] = ResolvedRule{RuleV1: rule, Source: source}
+		ids[rule.ID] = ref
+		resolved.documents = append(resolved.documents, source)
+	}
+	resolved.RuleRefs = nil
 	return resolved, nil
+}
+
+func readReferencedDocument(ctx context.Context, read DocumentReader, ref string, total *int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if read == nil {
+		return nil, fmt.Errorf("policy: document reader is not configured")
+	}
+	data, err := read(ctx, ref)
+	if err != nil {
+		return nil, fmt.Errorf("policy: read policy document %s: %w", ref, err)
+	}
+	*total += len(data)
+	if *total > MaxConfigBytes {
+		return nil, fmt.Errorf("policy: referenced documents exceed %d bytes", MaxConfigBytes)
+	}
+	return data, nil
 }
 
 func decodePolicyDocument(filePath string, data []byte, target any) (map[string]any, error) {

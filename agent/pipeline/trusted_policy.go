@@ -170,6 +170,9 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 		return projection
 	}
 	projection.Digest = result.Effective.Digest
+	for _, rule := range result.Effective.Rules {
+		projection.Rules = append(projection.Rules, review.PolicyDocument{Kind: "rule", ID: rule.ID, Path: rule.Source.Path, Revision: result.Source.Revision, Digest: rule.Source.Digest})
+	}
 	for _, document := range result.Effective.Documents {
 		projection.Documents = append(projection.Documents, review.PolicyDocument{
 			Kind: document.Kind, ID: document.ID, Path: document.Path, Revision: result.Source.Revision, Digest: document.Digest,

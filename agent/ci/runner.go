@@ -240,6 +240,9 @@ func minimalSource(req review.Request, scm *review.SCMContext, admitted pipeline
 	if admitted.Effective != nil {
 		source.Policy = review.PolicyProjection{Mode: admitted.Mode, Digest: admitted.Effective.Digest, SourceRevision: admitted.Source.Revision, SourceDigest: admitted.Source.Digest, Methods: append([]string(nil), admitted.Effective.Methods...), RequiredChecks: append([]string(nil), admitted.Effective.RequiredChecks...), MatchedPacks: append([]string(nil), admitted.Effective.MatchedPacks...), RiskFloor: admitted.Effective.RiskFloor, IndependentReview: admitted.Effective.IndependentReview, TriggerAccepted: true}
 		source.Policy.Enforced = admitted.Enforced
+		for _, rule := range admitted.Effective.Rules {
+			source.Policy.Rules = append(source.Policy.Rules, review.PolicyDocument{Kind: "rule", ID: rule.ID, Path: rule.Source.Path, Revision: admitted.Source.Revision, Digest: rule.Source.Digest})
+		}
 		for _, document := range admitted.Effective.Documents {
 			source.Policy.Documents = append(source.Policy.Documents, review.PolicyDocument{Kind: document.Kind, ID: document.ID, Path: document.Path, Revision: admitted.Source.Revision, Digest: document.Digest})
 		}

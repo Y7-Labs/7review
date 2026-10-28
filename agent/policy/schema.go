@@ -15,10 +15,13 @@ type ReviewConfigV2 struct {
 	Delegations       []DelegationV2      `json:"delegations" yaml:"delegations"`
 	Packs             []MethodPackV2      `json:"packs" yaml:"packs"`
 	PackRefs          []string            `json:"pack_refs,omitempty" yaml:"pack_refs,omitempty"`
+	RuleRefs          []string            `json:"rule_refs,omitempty" yaml:"rule_refs,omitempty"`
 	QualityGate       QualityGateV2       `json:"quality_gate" yaml:"quality_gate"`
 	Retention         RetentionV2         `json:"retention" yaml:"retention"`
 	ExtensionsAllowed bool                `json:"extensions_allowed,omitempty" yaml:"extensions_allowed,omitempty"`
 	documents         []DocumentSource
+	rules             map[string]ResolvedRule
+	defaultRuleRefs   []string
 }
 
 type DefaultsV2 struct {
@@ -95,6 +98,7 @@ type DelegationConstraintsV2 struct {
 type MethodPackV2 struct {
 	ID                string                  `json:"id" yaml:"id"`
 	Inherits          []string                `json:"inherits,omitempty" yaml:"inherits,omitempty"`
+	RuleRefs          []string                `json:"rule_refs,omitempty" yaml:"rule_refs,omitempty"`
 	Priority          int32                   `json:"priority" yaml:"priority"`
 	Match             MatchV2                 `json:"match" yaml:"match"`
 	Methods           []string                `json:"methods" yaml:"methods"`

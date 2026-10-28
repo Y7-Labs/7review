@@ -251,6 +251,26 @@ Direct compilation of unresolved references fails. CLI validation/explanation
 requires an explicit `--repository-root` for local file reads and remains an
 unbound preview; symlinks cannot escape that root.
 
+Explicit rules use optional root/pack `rule_refs` (0-256 unique canonical paths
+per declaration under `.7review/rules/`, extensions `.md/.yaml/.yml/.json`). Pack
+inheritance unions these references. At most 256 unique rule documents are loaded;
+their bytes share the 2 MiB aggregate pack/rule limit. All declared rule references
+are validated before matching, even in unmatched packs. A shared file loads once;
+different files with the same rule ID fail. Root rules apply globally; pack rules
+apply only through matched expanded packs. Rule references are additive, never
+permission or delegation grants.
+
+Closed `RuleV1` JSON/YAML documents require `schema_version: 1`, stable `id`,
+nonempty `title` (maximum 256 bytes), nonempty `statement` and `checks` (1-128
+unique check IDs). Markdown rules use line-delimited YAML frontmatter containing
+the same fields except `statement`, which is the nonempty Markdown body. Unknown
+fields, duplicate keys/checks, unsupported versions and missing members fail.
+Selected rules supply base-owned citation evidence and mandatory gate coverage.
+Coverage names the activation `rule:<id>`. A stable gate rule ID is obtained from
+a citation whose source, heading/key and quotation validate against the selected
+base evidence; citation order must not hide such a violation. Adding a rule does
+not narrow an existing empty (all-rules) gate filter.
+
 Policy preview MUST list unavailable required capabilities, affected scopes and
 upper resource bounds before activation. Baseline packs use baseline tools.
 Additional obligations require explicit operator acknowledgement; later outages
@@ -1811,6 +1831,7 @@ Persisted canonical artifacts never rely on YAML implicit typing.
 | delegations | array maximum 256 of `DelegationV2` |
 | packs | array maximum 256 of `MethodPackV2` |
 | pack_refs | optional array maximum 256 of unique explicit pack paths; section 3 defines document shape, confinement and resolution |
+| rule_refs | optional array maximum 256 of unique explicit rule paths; section 3 defines RuleV1 formats and selection |
 | quality_gate | required object: applicable rule IDs, required coverage IDs, severity/strength thresholds, baseline mode and stable native context name |
 | retention | required object: audit_days, source_days, unresolved_reservation_days; positive integers, unresolved reservation cannot expire before reconciliation |
 | extensions_allowed | optional boolean, default false |
@@ -1828,7 +1849,7 @@ Nested configuration objects are closed schemas:
 | ScopeRefV2 | exactly `kind` enum `project/domain/module/feature/path` and `id`; path kind uses a validated repository glob |
 | DelegationV2 | required `id`, `grantor_scope`, `target_scope`, `replace_rule_ids` (0-128 unique IDs), `replace_fields` (0-16 unique enums `methods/checks/risk_floor/independent_review/publication`), `constraints`, `provenance_ref`; at least one replacement list is nonempty |
 | DelegationConstraintsV2 | optional `max_risk` enum `low/medium/high/critical`, `allowed_method_ids` and `allowed_check_ids` arrays maximum 128, `expires_at`; absent member adds no constraint |
-| MethodPackV2 | required `id`, signed int32 `priority`, `match`, `methods` (0-32 unique IDs), `checks` (0-128 unique IDs), `risk_floor` enum `none/low/medium/high/critical`, `independent_review` boolean, `publication`; optional `delegation_id`, `inherits` (0-32 unique pack IDs); at least one method/check, non-none risk floor or inherited pack is required; expansion semantics are section 3 |
+| MethodPackV2 | required `id`, signed int32 `priority`, `match`, `methods` (0-32 unique IDs), `checks` (0-128 unique IDs), `risk_floor` enum `none/low/medium/high/critical`, `independent_review` boolean, `publication`; optional `delegation_id`, `inherits` (0-32 unique pack IDs), `rule_refs` (0-256 unique explicit rule paths); at least one method/check, non-none risk floor, inherited pack or rule reference is required; expansion semantics are section 3 |
 | MatchV2 | optional arrays `domains/modules/features/paths/branches/authors/labels`, each maximum 128 unique values; families combine with ALL and values with ANY; all absent means project-wide, any present empty array makes the pack inapplicable |
 | PublicationConstraintV2 | required `mode` enum `inherit/none/human_authorized/setup_grant`; required unique `artifact_classes` subset of `assessment/comment/check/annotation/code_quality`; `manual_required` boolean |
 | QualityGateV2 | required unique `rule_ids` and `required_coverage` arrays maximum 128 each, `min_severity` enum `info/low/medium/high/critical`, `min_strength` enum `confirmed/human_check/note`, `baseline_mode` enum `all/new/changed`, and `context_name` 1-100 printable non-control bytes |

@@ -61,6 +61,7 @@ func TestReferencedPackFailureCannotFallThroughToModel(t *testing.T) {
 		{"unknown field", strings.Replace(referencedPack, `"schema_version":1`, `"schema_version":1,"execute":"shell"`, 1), "unknown field"},
 		{"duplicate key", strings.Replace(referencedPack, `"id":"base-security"`, `"id":"base-security","id":"base-security"`, 1), "duplicate JSON key"},
 		{"duplicate stable ID", strings.Replace(referencedPack, `"id":"base-security"`, `"id":"backend"`, 1), "duplicate pack id"},
+		{"external inheritance cycle", strings.Replace(referencedPack, `"id":"base-security"`, `"id":"base-security","inherits":["backend"]`, 1), "cycle"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, scm := trustedPolicyFixture()

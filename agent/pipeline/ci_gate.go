@@ -211,6 +211,9 @@ func reviewGateFindings(source review.Source) []policy.GateFinding {
 			if strings.TrimSpace(finding.Citations[0].Rule) != "" {
 				ruleID = finding.Citations[0].Rule
 			}
+			if selected := citedPolicyRuleID(source, finding.Citations); selected != "" {
+				ruleID = selected
+			}
 			evidence = evidence[:0]
 			for _, citation := range finding.Citations {
 				evidence = append(evidence, citation.Source+":"+citation.HeadingOrKey)
@@ -228,6 +231,21 @@ func reviewGateFindings(source review.Source) []policy.GateFinding {
 		})
 	}
 	return findings
+}
+
+func citedPolicyRuleID(source review.Source, citations []review.EvidenceCitation) string {
+	if len(source.Policy.Rules) == 0 {
+		return ""
+	}
+	sections := corpusContentByRef(&review.Context{Source: source})
+	for _, citation := range citations {
+		for _, rule := range source.Policy.Rules {
+			if citation.Source == rule.Path && citation.HeadingOrKey == rule.ID && validFindingCitation(source.Evidence, sections, citation) {
+				return rule.ID
+			}
+		}
+	}
+	return ""
 }
 
 func uniqueSortedStrings(values []string) []string {

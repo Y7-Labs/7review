@@ -26,11 +26,13 @@ func expandPacks(packs []MethodPackV2) ([]MethodPackV2, error) {
 		state[id] = 1
 		expanded := pack
 		expanded.Methods, expanded.Checks = nil, nil
+		expanded.RuleRefs = nil
 		expanded.RiskFloor, expanded.IndependentReview = "none", false
 		expanded.Publication = PublicationConstraintV2{Mode: "inherit", ArtifactClasses: []string{"assessment", "comment", "check", "annotation", "code_quality"}}
 		merge := func(parent MethodPackV2) {
 			expanded.Methods = stableUnion(expanded.Methods, parent.Methods)
 			expanded.Checks = stableUnion(expanded.Checks, parent.Checks)
+			expanded.RuleRefs = stableUnion(expanded.RuleRefs, parent.RuleRefs)
 			if riskRank(parent.RiskFloor) > riskRank(expanded.RiskFloor) {
 				expanded.RiskFloor = parent.RiskFloor
 			}
@@ -45,7 +47,7 @@ func expandPacks(packs []MethodPackV2) ([]MethodPackV2, error) {
 			merge(parent)
 		}
 		merge(pack)
-		if len(expanded.Methods) > 32 || len(expanded.Checks) > 128 {
+		if len(expanded.Methods) > 32 || len(expanded.Checks) > 128 || len(expanded.RuleRefs) > 256 {
 			return MethodPackV2{}, fmt.Errorf("policy: expanded pack %q exceeds method/check bounds", id)
 		}
 		state[id], memo[id] = 2, expanded

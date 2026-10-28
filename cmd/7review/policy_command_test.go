@@ -116,6 +116,48 @@ func TestPolicyCommandResolvesPacksAndRejectsSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestPolicyCommandResolvesRulesAndRejectsMissingRule(t *testing.T) {
+	file := writePolicyFixture(t)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c policy.ReviewConfigV2
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatal(err)
+	}
+	c.RuleRefs = []string{".7review/rules/auth.md"}
+	data, err = json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(file)
+	ruleFile := filepath.Join(root, filepath.FromSlash(c.RuleRefs[0]))
+	if err := os.MkdirAll(filepath.Dir(ruleFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ruleFile, []byte("---\nschema_version: 1\nid: AUTH-001\ntitle: Authorization\nchecks: [auth-check]\n---\nAuthorize before mutation.\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runPolicyCommand([]string{"explain", "--file", file, "--repository-root", root}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "auth-check") || !strings.Contains(out.String(), `"id": "AUTH-001"`) {
+		t.Fatalf("rule omitted from preview: %s", out.String())
+	}
+	if err := os.Remove(ruleFile); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runPolicyCommand([]string{"validate", "--file", file, "--repository-root", root}, &out); err == nil || out.Len() != 0 {
+		t.Fatalf("missing rule falsely validated: output=%s err=%v", out.String(), err)
+	}
+}
+
 func writePolicyFixture(t *testing.T) string {
 	t.Helper()
 	period := &policy.FixedPeriodV2{Kind: "fixed", Anchor: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), DurationMS: 86_400_000}

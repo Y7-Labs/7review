@@ -14,6 +14,13 @@ has behavioral regression tests. See [Policy Execution Progress](docs/policy-exe
 for red/green evidence and remaining G04 work. This does not complete Phase 2,
 the adaptive controller, publication authority or accepted-target qualification.
 
+Additional verified policy slices: obligation-only pack inheritance, explicit
+base-owned pack/rule files, authoritative selected-rule evidence and rule-specific
+coverage/gate identity. Real Git fixtures preserve base authority despite head
+replacements and distinguish incomplete coverage from a blocking violation.
+Reference loading is bounded and strict; CLI local previews require an explicit
+confined repository root. G04 and the target qualification gates remain open.
+
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
 running with healthy agent/Headroom/MemPalace containers, authenticated CLI/TUI

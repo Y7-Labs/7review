@@ -109,6 +109,31 @@ This is an incremental behavior ledger, not a completion declaration.
   `os.Root`; a real outside-root symlink test must fail without emitting success.
 - Verification: full Go suite and targeted policy/pipeline/CLI race tests.
 
+## Slice 8: Selected Base-Owned Rules And Gate Identity
+
+- Red: inherited rule statements never reached investigation; missing rules in
+  unmatched packs could not be validated through the declared reference path.
+- Green: closed RuleV1 JSON/YAML/Markdown documents are read at the trusted base,
+  validated across the complete declared rule registry and selected by root or
+  matched expanded pack. Rules cannot supply tools, permissions or delegation.
+- Shared files load once; duplicate stable IDs across files, duplicate keys/checks,
+  unknown fields, unsupported versions, empty statements and unresolved compilation
+  fail closed. Pack/rule reference bytes share the aggregate reference bound;
+  the root retains its separate configuration-size bound.
+- Selected rules provide authoritative citation sections, stable IDs, provenance
+  and `rule:<id>` coverage obligations. Proposed-head corpus entries at declared
+  rule paths cannot replace base authority or activate unmatched rules. Preview
+  remains observational; missing preview references are visible warnings.
+- Behavioral regressions exposed mutable compiled rule slices, sentence-as-rule-ID
+  gate mapping and a valid citation hidden after another citation. These are fixed;
+  stable mapping revalidates source/key/quotation against selected base evidence.
+- A real Git fixture replaces both pack and Markdown rule on head. The runner
+  retains base authority and distinguishes incomplete rule coverage, covered-clean
+  assessment and a validated blocking violation under the stable rule ID.
+- CLI resolves root/pack rules with the same explicit-root confinement and rejects
+  missing files without printing a successful validation receipt.
+- Verification: full uncached Go suite, targeted race tests and `go vet ./...`.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
@@ -130,7 +155,8 @@ Method tool metadata cannot widen compiled runtime capabilities.
 
 ## Remaining
 
-Rule file references; remaining effect capabilities;
+Full method-reference registry qualification (including unmatched methods), further
+provider file-reader/confinement qualification, remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

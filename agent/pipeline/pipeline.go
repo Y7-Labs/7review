@@ -14,6 +14,7 @@ import (
 	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/config"
 	"github.com/Y4NN777/7review/agent/orchestrator"
+	"github.com/Y4NN777/7review/agent/policy"
 	"github.com/Y4NN777/7review/agent/profile"
 	"github.com/Y4NN777/7review/agent/review"
 	"github.com/Y4NN777/7review/agent/skills"
@@ -86,6 +87,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 	rc.Diff = normalizeDiff(scmContext.Files)
 	rc.Request.ChangedPaths = rc.ChangedPaths()
 	var policyMethods []ResolvedPolicyMethod
+	var policyRules []policy.ResolvedRule
 	if p.TrustedPolicy != nil {
 		admission, admissionErr := p.TrustedPolicy.Evaluate(ctx, rc.Request, scmContext)
 		if admissionErr != nil {
@@ -96,6 +98,9 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		rc.Source.Policy = projectTrustedPolicy(admission)
 		if admission.Enforced {
 			policyMethods = admission.Methods
+			if admission.Effective != nil {
+				policyRules = admission.Effective.Rules
+			}
 		}
 		if admission.Attestation.Verified {
 			attestation := admission.Attestation
@@ -126,6 +131,9 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		rc.Source.SkillActivations = append(rc.Source.SkillActivations, method.Activation)
 		rc.Source.SkillSections = append(rc.Source.SkillSections, method.Section)
 	}
+	for _, rule := range policyRules {
+		rc.Source.SkillActivations = append(rc.Source.SkillActivations, review.SkillActivation{Name: "rule:" + rule.ID, Path: rule.Source.Path, Category: "policy", Required: true, RequiredChecks: append([]string(nil), rule.Checks...), Reason: "required by selected trusted rule"})
+	}
 	rc.Source.SkillActivations = mergeEffectivePolicyActivation(rc.Source.SkillActivations, rc.Source.Policy)
 	p.trace(ctx, run.ID, "skills_selected", StatusRunning, "repository review skills selected", map[string]string{
 		"count": strconv.Itoa(len(rc.SkillSections)),
@@ -137,6 +145,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
 		return err
 	}
+	applyTrustedRuleEvidence(rc, policyRules)
 	p.trace(ctx, run.ID, "repository_knowledge_selected", StatusRunning, "repository knowledge selected", map[string]string{
 		"count":   strconv.Itoa(len(rc.CorpusSections)),
 		"paths":   joinSectionPaths(rc.CorpusSections, 8),
