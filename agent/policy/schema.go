@@ -92,6 +92,7 @@ type DelegationConstraintsV2 struct {
 
 type MethodPackV2 struct {
 	ID                string                  `json:"id" yaml:"id"`
+	Inherits          []string                `json:"inherits,omitempty" yaml:"inherits,omitempty"`
 	Priority          int32                   `json:"priority" yaml:"priority"`
 	Match             MatchV2                 `json:"match" yaml:"match"`
 	Methods           []string                `json:"methods" yaml:"methods"`
@@ -113,9 +114,10 @@ type MatchV2 struct {
 }
 
 type PublicationConstraintV2 struct {
-	Mode            string   `json:"mode" yaml:"mode"`
-	ArtifactClasses []string `json:"artifact_classes" yaml:"artifact_classes"`
-	ManualRequired  bool     `json:"manual_required" yaml:"manual_required"`
+	Mode                      string   `json:"mode" yaml:"mode"`
+	ArtifactClasses           []string `json:"artifact_classes" yaml:"artifact_classes"`
+	ManualRequired            bool     `json:"manual_required" yaml:"manual_required"`
+	artifactClassesRestricted bool
 }
 
 type QualityGateV2 struct {

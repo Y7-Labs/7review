@@ -230,6 +230,15 @@ does not). Unknown domain/module/feature mappings fail validation. Inheritance
 expands before matching without implicit precedence. Empty optional lists match
 nothing; absent optional predicates impose no restriction.
 
+Inheritance representation (additive V2 input contract): a pack may declare
+`inherits: [<pack-id>, ...]` (0-32 unique IDs). All IDs must exist, including in
+unmatched packs; cycles fail validation. Expansion reuses methods/checks by stable
+union, maximum risk floor, independent-review OR and most-restrictive publication.
+It never copies matcher, priority or delegation authority. Ancestors remain
+independently matched packs, not implicit templates. Parent IDs expand in stable
+ID order; this order grants no scalar override. Expanded methods/checks retain
+their 32/128 bounds. A disjoint publication-class intersection permits no classes.
+
 Policy preview MUST list unavailable required capabilities, affected scopes and
 upper resource bounds before activation. Baseline packs use baseline tools.
 Additional obligations require explicit operator acknowledgement; later outages
@@ -1806,7 +1815,7 @@ Nested configuration objects are closed schemas:
 | ScopeRefV2 | exactly `kind` enum `project/domain/module/feature/path` and `id`; path kind uses a validated repository glob |
 | DelegationV2 | required `id`, `grantor_scope`, `target_scope`, `replace_rule_ids` (0-128 unique IDs), `replace_fields` (0-16 unique enums `methods/checks/risk_floor/independent_review/publication`), `constraints`, `provenance_ref`; at least one replacement list is nonempty |
 | DelegationConstraintsV2 | optional `max_risk` enum `low/medium/high/critical`, `allowed_method_ids` and `allowed_check_ids` arrays maximum 128, `expires_at`; absent member adds no constraint |
-| MethodPackV2 | required `id`, signed int32 `priority`, `match`, `methods` (0-32 unique IDs), `checks` (0-128 unique IDs), `risk_floor` enum `none/low/medium/high/critical`, `independent_review` boolean, `publication`; optional `delegation_id`; at least one method/check or non-none risk floor is required |
+| MethodPackV2 | required `id`, signed int32 `priority`, `match`, `methods` (0-32 unique IDs), `checks` (0-128 unique IDs), `risk_floor` enum `none/low/medium/high/critical`, `independent_review` boolean, `publication`; optional `delegation_id`, `inherits` (0-32 unique pack IDs); at least one method/check, non-none risk floor or inherited pack is required; expansion semantics are section 3 |
 | MatchV2 | optional arrays `domains/modules/features/paths/branches/authors/labels`, each maximum 128 unique values; families combine with ALL and values with ANY; all absent means project-wide, any present empty array makes the pack inapplicable |
 | PublicationConstraintV2 | required `mode` enum `inherit/none/human_authorized/setup_grant`; required unique `artifact_classes` subset of `assessment/comment/check/annotation/code_quality`; `manual_required` boolean |
 | QualityGateV2 | required unique `rule_ids` and `required_coverage` arrays maximum 128 each, `min_severity` enum `info/low/medium/high/critical`, `min_strength` enum `confirmed/human_check/note`, `baseline_mode` enum `all/new/changed`, and `context_name` 1-100 printable non-control bytes |

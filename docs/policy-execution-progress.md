@@ -80,6 +80,20 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: uncached full Go suite, targeted race tests across changed
   behavior in skills/pipeline/CI/review/orchestrator, and `go vet ./...`.
 
+## Slice 6: Obligation-Only Pack Inheritance
+
+- Red: closed-schema decoding rejected all inheritance, preventing execution of
+  the specified composition behavior. Negative tests assert graph-specific errors,
+  not just any decoding failure.
+- Green: optional `inherits` expands before matching, rejects missing parents,
+  duplicate edges and cycles even in unmatched packs, and retains expansion bounds.
+- Only obligations are composed. Matchers, priority and delegation are not
+  inherited; ancestors still match independently. A child cannot weaken inherited
+  risk/manual/independent-review restrictions or reopen a disjoint disclosure set.
+- Diamond, unrelated-scope, repeated-compilation/input-immutability and delegated
+  authority fixtures exercise behavior beyond the happy path.
+- Verification: policy tests, full Go suite and policy race tests.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
@@ -101,7 +115,7 @@ Method tool metadata cannot widen compiled runtime capabilities.
 
 ## Remaining
 
-Pack/rule references and inheritance representation; remaining effect capabilities;
+Pack/rule file references; remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

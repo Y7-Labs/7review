@@ -81,6 +81,9 @@ func Validate(c ReviewConfigV2) error {
 		}
 		packIDs[pack.ID] = true
 	}
+	if _, err := expandPacks(c.Packs); err != nil {
+		return err
+	}
 	if err := validateQualityGate(c.QualityGate, c.Defaults.GateMode); err != nil {
 		return err
 	}
@@ -226,6 +229,9 @@ func validatePack(index int, p MethodPackV2, c ReviewConfigV2, delegations map[s
 	if !validID(p.ID) {
 		return fmt.Errorf("policy: %s.id is invalid", prefix)
 	}
+	if err := uniqueIDs(prefix+".inherits", p.Inherits, 0, 32); err != nil {
+		return err
+	}
 	if err := uniqueIDs(prefix+".methods", p.Methods, 0, 32); err != nil {
 		return err
 	}
@@ -235,7 +241,7 @@ func validatePack(index int, p MethodPackV2, c ReviewConfigV2, delegations map[s
 	if err := enum(prefix+".risk_floor", p.RiskFloor, "none", "low", "medium", "high", "critical"); err != nil {
 		return err
 	}
-	if len(p.Methods) == 0 && len(p.Checks) == 0 && p.RiskFloor == "none" {
+	if len(p.Methods) == 0 && len(p.Checks) == 0 && p.RiskFloor == "none" && len(p.Inherits) == 0 {
 		return fmt.Errorf("policy: %s has no effective obligation", prefix)
 	}
 	if err := validateMatch(prefix+".match", p.Match, c); err != nil {

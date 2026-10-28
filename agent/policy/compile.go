@@ -98,7 +98,10 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		},
 	}
 
-	packs := append([]MethodPackV2(nil), config.Packs...)
+	packs, err := expandPacks(config.Packs)
+	if err != nil {
+		return EffectivePolicy{}, err
+	}
 	sort.Slice(packs, func(i, j int) bool {
 		if packs[i].Priority != packs[j].Priority {
 			return packs[i].Priority > packs[j].Priority
@@ -126,6 +129,12 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 			}
 		}
 		effective.MatchedPacks = append(effective.MatchedPacks, pack.ID)
+		if len(pack.Inherits) > 0 {
+			effective.Explanation = append(effective.Explanation, ExplanationEntry{
+				Field: "inherits", Value: strings.Join(sortedCopy(pack.Inherits), ","), Source: "packs/" + pack.ID,
+				Reason: "parent obligations expanded without inheriting match, priority or delegation", Precedence: pack.Priority,
+			})
+		}
 		effective.Methods = stableUnion(effective.Methods, pack.Methods)
 		effective.RequiredChecks = stableUnion(effective.RequiredChecks, pack.Checks)
 		effective.QualityGate.RequiredCoverage = stableUnion(effective.QualityGate.RequiredCoverage, pack.Checks)
@@ -345,7 +354,8 @@ func restrictivePublication(current, next PublicationConstraintV2) PublicationCo
 		current.Mode = next.Mode
 	}
 	current.ManualRequired = current.ManualRequired || next.ManualRequired
-	if len(next.ArtifactClasses) > 0 {
+	if len(next.ArtifactClasses) > 0 || next.artifactClassesRestricted {
+		current.artifactClassesRestricted = true
 		allowed := toSet(next.ArtifactClasses)
 		filtered := current.ArtifactClasses[:0]
 		for _, class := range current.ArtifactClasses {
