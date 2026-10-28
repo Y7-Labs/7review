@@ -149,3 +149,60 @@ func trustedPolicyFixture() (review.Request, *review.SCMContext) {
 	}
 	return req, scm
 }
+
+func TestPipelinePreviewPolicyDoesNotActivateRequiredChecks(t *testing.T) {
+	req, scm := trustedPolicyFixture()
+	model := &sequenceLLMProvider{responses: []string{`[]`}}
+	store := NewMemoryRunStore()
+	p := policyExecutionPipeline(store, model, scm, TrustedPolicyResult{
+		Mode: "preview", Trigger: policy.TriggerDecision{Accepted: true},
+		Effective: &policy.EffectivePolicy{Digest: "preview-digest", RequiredChecks: []string{"preview-only-check"}},
+	})
+	if err := p.Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.Get(context.Background(), "owner/repository!7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Source.Policy.Digest != "preview-digest" || len(run.Source.Policy.RequiredChecks) != 1 {
+		t.Fatal("preview must remain inspectable")
+	}
+	if len(run.Source.SkillActivations) != 0 {
+		t.Fatalf("preview changed the execution plan: %#v", run.Source.SkillActivations)
+	}
+	for _, warning := range run.Source.Run.Warnings {
+		if strings.Contains(warning, "effective-policy") {
+			t.Fatalf("preview created a coverage obligation: %s", warning)
+		}
+	}
+}
+
+func TestPipelineEnforcedPolicyActivatesRequiredChecks(t *testing.T) {
+	req, scm := trustedPolicyFixture()
+	store := NewMemoryRunStore()
+	p := policyExecutionPipeline(store, &sequenceLLMProvider{responses: []string{`[]`}}, scm, TrustedPolicyResult{
+		Mode: "enforce", Enforced: true, Trigger: policy.TriggerDecision{Accepted: true},
+		Effective: &policy.EffectivePolicy{RequiredChecks: []string{"protected-check"}},
+	})
+	if err := p.Run(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.Get(context.Background(), "owner/repository!7")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !run.Source.Policy.Enforced || len(run.Source.SkillActivations) != 1 || strings.Join(run.Source.SkillActivations[0].RequiredChecks, ",") != "protected-check" {
+		t.Fatalf("enforced checks were lost: %#v", run.Source)
+	}
+}
+
+func policyExecutionPipeline(store RunStore, model orchestrator.LLMProvider, scm *review.SCMContext, admission TrustedPolicyResult) *Pipeline {
+	return &Pipeline{
+		Orchestrator: orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": model}),
+		Jobs:         store, SCM: staticSCM{context: scm}, DeliveryMode: DeliveryArtifactOnly,
+		SCMPublisher: fakePublisher{}, Memory: NoopMemoryStore{}, ContextReducer: NoopContextReducer{},
+		Policy: DefaultPolicyFilter{}, FindingValidator: DefaultFindingValidator{},
+		TrustedPolicy: staticAdmission{result: admission},
+	}
+}

@@ -142,7 +142,7 @@ func isUpdateAction(action string) bool {
 
 func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 	projection := review.PolicyProjection{
-		Mode: result.Mode, SourceRevision: result.Source.Revision, SourceDigest: result.Source.Digest,
+		Mode: result.Mode, Enforced: result.Enforced, SourceRevision: result.Source.Revision, SourceDigest: result.Source.Digest,
 		TriggerAccepted: result.Trigger.Accepted, TriggerReasons: append([]string(nil), result.Trigger.Reasons...),
 	}
 	if result.Warning != "" {

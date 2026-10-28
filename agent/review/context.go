@@ -47,6 +47,7 @@ type Source struct {
 
 type PolicyProjection struct {
 	Mode              string           `json:"mode"`
+	Enforced          bool             `json:"enforced"`
 	Digest            string           `json:"digest,omitempty"`
 	SourceRevision    string           `json:"source_revision,omitempty"`
 	SourceDigest      string           `json:"source_digest,omitempty"`

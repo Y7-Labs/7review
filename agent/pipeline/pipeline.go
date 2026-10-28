@@ -302,7 +302,7 @@ func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
 }
 
 func mergeEffectivePolicyActivation(activations []review.SkillActivation, projection review.PolicyProjection) []review.SkillActivation {
-	if len(projection.RequiredChecks) == 0 {
+	if !projection.Enforced || len(projection.RequiredChecks) == 0 {
 		return activations
 	}
 	covered := map[string]bool{}
