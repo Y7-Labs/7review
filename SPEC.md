@@ -165,8 +165,28 @@ check IDs must be unique valid IDs (maximum 128). Only effective selected method
 contribute instructions, tools or required checks. Full registry provenance enters
 policy identity and persists separately from selected-method provenance. Proposed
 head corpus entries at declared method paths cannot activate an unmatched method.
+CLI validation/explanation uses the same declared-method validator, not just root
+configuration syntax. Repository methods require an explicit local repository
+root; local dependency paths must use regular files/directories. Validation receipts
+identify `scope: unbound_policy_bundle`; explanation identifies `unbound_preview`
+and separates the complete method registry from selected methods. Local preview
+does not freeze concurrent workspace mutations, attest a base or authorize effects.
 Unknown schema keys, duplicate IDs, missing references and inheritance cycles
 fail validation. No executable expressions, scripts or remote policy imports.
+Trusted provider file reads require a full immutable commit SHA and canonical
+bounded repository paths. GitHub/GitLab readers walk regular trees in the same
+configured repository, reject symlink/submodule leaves or ancestors and read
+regular blobs by object ID; exact blob bytes must match native Git identity.
+Redirects and provider-returned URLs cannot change the API/repository boundary.
+Reads have bounds of 128 requests, 16 MiB aggregate HTTP responses, 32 path
+components, 4096 path bytes and 2 MiB decoded file bytes, in addition to policy
+bundle/method limits. Truncation, pagination ambiguity or bound exhaustion fails
+visibly, never as successful partial authority. These are admission hard bounds,
+not the still-pending accounted operator/action budget controller.
+Frozen Git reads also reject non-regular objects, disable replacement objects and
+ambient repository/object-store overrides, and use literal pathspecs and verified
+blob bytes. Provider modes are stricter than merely preventing symlink escape:
+trusted policy dependencies must be regular files under regular directories.
 ENG-D13: authority and delegation are evaluated before preference priority.
 Narrower scope alone never authorizes replacing a parent obligation. A proposed
 delegation identifies grantor, recipient scope, permitted rule IDs/fields and

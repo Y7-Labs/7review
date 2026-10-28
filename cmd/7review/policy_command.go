@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/policy"
+	"github.com/Y4NN777/7review/agent/review"
 )
 
 type policyCommandOptions struct {
@@ -25,6 +27,8 @@ type policyCommandOptions struct {
 
 type policyValidationOutput struct {
 	Valid         bool   `json:"valid"`
+	Scope         string `json:"scope"`
+	Methods       int    `json:"methods"`
 	SchemaVersion int    `json:"schema_version"`
 	ProjectID     string `json:"project_id,omitempty"`
 	Packs         int    `json:"packs"`
@@ -45,6 +49,7 @@ type policyExplanationOutput struct {
 	Decisions           []policy.ExplanationEntry      `json:"decisions"`
 	Documents           []policy.DocumentSource        `json:"documents,omitempty"`
 	Rules               []policy.ResolvedRule          `json:"rules,omitempty"`
+	MethodRegistry      []review.PolicyMethod          `json:"method_registry"`
 }
 
 func runPolicyCommand(args []string, out io.Writer) error {
@@ -52,9 +57,34 @@ func runPolicyCommand(args []string, out io.Writer) error {
 		return fmt.Errorf("usage: 7review policy <validate|explain> --file <review.yaml>")
 	}
 	action := args[0]
+	if action != "validate" && action != "explain" {
+		return fmt.Errorf("policy: unsupported command %q", action)
+	}
 	opts, err := parsePolicyCommandOptions(args[1:])
 	if err != nil {
 		return err
+	}
+	var root *os.Root
+	defer func() {
+		if root != nil {
+			root.Close()
+		}
+	}()
+	read := func(ctx context.Context, path string) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if root == nil {
+			if opts.repositoryRoot == "" {
+				return nil, fmt.Errorf("policy: referenced documents/methods require --repository-root for unbound local preview")
+			}
+			var err error
+			root, err = os.OpenRoot(opts.repositoryRoot)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return readPolicyPreviewFile(root, path)
 	}
 	if opts.file == "" {
 		return fmt.Errorf("policy: --file is required")
@@ -68,48 +98,31 @@ func runPolicyCommand(args []string, out io.Writer) error {
 		hasReferences = hasReferences || len(pack.RuleRefs) > 0
 	}
 	if hasReferences {
-		if opts.repositoryRoot == "" {
-			return fmt.Errorf("policy: referenced documents require --repository-root for unbound local preview")
-		}
-		root, err := os.OpenRoot(opts.repositoryRoot)
+		config, err = policy.ResolveReferences(context.Background(), config, read)
 		if err != nil {
 			return err
 		}
-		defer root.Close()
-		config, err = policy.ResolveReferences(context.Background(), config, func(_ context.Context, path string) ([]byte, error) {
-			file, err := root.Open(path)
-			if err != nil {
-				return nil, err
-			}
-			defer file.Close()
-			info, err := file.Stat()
-			if err != nil {
-				return nil, err
-			}
-			if !info.Mode().IsRegular() {
-				return nil, fmt.Errorf("policy: %s is not a regular file", path)
-			}
-			return io.ReadAll(io.LimitReader(file, policy.MaxConfigBytes+1))
-		})
-		if err != nil {
-			return err
-		}
+	}
+	effective, err := policy.Compile(config, policy.CompileContext{
+		ProjectID: opts.projectID, ChangedPaths: opts.paths, Branch: opts.branch,
+		Author: opts.author, Labels: opts.labels, RuntimeAllowed: opts.capabilities,
+	})
+	if err != nil {
+		return err
+	}
+	_, registry, err := pipeline.PreviewPolicyMethods(context.Background(), config, &effective, read)
+	if err != nil {
+		return err
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	switch action {
 	case "validate":
-		return encoder.Encode(policyValidationOutput{Valid: true, SchemaVersion: config.SchemaVersion, ProjectID: config.ProjectID, Packs: len(config.Packs), Delegations: len(config.Delegations)})
+		return encoder.Encode(policyValidationOutput{Valid: true, Scope: "unbound_policy_bundle", Methods: len(registry), SchemaVersion: config.SchemaVersion, ProjectID: config.ProjectID, Packs: len(config.Packs), Delegations: len(config.Delegations)})
 	case "explain":
-		effective, err := policy.Compile(config, policy.CompileContext{
-			ProjectID: opts.projectID, ChangedPaths: opts.paths, Branch: opts.branch,
-			Author: opts.author, Labels: opts.labels, RuntimeAllowed: opts.capabilities,
-		})
-		if err != nil {
-			return err
-		}
 		return encoder.Encode(policyExplanationOutput{
-			TrustedSource: "unbound_preview", PolicyDigest: effective.Digest,
+			MethodRegistry: registry,
+			TrustedSource:  "unbound_preview", PolicyDigest: effective.Digest,
 			Methods: effective.Methods, RequiredChecks: effective.RequiredChecks,
 			RiskFloor: effective.RiskFloor, IndependentReview: effective.IndependentReview,
 			Publication: effective.Publication, GateMode: effective.GateMode,
@@ -121,6 +134,33 @@ func runPolicyCommand(args []string, out io.Writer) error {
 	default:
 		return fmt.Errorf("policy: unsupported command %q", action)
 	}
+}
+
+func readPolicyPreviewFile(root *os.Root, path string) ([]byte, error) {
+	parts := strings.Split(path, "/")
+	for i := range parts {
+		prefix := strings.Join(parts[:i+1], "/")
+		info, err := root.Lstat(prefix)
+		if err != nil {
+			return nil, err
+		}
+		if info.Mode()&os.ModeSymlink != 0 || (i < len(parts)-1 && !info.IsDir()) || (i == len(parts)-1 && !info.Mode().IsRegular()) {
+			return nil, fmt.Errorf("policy: %s must be a regular file under regular directories", path)
+		}
+	}
+	file, err := root.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("policy: %s is not a regular file", path)
+	}
+	return io.ReadAll(io.LimitReader(file, policy.MaxConfigBytes+1))
 }
 
 func parsePolicyCommandOptions(args []string) (policyCommandOptions, error) {

@@ -213,6 +213,25 @@ This is an incremental behavior ledger, not a completion declaration.
   before a panic model provider can run.
 - Verification: full uncached suite and targeted tools/CI race tests.
 
+## Slice 14: CLI Registry And Regular-File Qualification
+
+- Red: CLI validation still reported success for missing/unknown unmatched methods
+  and symlinked methods, unlike service admission. Explain omitted the registry.
+- Green: CLI uses the same bounded declared-method validator, requires an explicit
+  root for repository dependencies and rejects symlink leaves/ancestors. Inactive
+  methods are validated/provenanced without adding instructions or checks.
+- Receipts label the scope `unbound_policy_bundle`; explain labels `unbound_preview`
+  and separates registry from selected methods. This does not freeze a mutable
+  local workspace or attest a base revision; the private local-review journey
+  remains G10, not completed by these validation commands.
+- The documented example itself failed the new qualification because its backend
+  method was absent. Add the explicit example method root and execute both README
+  commands. Validation reports two methods; explanation selects the backend method
+  only for the matching path. An automated fixture protects the documented command.
+- Verification: full uncached suite, broad tools/pipeline/CI/review/CLI race tests,
+  `go vet ./...`, and actual local validate/explain commands. No paid inference or
+  live GitHub/GitLab API qualification was run.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
@@ -234,8 +253,8 @@ Method tool metadata cannot widen compiled runtime capabilities.
 
 ## Remaining
 
-CLI method-registry qualification and provider file-reader/confinement qualification;
-remaining effect capabilities;
+Hosted GitHub/GitLab permission/API-version qualification and the separate mutable
+local snapshot journey; remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

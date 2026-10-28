@@ -21,6 +21,15 @@ replacements and distinguish incomplete coverage from a blocking violation.
 Reference loading is bounded and strict; CLI local previews require an explicit
 confined repository root. G04 and the target qualification gates remain open.
 
+Unmatched-method/provider-confinement update: the complete declared method registry
+is validated before inference in service and frozen CI, separately from activation.
+GitHub/GitLab trusted reads now bind regular tree/blob objects and verified bytes
+without following redirects or returned URLs. Frozen Git ignores replacements and
+ambient repository overrides. CLI validates the same registry and the documented
+example now includes its method file. Verification is local deterministic/race/Git
+fixture evidence; hosted-provider qualification, operator ceilings, scoped conflicts
+and the rest of G04 remain open.
+
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
 running with healthy agent/Headroom/MemPalace containers, authenticated CLI/TUI

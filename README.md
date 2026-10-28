@@ -278,14 +278,20 @@ go run ./cmd/7review status --server http://localhost:8080
 Validate or preview a target V2 repository policy without activating it:
 
 ```sh
-go run ./cmd/7review policy validate --file profiles/review.v2.example.yaml
+go run ./cmd/7review policy validate --file profiles/review.v2.example.yaml \
+  --repository-root examples/policy
 go run ./cmd/7review policy explain --file profiles/review.v2.example.yaml \
+  --repository-root examples/policy \
   --project owner/repository --path backend/auth/service.go \
   --capability repo.read --capability model.review
 ```
 
 `policy explain` is an unbound preview. Runtime activation must additionally bind
 the policy digest and revision to a verified trusted-base snapshot.
+Both commands validate all declared method references, including unmatched packs.
+The example root supplies the referenced backend method. For a real repository,
+use its policy file and repository root; referenced files and directories must be
+regular, not symlinks. A valid local preview is not a frozen or activated review.
 
 Start the Docker runtime:
 

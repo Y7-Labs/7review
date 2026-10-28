@@ -30,6 +30,12 @@ type ResolvedPolicyMethod struct {
 	Activation review.SkillActivation
 }
 
+// PreviewPolicyMethods qualifies the same method registry as service admission
+// without claiming an attested revision or authorizing any execution.
+func PreviewPolicyMethods(ctx context.Context, config policy.ReviewConfigV2, effective *policy.EffectivePolicy, read func(context.Context, string) ([]byte, error)) ([]ResolvedPolicyMethod, []review.PolicyMethod, error) {
+	return resolvePolicyMethodRegistry(ctx, effective, policy.Source{Revision: "unbound_preview"}, declaredPolicyMethods(config), read)
+}
+
 func resolvePolicyMethods(ctx context.Context, effective *policy.EffectivePolicy, source policy.Source, read func(context.Context, string) ([]byte, error)) ([]ResolvedPolicyMethod, error) {
 	selected, _, err := resolvePolicyMethodRegistry(ctx, effective, source, effective.Methods, read)
 	return selected, err
