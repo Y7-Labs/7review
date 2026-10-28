@@ -19,6 +19,15 @@ type gitLabRepositoryEntry struct {
 
 func readGitLabRepositoryBlob(ctx context.Context, r *repositoryHTTP, repository, revision, filePath string) ([]byte, error) {
 	prefix := "/api/v4/projects/" + url.PathEscape(repository) + "/repository/"
+	var commit struct {
+		ID string `json:"id"`
+	}
+	if err := r.json(ctx, prefix+"commits/"+revision, &commit); err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(commit.ID, revision) {
+		return nil, fmt.Errorf("gitlab: commit response does not bind requested revision")
+	}
 	parts := strings.Split(filePath, "/")
 	dir := ""
 	for i, part := range parts {

@@ -33,13 +33,13 @@ func readGitHubRepositoryBlob(ctx context.Context, r *repositoryHTTP, repository
 	for i, part := range parts {
 		var tree struct {
 			SHA       string                  `json:"sha"`
-			Truncated bool                    `json:"truncated"`
+			Truncated *bool                   `json:"truncated"`
 			Entries   []gitHubRepositoryEntry `json:"tree"`
 		}
 		if err := r.json(ctx, prefix+"trees/"+treeID, &tree); err != nil {
 			return nil, err
 		}
-		if !strings.EqualFold(tree.SHA, treeID) || tree.Truncated {
+		if !strings.EqualFold(tree.SHA, treeID) || tree.Truncated == nil || *tree.Truncated {
 			return nil, fmt.Errorf("github: tree identity mismatch or truncated repository tree")
 		}
 		var selected *gitHubRepositoryEntry

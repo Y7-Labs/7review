@@ -232,6 +232,17 @@ This is an incremental behavior ledger, not a completion declaration.
   `go vet ./...`, and actual local validate/explain commands. No paid inference or
   live GitHub/GitLab API qualification was run.
 
+## Slice 15: Explicit Provider Commit/Completeness Receipts
+
+- Red: a mismatched GitLab commit receipt did not affect file acceptance because
+  the adapter had not checked that receipt; GitHub accepted missing truncation
+  metadata as if the tree were known complete.
+- Green: GitLab resolves and checks the exact commit ID before tree traversal.
+  GitHub requires an explicitly non-truncated tree receipt. Invalid/missing
+  identity or completeness cannot fall through to blob reads.
+- Verification: full uncached suite, tools race tests and `go vet ./...`.
+  Contract source: [GitLab single-commit API](https://docs.gitlab.com/api/commits/#get-a-single-commit).
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

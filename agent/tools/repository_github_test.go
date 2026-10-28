@@ -20,9 +20,9 @@ func testGitBlobID(data []byte) string {
 
 func TestGitHubRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 	for _, tc := range []struct {
-		name, mode, kind                                                  string
-		truncated, wrongCommit, wrongTree, wrongBlob, tampered, duplicate bool
-		allow                                                             bool
+		name, mode, kind                                                                     string
+		truncated, wrongCommit, wrongTree, wrongBlob, tampered, duplicate, unknownTruncation bool
+		allow                                                                                bool
 	}{
 		{name: "regular", mode: "100644", kind: "blob", allow: true},
 		{name: "executable regular", mode: "100755", kind: "blob", allow: true},
@@ -30,6 +30,7 @@ func TestGitHubRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 		{name: "submodule", mode: "160000", kind: "commit"},
 		{name: "directory", mode: "040000", kind: "tree"},
 		{name: "truncated tree", mode: "100644", kind: "blob", truncated: true},
+		{name: "unknown tree completeness", mode: "100644", kind: "blob", unknownTruncation: true},
 		{name: "wrong commit", mode: "100644", kind: "blob", wrongCommit: true},
 		{name: "wrong tree", mode: "100644", kind: "blob", wrongTree: true},
 		{name: "wrong blob receipt", mode: "100644", kind: "blob", wrongBlob: true},
@@ -67,7 +68,11 @@ func TestGitHubRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 					if tc.duplicate {
 						entries = append(entries, entry)
 					}
-					return testJSON(t, map[string]any{"sha": sha, "tree": entries, "truncated": tc.truncated}), nil
+					response := map[string]any{"sha": sha, "tree": entries, "truncated": tc.truncated}
+					if tc.unknownTruncation {
+						delete(response, "truncated")
+					}
+					return testJSON(t, response), nil
 				case "/api/v3/repos/o/r/git/blobs/" + blob:
 					blobReads++
 					sha := blob

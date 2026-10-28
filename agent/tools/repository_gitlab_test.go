@@ -10,9 +10,9 @@ import (
 
 func TestGitLabRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 	for _, tc := range []struct {
-		name, mode, kind                                             string
-		paginated, duplicate, badPage, tampered, wrongPath, linkOnly bool
-		allow                                                        bool
+		name, mode, kind                                                          string
+		paginated, duplicate, badPage, tampered, wrongPath, linkOnly, wrongCommit bool
+		allow                                                                     bool
 	}{
 		{name: "regular", mode: "100644", kind: "blob", allow: true},
 		{name: "executable regular", mode: "100755", kind: "blob", allow: true},
@@ -25,6 +25,7 @@ func TestGitLabRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 		{name: "invalid pagination", mode: "100644", kind: "blob", badPage: true},
 		{name: "wrong path", mode: "100644", kind: "blob", wrongPath: true},
 		{name: "tampered bytes", mode: "100644", kind: "blob", tampered: true},
+		{name: "mismatched commit receipt", mode: "100644", kind: "blob", wrongCommit: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := []byte{0xff, 0, 'p', 'o', 'l', 'i', 'c', 'y'}
@@ -36,6 +37,12 @@ func TestGitLabRepositoryFileRequiresBoundRegularBlob(t *testing.T) {
 					t.Fatalf("followed foreign pagination URL: %s", r.URL)
 				}
 				switch r.URL.Path {
+				case "/gitlab/api/v4/projects/42/repository/commits/" + repositoryTestRevision:
+					id := repositoryTestRevision
+					if tc.wrongCommit {
+						id = strings.Repeat("f", 40)
+					}
+					return testJSON(t, map[string]any{"id": id}), nil
 				case "/gitlab/api/v4/projects/42/repository/files/policy.md/raw":
 					return testResponse(200, string(body)), nil
 				case "/gitlab/api/v4/projects/42/repository/tree":
@@ -110,6 +117,9 @@ func TestGitLabRepositoryAncestorAndNamespaceConfinement(t *testing.T) {
 				if !strings.HasPrefix(r.URL.EscapedPath(), "/api/v4/projects/group%2Frepo/repository/") {
 					t.Fatalf("namespace escaped project endpoint: %s", r.URL)
 				}
+				if strings.HasSuffix(r.URL.Path, "/commits/"+repositoryTestRevision) {
+					return testJSON(t, map[string]any{"id": repositoryTestRevision}), nil
+				}
 				if strings.HasSuffix(r.URL.Path, "/tree") {
 					if r.URL.Query().Get("ref") != repositoryTestRevision {
 						t.Fatal("tree changed revision")
@@ -148,7 +158,13 @@ func TestGitLabRepositoryPaginationIsBoundedWithoutHeaders(t *testing.T) {
 	for i := range entries {
 		entries[i] = map[string]any{"name": "other" + strconv.Itoa(i), "path": "other" + strconv.Itoa(i), "mode": "100644", "type": "blob", "id": strings.Repeat("b", 40)}
 	}
-	c.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) { calls++; return testJSON(t, entries), nil })}
+	c.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if strings.HasSuffix(r.URL.Path, "/commits/"+repositoryTestRevision) {
+			return testJSON(t, map[string]any{"id": repositoryTestRevision}), nil
+		}
+		return testJSON(t, entries), nil
+	})}
 	if _, err := c.ReadRepositoryFile(context.Background(), "42", repositoryTestRevision, "policy.md"); err == nil || !strings.Contains(err.Error(), "bound") || calls != maxRepositoryReadRequests {
 		t.Fatalf("unbounded or silently truncated pagination: requests=%d err=%v", calls, err)
 	}

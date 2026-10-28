@@ -23,9 +23,9 @@ func TestGitHubReadRepositoryFileBindsRevision(t *testing.T) {
 		case "/repos/o/r/git/commits/" + repositoryTestRevision:
 			return testJSON(t, map[string]any{"sha": repositoryTestRevision, "tree": map[string]any{"sha": rootTree}}), nil
 		case "/repos/o/r/git/trees/" + rootTree:
-			return testJSON(t, map[string]any{"sha": rootTree, "tree": []any{map[string]any{"path": ".7review", "mode": "040000", "type": "tree", "sha": subTree}}}), nil
+			return testJSON(t, map[string]any{"sha": rootTree, "truncated": false, "tree": []any{map[string]any{"path": ".7review", "mode": "040000", "type": "tree", "sha": subTree}}}), nil
 		case "/repos/o/r/git/trees/" + subTree:
-			return testJSON(t, map[string]any{"sha": subTree, "tree": []any{map[string]any{"path": "review.yaml", "mode": "100644", "type": "blob", "sha": blob, "size": len(body)}}}), nil
+			return testJSON(t, map[string]any{"sha": subTree, "truncated": false, "tree": []any{map[string]any{"path": "review.yaml", "mode": "100644", "type": "blob", "sha": blob, "size": len(body)}}}), nil
 		case "/repos/o/r/git/blobs/" + blob:
 			return testJSON(t, map[string]any{"sha": blob, "size": len(body), "encoding": "base64", "content": base64.StdEncoding.EncodeToString(body)}), nil
 		default:
@@ -51,6 +51,9 @@ func TestGitLabReadRepositoryFileBindsRevisionAndNormalizesNotFound(t *testing.T
 	client.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if missing {
 			return testResponse(http.StatusNotFound, "missing"), nil
+		}
+		if strings.HasSuffix(r.URL.Path, "/commits/"+repositoryTestRevision) {
+			return testJSON(t, map[string]any{"id": repositoryTestRevision}), nil
 		}
 		if strings.HasSuffix(r.URL.Path, "/repository/tree") {
 			if r.URL.Query().Get("ref") != repositoryTestRevision {
