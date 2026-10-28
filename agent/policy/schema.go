@@ -14,9 +14,11 @@ type ReviewConfigV2 struct {
 	Features          map[string][]string `json:"features" yaml:"features"`
 	Delegations       []DelegationV2      `json:"delegations" yaml:"delegations"`
 	Packs             []MethodPackV2      `json:"packs" yaml:"packs"`
+	PackRefs          []string            `json:"pack_refs,omitempty" yaml:"pack_refs,omitempty"`
 	QualityGate       QualityGateV2       `json:"quality_gate" yaml:"quality_gate"`
 	Retention         RetentionV2         `json:"retention" yaml:"retention"`
 	ExtensionsAllowed bool                `json:"extensions_allowed,omitempty" yaml:"extensions_allowed,omitempty"`
+	documents         []DocumentSource
 }
 
 type DefaultsV2 struct {

@@ -42,6 +42,80 @@ func TestPolicyCommandRejectsMissingFileAndUnknownFlag(t *testing.T) {
 	}
 }
 
+func TestPolicyValidateDoesNotClaimUnresolvedPackIsValid(t *testing.T) {
+	file := writePolicyFixture(t)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var root map[string]any
+	if err := json.Unmarshal(data, &root); err != nil {
+		t.Fatal(err)
+	}
+	root["pack_refs"] = []string{".7review/packs/missing.json"}
+	data, err = json.Marshal(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runPolicyCommand([]string{"validate", "--file", file}, &out); err == nil || strings.Contains(out.String(), `"valid": true`) {
+		t.Fatalf("unresolved pack falsely validated: output=%s err=%v", out.String(), err)
+	}
+}
+
+func TestPolicyCommandResolvesPacksAndRejectsSymlinkEscape(t *testing.T) {
+	file := writePolicyFixture(t)
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c policy.ReviewConfigV2
+	if err := json.Unmarshal(data, &c); err != nil {
+		t.Fatal(err)
+	}
+	c.PackRefs = []string{".7review/packs/security.json"}
+	data, err = json.Marshal(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Dir(file)
+	packPath := filepath.Join(root, filepath.FromSlash(c.PackRefs[0]))
+	if err := os.MkdirAll(filepath.Dir(packPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"schema_version":1,"pack":{"id":"external","priority":1,"match":{},"methods":["builtin/correctness"],"checks":["external-check"],"risk_floor":"high","independent_review":false,"publication":{"mode":"inherit","artifact_classes":[],"manual_required":false}}}`
+	if err := os.WriteFile(packPath, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := runPolicyCommand([]string{"explain", "--file", file, "--repository-root", root}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "external-check") || !strings.Contains(out.String(), `"documents"`) || !strings.Contains(out.String(), `"trusted_source": "unbound_preview"`) {
+		t.Fatalf("reference omitted or misrepresented as trusted activation: %s", out.String())
+	}
+	outside := filepath.Join(t.TempDir(), "outside.json")
+	if err := os.WriteFile(outside, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(packPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, packPath); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if err := runPolicyCommand([]string{"validate", "--file", file, "--repository-root", root}, &out); err == nil || out.Len() != 0 {
+		t.Fatalf("escaped symlink validated: output=%s err=%v", out.String(), err)
+	}
+}
+
 func writePolicyFixture(t *testing.T) string {
 	t.Helper()
 	period := &policy.FixedPeriodV2{Kind: "fixed", Anchor: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), DurationMS: 86_400_000}

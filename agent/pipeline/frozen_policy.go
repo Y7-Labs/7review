@@ -54,6 +54,11 @@ func (a FrozenPolicyAdmission) Evaluate(ctx context.Context, req review.Request,
 		return TrustedPolicyResult{}, fmt.Errorf("frozen policy: read base policy: %w", err)
 	}
 	config, err := policy.Decode(a.Path, data)
+	if err == nil {
+		config, err = policy.ResolveReferences(ctx, config, func(ctx context.Context, path string) ([]byte, error) {
+			return a.Reader.ReadRepositoryFile(ctx, snapshot.RepositoryID, snapshot.BaseRevision, path)
+		})
+	}
 	if err != nil {
 		return TrustedPolicyResult{}, err
 	}

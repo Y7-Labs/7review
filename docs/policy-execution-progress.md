@@ -94,6 +94,21 @@ This is an incremental behavior ledger, not a completion declaration.
   authority fixtures exercise behavior beyond the happy path.
 - Verification: policy tests, full Go suite and policy race tests.
 
+## Slice 7: Base-Bound Pack References
+
+- Red: imported parent packs could not control execution; CLI `policy validate`
+  falsely reported an unresolved/missing pack as valid.
+- Green: explicit root `pack_refs` reads closed versioned pack documents at the
+  same repository/base as the root, validates the complete registry before matching
+  and then expands inheritance. No glob or recursive/remote import fallback.
+- Unresolved compilation, unsafe paths, duplicate keys/IDs, unknown fields,
+  incomplete/version-mismatched documents, oversized inputs and cancellation are
+  covered. Referenced content/provenance contributes to effective identity and
+  persists with the base revision; input policy is not mutated.
+- CLI requires explicit `--repository-root` and confines local preview reads with
+  `os.Root`; a real outside-root symlink test must fail without emitting success.
+- Verification: full Go suite and targeted policy/pipeline/CLI race tests.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
@@ -115,7 +130,7 @@ Method tool metadata cannot widen compiled runtime capabilities.
 
 ## Remaining
 
-Pack/rule file references; remaining effect capabilities;
+Rule file references; remaining effect capabilities;
 operator ceilings; scoped conflicts/prerequisites; independent investigation;
 publication restrictions and all remaining G04 acceptance variants remain open.
 Required-check activation alone is not proof of check satisfaction.

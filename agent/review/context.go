@@ -53,6 +53,7 @@ type PolicyProjection struct {
 	SourceDigest        string           `json:"source_digest,omitempty"`
 	Methods             []string         `json:"methods,omitempty"`
 	ResolvedMethods     []PolicyMethod   `json:"resolved_methods,omitempty"`
+	Documents           []PolicyDocument `json:"documents,omitempty"`
 	AllowedCapabilities []string         `json:"allowed_capabilities,omitempty"`
 	RequiredChecks      []string         `json:"required_checks,omitempty"`
 	MatchedPacks        []string         `json:"matched_packs,omitempty"`
@@ -65,6 +66,14 @@ type PolicyProjection struct {
 }
 
 type PolicyMethod struct {
+	ID       string `json:"id"`
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+	Digest   string `json:"digest"`
+}
+
+type PolicyDocument struct {
+	Kind     string `json:"kind"`
 	ID       string `json:"id"`
 	Path     string `json:"path"`
 	Revision string `json:"revision"`

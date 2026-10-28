@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 
@@ -11,13 +13,14 @@ import (
 )
 
 type policyCommandOptions struct {
-	file         string
-	projectID    string
-	paths        []string
-	branch       string
-	author       string
-	labels       []string
-	capabilities []string
+	file           string
+	projectID      string
+	paths          []string
+	branch         string
+	author         string
+	labels         []string
+	capabilities   []string
+	repositoryRoot string
 }
 
 type policyValidationOutput struct {
@@ -40,6 +43,7 @@ type policyExplanationOutput struct {
 	AllowedCapabilities []string                       `json:"allowed_capabilities"`
 	MatchedPacks        []string                       `json:"matched_packs"`
 	Decisions           []policy.ExplanationEntry      `json:"decisions"`
+	Documents           []policy.DocumentSource        `json:"documents,omitempty"`
 }
 
 func runPolicyCommand(args []string, out io.Writer) error {
@@ -57,6 +61,34 @@ func runPolicyCommand(args []string, out io.Writer) error {
 	config, err := policy.Load(opts.file)
 	if err != nil {
 		return err
+	}
+	if len(config.PackRefs) > 0 {
+		if opts.repositoryRoot == "" {
+			return fmt.Errorf("policy: referenced documents require --repository-root for unbound local preview")
+		}
+		root, err := os.OpenRoot(opts.repositoryRoot)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		config, err = policy.ResolveReferences(context.Background(), config, func(_ context.Context, path string) ([]byte, error) {
+			file, err := root.Open(path)
+			if err != nil {
+				return nil, err
+			}
+			defer file.Close()
+			info, err := file.Stat()
+			if err != nil {
+				return nil, err
+			}
+			if !info.Mode().IsRegular() {
+				return nil, fmt.Errorf("policy: %s is not a regular file", path)
+			}
+			return io.ReadAll(io.LimitReader(file, policy.MaxConfigBytes+1))
+		})
+		if err != nil {
+			return err
+		}
 	}
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
@@ -78,6 +110,7 @@ func runPolicyCommand(args []string, out io.Writer) error {
 			Publication: effective.Publication, GateMode: effective.GateMode,
 			AllowedCapabilities: effective.AllowedTools, MatchedPacks: effective.MatchedPacks,
 			Decisions: effective.Explanation,
+			Documents: effective.Documents,
 		})
 	default:
 		return fmt.Errorf("policy: unsupported command %q", action)
@@ -99,6 +132,8 @@ func parsePolicyCommandOptions(args []string) (policyCommandOptions, error) {
 		switch name {
 		case "--file":
 			opts.file = value
+		case "--repository-root":
+			opts.repositoryRoot = value
 		case "--project":
 			opts.projectID = value
 		case "--path":

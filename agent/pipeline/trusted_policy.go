@@ -82,6 +82,11 @@ func (a SCMPolicyAdmission) Evaluate(ctx context.Context, req review.Request, sc
 		return TrustedPolicyResult{}, fmt.Errorf("trusted policy: read base policy: %w", err)
 	}
 	config, err := policy.Decode(a.Path, data)
+	if err == nil {
+		config, err = policy.ResolveReferences(ctx, config, func(ctx context.Context, path string) ([]byte, error) {
+			return a.Reader.ReadRepositoryFile(ctx, req.Provider, attestation.Snapshot.RepositoryID, attestation.Snapshot.BaseRevision, path)
+		})
+	}
 	if err != nil {
 		if mode == "preview" {
 			result.Warning = err.Error()
@@ -165,6 +170,11 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 		return projection
 	}
 	projection.Digest = result.Effective.Digest
+	for _, document := range result.Effective.Documents {
+		projection.Documents = append(projection.Documents, review.PolicyDocument{
+			Kind: document.Kind, ID: document.ID, Path: document.Path, Revision: result.Source.Revision, Digest: document.Digest,
+		})
+	}
 	projection.Methods = append([]string(nil), result.Effective.Methods...)
 	for _, method := range result.Methods {
 		projection.ResolvedMethods = append(projection.ResolvedMethods, method.Provenance)

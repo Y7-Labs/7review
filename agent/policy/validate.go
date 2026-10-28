@@ -81,8 +81,13 @@ func Validate(c ReviewConfigV2) error {
 		}
 		packIDs[pack.ID] = true
 	}
-	if _, err := expandPacks(c.Packs); err != nil {
+	if err := validateDocumentRefs("pack_refs", c.PackRefs, "packs"); err != nil {
 		return err
+	}
+	if len(c.PackRefs) == 0 {
+		if _, err := expandPacks(c.Packs); err != nil {
+			return err
+		}
 	}
 	if err := validateQualityGate(c.QualityGate, c.Defaults.GateMode); err != nil {
 		return err

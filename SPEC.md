@@ -239,6 +239,18 @@ independently matched packs, not implicit templates. Parent IDs expand in stable
 ID order; this order grants no scalar override. Expanded methods/checks retain
 their 32/128 bounds. A disjoint publication-class intersection permits no classes.
 
+Explicit pack files use optional root `pack_refs` (0-256 unique canonical paths
+under `.7review/packs/`, extensions `.yaml/.yml/.json`). No glob expansion, remote
+imports or recursive file imports occur. Each closed `PackDocumentV1` contains
+exactly `schema_version: 1` and `pack: MethodPackV2`; all required pack fields
+remain required. The combined inline/imported pack registry is bounded to 256;
+duplicate IDs fail rather than override. All referenced files are validated before
+matching, at the root policy's repository and trusted base. Referenced bytes are
+bounded in aggregate to 2 MiB and their content digests enter policy identity.
+Direct compilation of unresolved references fails. CLI validation/explanation
+requires an explicit `--repository-root` for local file reads and remains an
+unbound preview; symlinks cannot escape that root.
+
 Policy preview MUST list unavailable required capabilities, affected scopes and
 upper resource bounds before activation. Baseline packs use baseline tools.
 Additional obligations require explicit operator acknowledgement; later outages
@@ -1798,6 +1810,7 @@ Persisted canonical artifacts never rely on YAML implicit typing.
 | domains/modules/features | maps 0-256 stable scope IDs to nonempty path-glob arrays; maximum 128 globs per entry |
 | delegations | array maximum 256 of `DelegationV2` |
 | packs | array maximum 256 of `MethodPackV2` |
+| pack_refs | optional array maximum 256 of unique explicit pack paths; section 3 defines document shape, confinement and resolution |
 | quality_gate | required object: applicable rule IDs, required coverage IDs, severity/strength thresholds, baseline mode and stable native context name |
 | retention | required object: audit_days, source_days, unresolved_reservation_days; positive integers, unresolved reservation cannot expire before reconciliation |
 | extensions_allowed | optional boolean, default false |

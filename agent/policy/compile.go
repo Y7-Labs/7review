@@ -38,6 +38,7 @@ type EffectivePolicy struct {
 	Limits            LimitsV2
 	MatchedPacks      []string
 	Explanation       []ExplanationEntry
+	Documents         []DocumentSource
 }
 
 type ExplanationEntry struct {
@@ -49,6 +50,9 @@ type ExplanationEntry struct {
 }
 
 func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error) {
+	if len(config.PackRefs) > 0 {
+		return EffectivePolicy{}, fmt.Errorf("policy: unresolved pack references; resolve trusted documents before compilation")
+	}
 	if err := Validate(config); err != nil {
 		return EffectivePolicy{}, err
 	}
@@ -72,6 +76,7 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 	}
 
 	effective := EffectivePolicy{
+		Documents:      append([]DocumentSource(nil), config.documents...),
 		SchemaVersion:  2,
 		Methods:        append([]string(nil), config.Defaults.Methods...),
 		RequiredChecks: stableUnion(config.Defaults.RequiredChecks, config.QualityGate.RequiredCoverage),
@@ -154,7 +159,8 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 		Config                ReviewConfigV2
 		Context               CompileContext
 		RuntimeInventoryKnown bool
-	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil})
+		Documents             []DocumentSource
+	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil, config.documents})
 	if err != nil {
 		return EffectivePolicy{}, fmt.Errorf("policy: canonicalize: %w", err)
 	}
