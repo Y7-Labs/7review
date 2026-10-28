@@ -38,11 +38,14 @@ The PostgreSQL accounting package now has real-database evidence for atomic
 three-scope admission, worker death after sending commit, unknown holds, final
 settlement and integrity blocking. Exact-route qualification conservatively uses
 documented hard input ceilings and integer upper prices. There are no live route
-or receipt-verifier defaults, and canonical service/CI intake is not yet connected
-to the ledger: enforced inference intentionally remains fail-closed. G01-G03
-integration, non-model accounting and operational qualification remain prerequisites
+or receipt-verifier defaults. Canonical service worker/CI intake is now wired
+through opt-in PostgreSQL configuration, with pre-dispatch checkpoints, immutable
+attempts, generation fencing and trusted provider hosts. Production inference
+intentionally remains fail-closed, and canonical service work is artifact-only.
+Durable HTTP inbox/recovery, full G01-G03 action ownership/currentness, non-model
+accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-23.
+[Accounting](docs/accounting.md) and progress slices 20-27.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

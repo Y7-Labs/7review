@@ -165,3 +165,15 @@ func TestCanonicalReceiptCannotRebindHostExecutionOrExtendDeadline(t *testing.T)
 		})
 	}
 }
+
+func TestCanonicalFinalPublicationCannotUseLegacyPublisher(t *testing.T) {
+	store := NewMemoryRunStore()
+	p, req, _, _ := canonicalPipeline(t, store)
+	rc := review.NewContext(req)
+	rc.Source.Attempt.AttemptID = "canonical-attempt"
+	rc.HILApproved = true
+	rc.Source.SCM = &review.SCMContext{Provider: req.Provider, ProjectID: req.ProjectID, ChangeID: req.ChangeID}
+	if err := p.publishFinal(context.Background(), rc, "approved"); err == nil || !strings.Contains(err.Error(), "governed outbox") {
+		t.Fatalf("canonical artifact used legacy publication: %v", err)
+	}
+}

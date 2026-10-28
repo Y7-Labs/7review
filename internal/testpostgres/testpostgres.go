@@ -13,6 +13,11 @@ import (
 )
 
 func Open(t *testing.T) *sql.DB {
+	db, _ := OpenDSN(t)
+	return db
+}
+
+func OpenDSN(t *testing.T) (*sql.DB, string) {
 	t.Helper()
 	dsn := os.Getenv("SEVENREVIEW_TEST_POSTGRES")
 	if dsn == "" {
@@ -43,5 +48,5 @@ func Open(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close(); _, _ = admin.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); admin.Close() })
-	return db
+	return db, u.String()
 }

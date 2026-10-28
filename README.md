@@ -378,12 +378,14 @@ fields, invalid values and requested increases are rejected. Enforce-mode servic
 configuration requires this document. Do not derive operator authority from the
 repository being reviewed.
 
-**Runtime limitation:** default enforced model dispatch remains fail-closed because
-the default service/CI intake is not yet connected to canonical durable attempt
-registration and qualified routes. A PostgreSQL accounting package and conservative
-route-bound calculator exist with real database tests; they are not automatically
-enabled by environment configuration. Configuring ceilings does not make enforced
-review operational. See [Accounting](docs/accounting.md).
+**Runtime limitation:** enforced model dispatch remains fail-closed for production
+routes: live provider qualification and receipt adapters are not supplied.
+Canonical service/CI intake is opt-in through `ACCOUNTING_DATABASE_URL`,
+`ACCOUNTING_BOUNDARY_ID` and `ACCOUNTING_PROJECT_ID`, alongside trusted ceilings.
+Run `7review accounting migrate` explicitly first. Service mode requires policy
+enforcement and is artifact-only; no legacy publication path is enabled by this
+setting. Configuring intake does not authorize a model route or complete ceilings.
+See [Accounting](docs/accounting.md) for guarantees and remaining gaps.
 Configured host ceilings also apply in legacy/preview mode; omitting them retains
 the legacy unbudgeted path, not a bounded-review guarantee. Test-only authorities
 qualify dispatch ordering, not cross-run accounting. This work is not alpha-ready

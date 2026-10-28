@@ -6,10 +6,10 @@ The normal service and CI paths still fail closed for bounded model dispatch.
 ## Implemented Boundary
 
 `agent/accounting.Authority` implements the orchestrator budget contract against
-PostgreSQL. Trusted intake must explicitly register a verified canonical attempt,
-execution context, policy limits and operator binding. Workers cannot register
-themselves implicitly by submitting a dispatch. Closing an attempt fences new
-dispatch but does not release its old holds.
+PostgreSQL. Canonical intake commits a verified attempt, execution context, policy
+limits and operator binding before dispatch. Workers cannot register themselves
+implicitly by submitting a model request. Closing or superseding an attempt fences
+new dispatch but does not release its old holds.
 
 Trusted host configuration supplies the authority boundary and project ID. Project
 scope is shared across repositories assigned to that project. Change keys include
@@ -39,8 +39,57 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v2 upgrades existing sending actions without clearing holds. A missing or
+Schema v3 adds intake receipts and generation fencing without clearing holds. A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
+
+## Runtime Intake
+
+Set all of `ACCOUNTING_DATABASE_URL`, `ACCOUNTING_BOUNDARY_ID` and
+`ACCOUNTING_PROJECT_ID` in trusted host configuration, or leave all unset. Partial
+configuration, unavailable storage and incompatible schema fail explicitly, never
+fall back to a fresh local allowance. Database errors do not echo the DSN.
+Trusted `POLICY_RUNTIME_CEILINGS_JSON` remains required.
+
+```sh
+go run ./cmd/7review accounting migrate
+```
+
+Migration is explicit; startup never initializes replacement tables. The service
+requires `POLICY_V2_MODE=enforce` for this runtime and uses the configured SCM API
+host, not a webhook/report URL. It runs artifact-only, with legacy publication and
+optional ungoverned memory/context side effects disabled. The runtime factory has
+an empty qualified-route catalog and no receipt verifier: enabling intake alone
+cannot spend on any production model. Real-provider qualification remains required.
+
+Service workers observe the current generation before SCM acquisition. Admission
+compares that generation atomically; a late acquisition cannot move the pointer
+backward. Explicit reruns have distinct linked attempts, while automatic events
+for an unchanged snapshot/policy reuse the existing attempt. Delivery replay
+preserves original authority/deadline; changed payloads under the same delivery
+ID are rejected and audited. Authenticated raw webhook digests include fields
+that normalization does not retain. Run records no longer overwrite a change-key
+record in this path. Canonical receipts are checkpointed before model dispatch.
+
+CI always binds ephemeral identity before inference, including in failure
+artifacts. Provider host comes from trusted CI/server configuration (`--provider-host`
+for an explicit local override), not the PR URL. With no shared runtime, the
+receipt is only job-local and makes no shared-accounting claim. An explicitly
+configured shared runtime can checkpoint CI accounting, but CI stays ephemeral,
+does not advance the service tracking pointer and does not acquire service/native
+publication ownership. Untrusted forks do not connect to the shared runtime.
+Replayed shared CI work is not inferred again; without retrieval of the original
+outcome it ends incomplete rather than claiming a pass.
+Hosted GitHub intake rejects missing PR identity or a target repository differing
+from the runner repository. Missing source-project provenance is untrusted, not a
+same-project assumption. Hosted GitLab uses numeric `CI_PROJECT_ID`, matching the
+service rather than the renamable `CI_PROJECT_PATH`. Existing path-keyed policy or
+accounting records need deliberate migration/alias reconciliation before enabling
+live coordinated spending; historical holds are not rewritten automatically.
+
+Important boundary: HTTP enqueue acknowledgement is still the legacy in-process
+queue, not a durable inbox receipt. Worker intake durability does not qualify
+HTTP crash recovery. Full action ownership/recovery, provider revocation/currentness
+and governed native delivery remain separate open work.
 
 ## Token And Price Qualification
 
@@ -68,6 +117,8 @@ Run the isolated real-PostgreSQL suite, including race detection:
 
 ```sh
 scripts/test-accounting-postgres.sh -race
+# Also exercise service/CI construction and the actual CLI path:
+scripts/test-accounting-postgres.sh -race ./agent/app ./agent/ci ./agent/pipeline ./cmd/7review
 ```
 
 The script creates a localhost-only disposable container and removes only that
@@ -81,8 +132,10 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 - Production receipt-verifier adapters and authenticated operator settlement
   commands; library-level reconciliation tests use an explicit test verifier.
-- Canonical service/CI intake, durable currentness and action ownership wired
+- Durable HTTP inbox/recovery, full action ownership and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
+- Complete stable-provider-ID/alias migration and rename qualification, including
+  historical path-keyed records; new identity checks are not proof of that exit.
 - Live provider route qualification and attributable usage receipts.
 - Tool/effect resource accounting, bounded artifact retention, operational
   recovery, backup/restore and the remaining G01-G03/G04 acceptance cases.

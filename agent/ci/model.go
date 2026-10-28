@@ -9,7 +9,7 @@ import (
 	"github.com/Y4NN777/7review/agent/policy"
 )
 
-func BuildModelOrchestratorFromEnvironment() (*orchestrator.Orchestrator, bool, error) {
+func BuildModelOrchestratorFromEnvironment(options ...orchestrator.Option) (*orchestrator.Orchestrator, bool, error) {
 	provider := strings.TrimSpace(os.Getenv("PROVIDER"))
 	if provider == "" {
 		provider = detectedModelProvider()
@@ -38,7 +38,7 @@ func BuildModelOrchestratorFromEnvironment() (*orchestrator.Orchestrator, bool, 
 	if cfg.SmallModel == "" {
 		cfg.SmallModel = defaultCIModel(provider, false)
 	}
-	modelOrchestrator, err := orchestrator.BuildOrchestrator(cfg)
+	modelOrchestrator, err := orchestrator.BuildOrchestrator(cfg, options...)
 	return modelOrchestrator, err == nil, err
 }
 

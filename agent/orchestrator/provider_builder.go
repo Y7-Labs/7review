@@ -78,7 +78,7 @@ func registerSingleProvider(providers map[string]LLMProvider, provider, apiKey, 
 // BuildOrchestrator creates the Orchestrator from config.
 // If OrchestratorConfigPath is set, it loads role→provider chains from YAML.
 // Otherwise falls back to single-provider mode using Provider/ReviewModel/SmallModel.
-func BuildOrchestrator(cfg *config.Config) (*Orchestrator, error) {
+func BuildOrchestrator(cfg *config.Config, options ...Option) (*Orchestrator, error) {
 	providerMap := BuildProviders(cfg)
 
 	var orchCfg *OrchestratorConfig
@@ -97,7 +97,8 @@ func BuildOrchestrator(cfg *config.Config) (*Orchestrator, error) {
 		return nil, err
 	}
 
-	return NewOrchestrator(orchCfg, providerMap, WithOperatorCeilings(cfg.PolicyRuntimeCeilings)), nil
+	all := append([]Option{WithOperatorCeilings(cfg.PolicyRuntimeCeilings)}, options...)
+	return NewOrchestrator(orchCfg, providerMap, all...), nil
 }
 
 func applyEnvRoleOverrides(orchCfg *OrchestratorConfig, cfg *config.Config) {

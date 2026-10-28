@@ -293,6 +293,7 @@ func (s *Server) handleWebhookReview(req review.Request) (reviewDispatchResult, 
 
 func (s *Server) requestReview(ctx context.Context, req review.Request) (requestReviewResult, error) {
 	req.DeliveryID = ""
+	req.PayloadDigest = ""
 	req.EventAction = "manual"
 	result, err := s.enqueueReview(req, false)
 	return result, err
@@ -300,20 +301,28 @@ func (s *Server) requestReview(ctx context.Context, req review.Request) (request
 
 func (s *Server) enqueueReview(req review.Request, webhook bool) (requestReviewResult, error) {
 	runID := requestRunID(req)
+	canonical := s.pipeline != nil && s.pipeline.Canonical != nil
+	if canonical {
+		var err error
+		runID, err = review.NewOpaqueID("run-")
+		if err != nil {
+			return requestReviewResult{}, err
+		}
+	}
 	if runID == "" {
 		return requestReviewResult{Status: "rejected", Reason: "review request is missing run identity"}, fmt.Errorf("review request is missing run identity")
 	}
-	if s.isRunActive(runID) {
+	if !canonical && s.isRunActive(runID) {
 		return requestReviewResult{RunID: runID, Status: "rejected", Reason: "review already running"}, fmt.Errorf("review already running for %s", runID)
 	}
-	if s.pipeline != nil && s.pipeline.Jobs != nil {
+	if !canonical && s.pipeline != nil && s.pipeline.Jobs != nil {
 		if run, err := s.pipeline.Jobs.Get(context.Background(), runID); err == nil && run.Status == pipeline.StatusRunning {
 			return requestReviewResult{RunID: runID, Status: "rejected", Reason: "review already running"}, fmt.Errorf("review already running for %s", runID)
 		}
 	}
 	name := fmt.Sprintf("%s/%s/%s", req.Provider, req.ProjectID, firstNonEmptyString(req.ChangeID, strconv.Itoa(req.MRIID)))
 	deliveryKey := req.Provider + ":" + req.DeliveryID
-	if webhook && req.DeliveryID != "" && !s.claimDelivery(deliveryKey) {
+	if !canonical && webhook && req.DeliveryID != "" && !s.claimDelivery(deliveryKey) {
 		log.Printf("[server] duplicate webhook delivery ignored: %s", deliveryKey)
 		return requestReviewResult{RunID: runID, Status: "ignored", Reason: "duplicate webhook delivery"}, nil
 	}
@@ -322,7 +331,12 @@ func (s *Server) enqueueReview(req review.Request, webhook bool) (requestReviewR
 		name: name,
 		run: func(ctx context.Context) error {
 			defer s.clearRunActive(runID)
-			err := s.pipeline.Run(ctx, req)
+			var err error
+			if canonical {
+				err = s.pipeline.RunIdentified(ctx, req, runID)
+			} else {
+				err = s.pipeline.Run(ctx, req)
+			}
 			if err != nil && webhook && req.DeliveryID != "" {
 				s.releaseDelivery(deliveryKey)
 			}

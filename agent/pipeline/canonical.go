@@ -48,7 +48,7 @@ func (c *CanonicalIntake) admit(ctx context.Context, rc *review.Context, generat
 	if rc.Request.EventAction == "manual" || rc.Request.DeliveryID == "" {
 		kind = review.IntentManual
 	}
-	input := review.Admission{Request: rc.Request, Change: change, Attestation: *rc.Source.Attestation, Policy: rc.Source.Policy, Execution: execution, IntentKind: kind, ExpectedGeneration: generation, DeliveryID: rc.Request.DeliveryID}
+	input := review.Admission{Request: rc.Request, Change: change, Attestation: *rc.Source.Attestation, Policy: rc.Source.Policy, Execution: execution, IntentKind: kind, ExpectedGeneration: generation, DeliveryID: rc.Request.DeliveryID, PayloadDigest: rc.Request.PayloadDigest}
 	var receipt review.IntakeReceipt
 	if c.Authority != nil {
 		receipt, err = c.Authority.Admit(ctx, input)

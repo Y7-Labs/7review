@@ -9,27 +9,30 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/accounting"
 	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/config"
 	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/profile"
+	"github.com/Y4NN777/7review/agent/review"
 	"github.com/Y4NN777/7review/agent/skills"
 	"github.com/Y4NN777/7review/agent/tools"
 )
 
 // Server wires HTTP routes to the review pipeline.
 type Server struct {
-	cfg           *config.Config
-	pipeline      *pipeline.Pipeline
-	mux           *http.ServeMux
-	work          chan workItem
-	seenMu        sync.Mutex
-	seen          map[string]time.Time
-	activeMu      sync.Mutex
-	active        map[string]bool
-	stats         workerStats
-	channelCancel context.CancelFunc
+	cfg               *config.Config
+	pipeline          *pipeline.Pipeline
+	mux               *http.ServeMux
+	work              chan workItem
+	seenMu            sync.Mutex
+	seen              map[string]time.Time
+	activeMu          sync.Mutex
+	active            map[string]bool
+	stats             workerStats
+	channelCancel     context.CancelFunc
+	accountingRuntime *accounting.Runtime
 }
 
 const defaultWebhookJobTimeout = 15 * time.Minute
@@ -42,6 +45,10 @@ func NewServer() (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: %w", err)
 	}
+	return newServer(cfg)
+}
+
+func newServer(cfg *config.Config) (*Server, error) {
 
 	inputProfile, err := profile.Load(cfg.InputProfilePath)
 	if err != nil {
@@ -60,13 +67,35 @@ func NewServer() (*Server, error) {
 		return nil, fmt.Errorf("skills: %w", err)
 	}
 
-	modelOrchestrator, err := orchestrator.BuildOrchestrator(cfg)
+	settings, err := accounting.ReadRuntimeSettings(os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	if settings.Enabled() && cfg.PolicyV2Mode != "enforce" {
+		return nil, fmt.Errorf("canonical accounting runtime requires POLICY_V2_MODE=enforce")
+	}
+	runtime, err := accounting.OpenRuntime(context.Background(), settings, cfg.PolicyRuntimeCeilings)
+	if err != nil {
+		return nil, err
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			runtime.Close()
+		}
+	}()
+	var modelOptions []orchestrator.Option
+	if runtime != nil {
+		modelOptions = append(modelOptions, orchestrator.WithBudgetAuthority(runtime.Authority))
+	}
+	modelOrchestrator, err := orchestrator.BuildOrchestrator(cfg, modelOptions...)
 	if err != nil {
 		return nil, fmt.Errorf("orchestrator: %w", err)
 	}
 
 	s := &Server{
-		cfg: cfg,
+		accountingRuntime: runtime,
+		cfg:               cfg,
 		pipeline: &pipeline.Pipeline{
 			Config:           cfg,
 			SkillLoader:      sl,
@@ -105,11 +134,29 @@ func NewServer() (*Server, error) {
 	s.pipeline.ContextReducer = tools.NewHeadroomReducer(cfg.HeadroomURL, time.Duration(cfg.HeadroomTimeout)*time.Millisecond)
 	s.pipeline.Memory = reviewMemoryStore(cfg)
 	s.pipeline.Channels = channel.NewManager(channelConfigs(inputProfile, cfg))
+	if runtime != nil {
+		hosts := map[string]string{}
+		for provider, endpoint := range map[string]string{"github": cfg.GitHubAPIURL, "gitlab": cfg.GitLabURL} {
+			if endpoint == "" {
+				continue
+			}
+			host, err := review.ProviderHost(provider, endpoint)
+			if err != nil {
+				return nil, err
+			}
+			hosts[provider] = host
+		}
+		s.pipeline.Canonical = &pipeline.CanonicalIntake{Authority: runtime.Authority, ProviderHosts: hosts, Execution: review.ExecutionContext{Mode: review.ExecutionService, ProducerID: "7review-service", Persistence: review.PersistenceDurableService, TrustedBoundaryID: runtime.BoundaryID}}
+		s.pipeline.DeliveryMode = pipeline.DeliveryArtifactOnly
+		s.pipeline.Memory = pipeline.NoopMemoryStore{}
+		s.pipeline.ContextReducer = pipeline.NoopContextReducer{}
+	}
 	s.startWorkers()
 	listenerCtx, cancel := context.WithCancel(context.Background())
 	s.channelCancel = cancel
 	s.startChannelListeners(listenerCtx)
 	s.routes()
+	ready = true
 	return s, nil
 }
 
@@ -187,11 +234,19 @@ func envSet(key string) bool {
 
 // ListenAndServe starts the HTTP server.
 func (s *Server) ListenAndServe() error {
-	if s.channelCancel != nil {
-		defer s.channelCancel()
-	}
+	defer s.Close()
 	log.Printf("[server] 7review listening on %s", s.cfg.ListenAddr)
 	return s.httpServer().ListenAndServe()
+}
+
+func (s *Server) Close() error {
+	if s == nil {
+		return nil
+	}
+	if s.channelCancel != nil {
+		s.channelCancel()
+	}
+	return s.accountingRuntime.Close()
 }
 
 func (s *Server) httpServer() *http.Server {

@@ -67,21 +67,22 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 		}
 
 		result, err := handler(review.Request{
-			Provider:     "gitlab",
-			DeliveryID:   firstNonEmptyString(r.Header.Get("X-Gitlab-Event-UUID"), r.Header.Get("X-Gitlab-Delivery")),
-			EventAction:  event.ObjectAttributes.Action,
-			ProjectID:    strconv.Itoa(event.Project.ID),
-			MRIID:        event.ObjectAttributes.IID,
-			ChangeID:     strconv.Itoa(event.ObjectAttributes.IID),
-			Title:        event.ObjectAttributes.Title,
-			Description:  event.ObjectAttributes.Description,
-			WebURL:       event.ObjectAttributes.URL,
-			SourceSHA:    event.ObjectAttributes.LastCommit.ID,
-			SourceBranch: event.ObjectAttributes.SourceBranch,
-			TargetBranch: event.ObjectAttributes.TargetBranch,
-			Author:       event.User.Username,
-			Draft:        event.ObjectAttributes.Draft,
-			Labels:       mergeGitLabLabels(event.ObjectAttributes.Labels, event.Labels),
+			PayloadDigest: canonicalPayloadDigest(body),
+			Provider:      "gitlab",
+			DeliveryID:    firstNonEmptyString(r.Header.Get("X-Gitlab-Event-UUID"), r.Header.Get("X-Gitlab-Delivery")),
+			EventAction:   event.ObjectAttributes.Action,
+			ProjectID:     strconv.Itoa(event.Project.ID),
+			MRIID:         event.ObjectAttributes.IID,
+			ChangeID:      strconv.Itoa(event.ObjectAttributes.IID),
+			Title:         event.ObjectAttributes.Title,
+			Description:   event.ObjectAttributes.Description,
+			WebURL:        event.ObjectAttributes.URL,
+			SourceSHA:     event.ObjectAttributes.LastCommit.ID,
+			SourceBranch:  event.ObjectAttributes.SourceBranch,
+			TargetBranch:  event.ObjectAttributes.TargetBranch,
+			Author:        event.User.Username,
+			Draft:         event.ObjectAttributes.Draft,
+			Labels:        mergeGitLabLabels(event.ObjectAttributes.Labels, event.Labels),
 		})
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)

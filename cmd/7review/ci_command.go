@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/accounting"
 	cirunner "github.com/Y4NN777/7review/agent/ci"
 	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/policy"
@@ -85,20 +86,39 @@ func runCICommand(args []string, out io.Writer) (int, error) {
 		}
 		ceilings = &limits
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), *deadline)
+	defer cancel()
+	var runtime *accounting.Runtime
 	if !environment.UntrustedFork {
-		orch, _, err = cirunner.BuildModelOrchestratorFromEnvironment()
+		settings, readErr := accounting.ReadRuntimeSettings(os.Getenv)
+		if readErr != nil {
+			return 2, readErr
+		}
+		runtime, err = accounting.OpenRuntime(ctx, settings, ceilings)
+		if err != nil {
+			return 2, err
+		}
+		defer runtime.Close()
+		var options []orchestrator.Option
+		if runtime != nil {
+			options = append(options, orchestrator.WithBudgetAuthority(runtime.Authority))
+		}
+		orch, _, err = cirunner.BuildModelOrchestratorFromEnvironment(options...)
 		if err != nil {
 			return 2, err
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), *deadline)
-	defer cancel()
-	result, err := cirunner.Run(ctx, cirunner.Options{
+	options := cirunner.Options{
 		RepositoryDir: *repositoryDir, PolicyPath: *policyPath, SkillsPath: *skillsPath,
 		Offline: *offline, Environment: environment, DeadlineAt: time.Now().UTC().Add(*deadline),
 		Quality: artifactRefs, DependencyGraph: dependencyGraph, Orchestrator: orch,
 		RuntimeCeilings: ceilings,
-	})
+	}
+	if runtime != nil {
+		options.Intake = runtime.Authority
+		options.BoundaryID = runtime.BoundaryID
+	}
+	result, err := cirunner.Run(ctx, options)
 	if err != nil {
 		return 2, err
 	}

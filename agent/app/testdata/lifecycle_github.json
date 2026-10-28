@@ -3,6 +3,7 @@
   "request": {
     "Provider": "github",
     "DeliveryID": "e2e-github",
+    "PayloadDigest": "sha256:3170ae3a2d82fcae0dd8c0a0d73cd3d4b69e1b0dc92f6e7a5246aa75af28c206",
     "EventAction": "opened",
     "ProjectID": "owner/repo",
     "MRIID": 7,

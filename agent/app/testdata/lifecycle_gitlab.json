@@ -3,6 +3,7 @@
   "request": {
     "Provider": "gitlab",
     "DeliveryID": "e2e-gitlab",
+    "PayloadDigest": "sha256:20de3bb023bc1a274709cbc713c381ff52c9e9fbe53c4b2146241768a2689391",
     "EventAction": "update",
     "ProjectID": "42",
     "MRIID": 7,

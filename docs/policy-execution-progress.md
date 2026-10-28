@@ -457,6 +457,37 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: application construction and operational runtime configuration follow
   separately. This is not durable HTTP inbox acknowledgement or native delivery.
 
+## Slice 27: Opt-In Runtime Construction And Operational Wiring
+
+- Red: partial runtime settings silently disabled accounting and configured
+  service construction never installed canonical intake. Integration tests require
+  durable attempts with zero HTTP model calls when the route is unqualified.
+- Green: complete trusted runtime settings connect migrated PostgreSQL to service
+  and trusted CI construction. Missing/unavailable/incompatible storage cannot
+  reset allowance or initialize replacement tables. Explicit `accounting migrate`
+  is available without normal service credentials. Error paths redact the DSN.
+- The service uses opaque queued run IDs matching actual records, trusted endpoint
+  hosts and artifact-only canonical execution. Raw authenticated webhook payload
+  digests survive normalization; the canonical queue bypasses process-local dedup
+  so a changed payload under the same delivery ID reaches durable conflict audit.
+- Runtime construction deliberately authorizes no model routes or final receipt
+  verifier. Optional ungoverned memory/context effects and legacy canonical
+  publication are disabled. Untrusted fork CI does not open shared accounting.
+- Compose now forwards the ceiling document and the three runtime settings; it
+  previously did not forward the ceiling document at all. Lifecycle goldens were
+  reviewed and changed only to add the raw payload digest.
+- Additional red hosted-CI cases caught an unbound GitHub target, missing PR/fork
+  identity treated as trusted, and GitLab path-based scope differing from the
+  service's numeric project ID. Hosted intake now rejects mismatched targets and
+  unknown PR identity, treats missing fork provenance as untrusted, and uses
+  `CI_PROJECT_ID`. Historical alias/rename migration remains a separate open gate.
+- Boundary: this is worker/application intake wiring, not a durable HTTP inbox,
+  full action recovery, live route qualification, native outbox or completed
+  ceilings. Scoped conflicts remain untouched.
+- Verification: full uncached suite with PostgreSQL enabled; real-DB race suite
+  across app, CI, pipeline, review, CLI, accounting and orchestrator; formatting,
+  `go vet ./...` and Compose configuration validation passed.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

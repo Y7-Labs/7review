@@ -147,12 +147,14 @@ requires reservation before bounded model I/O, with terminal denial and unknown
 usage retention. The [PostgreSQL authority](../agent/accounting/postgres.go) now
 has real-DB concurrency, rollback, worker-death, receipt settlement and integrity
 tests. Conservative exact-route token/price bounds have no live-model defaults;
-receipt verifier adapters are not implemented. Canonical service/CI intake and
-currentness are not connected to this backend, so default enforced inference
-still fails closed. Non-model resource accounting, prospective reconfiguration,
+receipt verifier adapters are not implemented. Canonical worker/CI intake now
+connects through opt-in runtime settings, with durable generation fencing and
+pre-dispatch identity checkpoints. Default production routes remain fail-closed.
+Durable HTTP inbox/recovery, full action ownership/provider currentness,
+non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-23.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-27.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.
