@@ -81,6 +81,9 @@ func (o *Orchestrator) StreamComplete(
 	systemPrompt, userMessage string,
 	emit func(string) error,
 ) (string, error) {
+	if rc != nil && !rc.Source.Policy.AllowsCapability("model.review") {
+		return "", errors.New("orchestrator: effective policy denies model.review")
+	}
 	roleCfg, ok := o.cfg.Roles[role]
 	if !ok {
 		return "", fmt.Errorf("orchestrator: unknown role %q", role)
@@ -152,6 +155,9 @@ func (o *Orchestrator) Complete(
 	systemPrompt, userMessage string,
 	tools ...ToolDefinition,
 ) (string, error) {
+	if rc != nil && !rc.Source.Policy.AllowsCapability("model.review") {
+		return "", errors.New("orchestrator: effective policy denies model.review")
+	}
 	roleCfg, ok := o.cfg.Roles[role]
 	if !ok {
 		return "", fmt.Errorf("orchestrator: unknown role %q", role)
@@ -204,6 +210,9 @@ func (o *Orchestrator) CompleteParallel(
 	buildUserMsg func(batch []review.FileDiff) string,
 	tools ...ToolDefinition,
 ) error {
+	if rc != nil && !rc.Source.Policy.AllowsCapability("model.review") {
+		return errors.New("orchestrator: effective policy denies model.review")
+	}
 	roleCfg, ok := o.cfg.Roles[RoleReasoner]
 	if !ok {
 		return errors.New("orchestrator: parallel: reasoner role not configured")

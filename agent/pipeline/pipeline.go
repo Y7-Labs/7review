@@ -1248,7 +1248,7 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 	batches := chunkDiff(rc.Diff.Files, maxTokens)
 	err := p.Orchestrator.CompleteParallel(ctx, rc, reviewSystemPrompt(rc), batches, func(batch []review.FileDiff) string {
 		return reviewUserMessage(rc, batch)
-	}, reasonerToolDefinitions()...)
+	}, reasonerToolDefinitions(rc)...)
 	if err != nil {
 		return nil, nil, "error", "", err
 	}
@@ -1260,7 +1260,7 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 		rc.Source.ToolRequests = append(rc.Source.ToolRequests, toolRequests...)
 		observations := p.executeReviewToolRequests(ctx, runID, rc, round, toolRequests)
 		rc.Source.ToolObservations = append(rc.Source.ToolObservations, observations...)
-		nextRaw, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleReasoner, fmt.Sprintf("tool_augmented_review_round_%d", round), reviewSystemPrompt(rc), reviewToolFollowupUserMessage(rc, round, observations), reasonerToolDefinitions()...)
+		nextRaw, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleReasoner, fmt.Sprintf("tool_augmented_review_round_%d", round), reviewSystemPrompt(rc), reviewToolFollowupUserMessage(rc, round, observations), reasonerToolDefinitions(rc)...)
 		if err != nil {
 			return nil, coverage, "error", "", err
 		}
@@ -1375,7 +1375,7 @@ func reviewSystemPrompt(rc *review.Context) string {
 		"Return only JSON with no Markdown fences.",
 		"If more read-only context is required before final findings, return {\"tool_requests\": [{\"name\": \"get_changed_files\", \"input\": {}, \"reason\": \"...\"}], \"findings\": [], \"skill_coverage\": []}.",
 		"Otherwise return {\"findings\": [...], \"skill_coverage\": [...]}.",
-		"Allowed reasoner tools are read-only only: get_merge_request, get_changed_files, list_discussions, get_diff_summary, get_selected_context, get_inline_positions.",
+		"Only the read-only tools listed in REASONER_TOOL_SCHEMAS are available; an empty list permits no tools.",
 		"Each finding must include id, severity, title, description, suggestion, location, confidence, finding_type, strength, evidence_authority, and citations.",
 		"finding_type must be one of finding, note, question. strength must be one of confirmed, likely, speculative, note, question.",
 		"evidence_authority must be one of sot, decision, implementation_context, design_context, supporting, memory.",
@@ -1405,7 +1405,7 @@ func reviewSystemPrompt(rc *review.Context) string {
 		b.WriteString("[/ACTIVE_SKILL_PLAN]\n")
 	}
 	b.WriteString("\n\n[REASONER_TOOL_SCHEMAS]\n")
-	b.WriteString(reviewToolSchemasJSON())
+	b.WriteString(reviewToolSchemasJSON(rc))
 	b.WriteString("\n[/REASONER_TOOL_SCHEMAS]\n")
 	for _, section := range rc.SkillSections {
 		fmt.Fprintf(&b, "\n\n[EVIDENCE kind=skill path=%q title=%q]\n%s\n[/EVIDENCE]\n", section.Path, section.Title, section.Content)
@@ -1902,6 +1902,11 @@ func (p *Pipeline) executeReviewToolRequest(rc *review.Context, request review.T
 		observation.Reason = "tool is not available in the review reasoner loop"
 		return observation
 	}
+	if !rc.Source.Policy.AllowsCapability("repo.read") {
+		observation.Status = "denied"
+		observation.Reason = "effective policy denies repo.read"
+		return observation
+	}
 	if !activeSkillsAllowSurface(rc.Source.SkillActivations, surface) {
 		observation.Status = "denied"
 		observation.Reason = "active skills do not allow tool surface " + surface
@@ -1931,16 +1936,16 @@ func reviewToolSurface(name string) string {
 	}
 }
 
-func reviewToolSchemasJSON() string {
-	data, err := json.Marshal(reasonerToolSchemas())
+func reviewToolSchemasJSON(rc *review.Context) string {
+	data, err := json.Marshal(availableReasonerToolSchemas(rc))
 	if err != nil {
 		return "[]"
 	}
 	return string(data)
 }
 
-func reasonerToolDefinitions() []orchestrator.ToolDefinition {
-	schemas := reasonerToolSchemas()
+func reasonerToolDefinitions(rc *review.Context) []orchestrator.ToolDefinition {
+	schemas := availableReasonerToolSchemas(rc)
 	out := make([]orchestrator.ToolDefinition, 0, len(schemas))
 	for _, schema := range schemas {
 		out = append(out, orchestrator.ToolDefinition{
@@ -1948,6 +1953,19 @@ func reasonerToolDefinitions() []orchestrator.ToolDefinition {
 			Description: schema.Description,
 			InputSchema: schema.InputSchema,
 		})
+	}
+	return out
+}
+
+func availableReasonerToolSchemas(rc *review.Context) []reasonerToolSchema {
+	out := make([]reasonerToolSchema, 0)
+	if rc == nil || !rc.Source.Policy.AllowsCapability("repo.read") {
+		return out
+	}
+	for _, schema := range reasonerToolSchemas() {
+		if activeSkillsAllowSurface(rc.Source.SkillActivations, schema.Surface) {
+			out = append(out, schema)
+		}
 	}
 	return out
 }

@@ -46,20 +46,35 @@ type Source struct {
 }
 
 type PolicyProjection struct {
-	Mode              string           `json:"mode"`
-	Enforced          bool             `json:"enforced"`
-	Digest            string           `json:"digest,omitempty"`
-	SourceRevision    string           `json:"source_revision,omitempty"`
-	SourceDigest      string           `json:"source_digest,omitempty"`
-	Methods           []string         `json:"methods,omitempty"`
-	RequiredChecks    []string         `json:"required_checks,omitempty"`
-	MatchedPacks      []string         `json:"matched_packs,omitempty"`
-	RiskFloor         string           `json:"risk_floor,omitempty"`
-	IndependentReview bool             `json:"independent_review"`
-	TriggerAccepted   bool             `json:"trigger_accepted"`
-	TriggerReasons    []string         `json:"trigger_reasons,omitempty"`
-	Warnings          []string         `json:"warnings,omitempty"`
-	Decisions         []PolicyDecision `json:"decisions,omitempty"`
+	Mode                string           `json:"mode"`
+	Enforced            bool             `json:"enforced"`
+	Digest              string           `json:"digest,omitempty"`
+	SourceRevision      string           `json:"source_revision,omitempty"`
+	SourceDigest        string           `json:"source_digest,omitempty"`
+	Methods             []string         `json:"methods,omitempty"`
+	AllowedCapabilities []string         `json:"allowed_capabilities,omitempty"`
+	RequiredChecks      []string         `json:"required_checks,omitempty"`
+	MatchedPacks        []string         `json:"matched_packs,omitempty"`
+	RiskFloor           string           `json:"risk_floor,omitempty"`
+	IndependentReview   bool             `json:"independent_review"`
+	TriggerAccepted     bool             `json:"trigger_accepted"`
+	TriggerReasons      []string         `json:"trigger_reasons,omitempty"`
+	Warnings            []string         `json:"warnings,omitempty"`
+	Decisions           []PolicyDecision `json:"decisions,omitempty"`
+}
+
+// AllowsCapability keeps preview and legacy policy observational. An enforced
+// empty intersection grants nothing, including when loading persisted state.
+func (p PolicyProjection) AllowsCapability(capability string) bool {
+	if !p.Enforced && p.Mode != "enforce" {
+		return true
+	}
+	for _, allowed := range p.AllowedCapabilities {
+		if allowed == capability {
+			return true
+		}
+	}
+	return false
 }
 
 type PolicyDecision struct {

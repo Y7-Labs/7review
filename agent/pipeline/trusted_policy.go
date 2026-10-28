@@ -153,6 +153,7 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 	}
 	projection.Digest = result.Effective.Digest
 	projection.Methods = append([]string(nil), result.Effective.Methods...)
+	projection.AllowedCapabilities = append([]string(nil), result.Effective.AllowedTools...)
 	projection.RequiredChecks = append([]string(nil), result.Effective.RequiredChecks...)
 	projection.MatchedPacks = append([]string(nil), result.Effective.MatchedPacks...)
 	projection.RiskFloor = result.Effective.RiskFloor

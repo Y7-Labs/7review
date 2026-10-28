@@ -250,6 +250,8 @@ func minimalSource(req review.Request, scm *review.SCMContext, admitted pipeline
 	source.Attestation = &attestation
 	if admitted.Effective != nil {
 		source.Policy = review.PolicyProjection{Mode: admitted.Mode, Digest: admitted.Effective.Digest, SourceRevision: admitted.Source.Revision, SourceDigest: admitted.Source.Digest, Methods: append([]string(nil), admitted.Effective.Methods...), RequiredChecks: append([]string(nil), admitted.Effective.RequiredChecks...), MatchedPacks: append([]string(nil), admitted.Effective.MatchedPacks...), RiskFloor: admitted.Effective.RiskFloor, IndependentReview: admitted.Effective.IndependentReview, TriggerAccepted: true}
+		source.Policy.Enforced = admitted.Enforced
+		source.Policy.AllowedCapabilities = append([]string(nil), admitted.Effective.AllowedTools...)
 	}
 	return source
 }

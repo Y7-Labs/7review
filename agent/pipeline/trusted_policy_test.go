@@ -183,7 +183,7 @@ func TestPipelineEnforcedPolicyActivatesRequiredChecks(t *testing.T) {
 	store := NewMemoryRunStore()
 	p := policyExecutionPipeline(store, &sequenceLLMProvider{responses: []string{`[]`}}, scm, TrustedPolicyResult{
 		Mode: "enforce", Enforced: true, Trigger: policy.TriggerDecision{Accepted: true},
-		Effective: &policy.EffectivePolicy{RequiredChecks: []string{"protected-check"}},
+		Effective: &policy.EffectivePolicy{RequiredChecks: []string{"protected-check"}, AllowedTools: []string{"repo.read", "model.review"}},
 	})
 	if err := p.Run(context.Background(), req); err != nil {
 		t.Fatal(err)
