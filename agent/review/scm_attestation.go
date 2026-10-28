@@ -16,6 +16,23 @@ func AttestSCMRequest(req Request, scm *SCMContext, verifiedAt time.Time) (Chang
 	if scm == nil {
 		return ChangeKey{}, SnapshotAttestation{}, fmt.Errorf("SCM context is required")
 	}
+	if scm.Provider != "" && req.Provider != "" && scm.Provider != req.Provider {
+		return ChangeKey{}, SnapshotAttestation{}, fmt.Errorf("SCM provider does not match request")
+	}
+	if scm.ProjectID != "" && req.ProjectID != "" && scm.ProjectID != req.ProjectID {
+		return ChangeKey{}, SnapshotAttestation{}, fmt.Errorf("SCM repository does not match request")
+	}
+	changeNumber := req.ChangeID
+	if changeNumber == "" && req.MRIID != 0 {
+		changeNumber = strconv.Itoa(req.MRIID)
+	}
+	scmNumber := scm.ChangeID
+	if scmNumber == "" && scm.MRIID != 0 {
+		scmNumber = strconv.Itoa(scm.MRIID)
+	}
+	if changeNumber != "" && scmNumber != "" && changeNumber != scmNumber {
+		return ChangeKey{}, SnapshotAttestation{}, fmt.Errorf("SCM change does not match request")
+	}
 	repositoryID := strings.TrimSpace(firstNonEmptyValue(scm.ProjectID, scm.Repository, req.ProjectID, req.Repository))
 	base := strings.TrimSpace(firstNonEmptyValue(scm.DiffRefs.BaseSHA, req.TargetSHA))
 	head := strings.TrimSpace(firstNonEmptyValue(scm.DiffRefs.HeadSHA, req.SourceSHA))
@@ -34,7 +51,7 @@ func AttestSCMRequest(req Request, scm *SCMContext, verifiedAt time.Time) (Chang
 	}
 	change := ChangeKey{
 		Provider: strings.ToLower(strings.TrimSpace(req.Provider)), Host: requestHost(req), RepositoryID: repositoryID,
-		ChangeNumber: firstNonEmptyValue(req.ChangeID, strconv.Itoa(req.MRIID)),
+		ChangeNumber: firstNonEmptyValue(changeNumber, scmNumber),
 	}
 	comparisonTree := strings.Join([]string{base, scm.DiffRefs.StartSHA, head}, ":")
 	attestation := SnapshotAttestation{

@@ -2,6 +2,7 @@ package review
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -185,6 +186,18 @@ func NewCanonicalContext(req Request, attempt AttemptIdentity, execution Executi
 	if req.ProjectID != "" && req.ProjectID != attempt.Change.RepositoryID {
 		return nil, fmt.Errorf("request project %q does not match attempt repository %q", req.ProjectID, attempt.Change.RepositoryID)
 	}
+	if req.ProjectID == "" && req.Repository != "" && req.Repository != attempt.Change.RepositoryID {
+		return nil, fmt.Errorf("request repository does not match attempt")
+	}
+	if req.Provider != "" && req.Provider != attempt.Change.Provider {
+		return nil, fmt.Errorf("request provider does not match attempt")
+	}
+	if (req.ChangeID != "" && req.ChangeID != attempt.Change.ChangeNumber) || (req.MRIID != 0 && strconv.Itoa(req.MRIID) != attempt.Change.ChangeNumber) {
+		return nil, fmt.Errorf("request change does not match attempt")
+	}
+	if (req.SourceSHA != "" && req.SourceSHA != attempt.Snapshot.HeadRevision) || (req.TargetSHA != "" && req.TargetSHA != attempt.Snapshot.BaseRevision) {
+		return nil, fmt.Errorf("request revisions do not match attempt")
+	}
 	rc := NewContext(req)
 	rc.Source.Attempt = attempt
 	rc.Source.Execution = execution
@@ -204,7 +217,12 @@ func NewVerifiedContext(req Request, attempt AttemptIdentity, execution Executio
 	if attestation.ComparisonTree != execution.ComparisonTree {
 		return nil, fmt.Errorf("execution comparison tree does not match verified attestation")
 	}
-	return NewCanonicalContext(req, attempt, execution)
+	rc, err := NewCanonicalContext(req, attempt, execution)
+	if err != nil {
+		return nil, err
+	}
+	rc.Source.Attestation = &attestation
+	return rc, nil
 }
 
 // AddFindings appends raw findings from one parallel batch.

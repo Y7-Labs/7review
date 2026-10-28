@@ -404,6 +404,18 @@ This is an incremental behavior ledger, not a completion declaration.
   with user authorization. Its writer/root cause is not established; opening the
   changes view was reported as correlated timing, not proven cause.
 
+## Slice 24: Canonical Intake Identity Checks
+
+- Red: verified constructors accepted mismatched request provider, change and
+  base/head identities and discarded the supplied attestation. SCM attestation
+  could also rebind the request to a different provider, repository or change.
+- Green: canonical constructors validate supplied identity fields against the
+  accepted attempt and retain an owned attestation. SCM response identity cannot
+  silently replace authenticated request identity. Display repository aliases
+  remain separate when a canonical project ID is supplied.
+- Verification: full uncached suite and review race tests. Database admission
+  and service/CI wiring are separate following slices, not implied by constructors.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
