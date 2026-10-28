@@ -80,6 +80,10 @@ The server checks `X-Telegram-Bot-Api-Secret-Token`, then authorizes `from.id`.
 second Telegram credential. Long reports are split into ordered messages; a
 failed send is returned as an error, including unsuccessful Bot API responses.
 Update IDs are recorded as external IDs.
+Repeated callbacks with the same channel/external ID enqueue at most one action
+within the running server's 24-hour deduplication window. Queue rejection releases
+the claim so the provider can retry. This is in-process protection, not durable
+exactly-once delivery across restarts.
 
 ### SimpleX
 

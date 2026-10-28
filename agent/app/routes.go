@@ -165,6 +165,21 @@ func (s *Server) routeChannelMessageContext(ctx context.Context, msg channel.Inb
 	if result.RunID == "" {
 		return result, http.StatusBadRequest, fmt.Errorf("%s", result.Reason)
 	}
+	deliveryKey := ""
+	if msg.ExternalID != "" {
+		deliveryKey = fmt.Sprintf("channel:%q:%q", msg.Channel, msg.ExternalID)
+		if !s.claimDelivery(deliveryKey) {
+			result.Approved, result.Revised, result.Suppressed = false, false, false
+			result.Reason = "duplicate channel delivery"
+			return result, http.StatusAccepted, nil
+		}
+	}
+	accepted := false
+	defer func() {
+		if !accepted {
+			s.releaseDelivery(deliveryKey)
+		}
+	}()
 	if err := s.pipeline.Jobs.AppendEvent(ctx, result.RunID, pipeline.RunEvent{
 		Type:    "channel_message_received",
 		Status:  "",
@@ -209,6 +224,7 @@ func (s *Server) routeChannelMessageContext(ctx context.Context, msg channel.Inb
 			return result, http.StatusServiceUnavailable, err
 		}
 	}
+	accepted = true
 	return result, http.StatusAccepted, nil
 }
 
