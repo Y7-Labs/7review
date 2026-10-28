@@ -180,6 +180,22 @@ This is an incremental behavior ledger, not a completion declaration.
   [blobs](https://docs.github.com/en/rest/git/blobs) and the contents API's
   [symlink behavior](https://docs.github.com/en/rest/repos/contents).
 
+## Slice 12: GitLab Tree/Raw-Blob Confinement
+
+- Red: raw file reads accepted symlinks/submodules/directories and unbound bytes
+  without checking their membership/mode in the requested commit.
+- Green: walk regular tree ancestors at the same project/full SHA, validate the
+  selected regular blob and fetch exact raw bytes by its object ID. Verify the Git
+  blob hash rather than using the JSON blob API, which can transcode stored text.
+- Pagination stays pinned to reconstructed project/ref/directory requests. Reject
+  duplicate selected paths across pages, invalid/conflicting pagination and
+  resource-bound exhaustion. Provider-supplied next URLs are never followed.
+- An additional failing regression caught a later duplicate hidden behind
+  Link-only pagination. Binary-byte, namespace, ancestor-link and headerless
+  bounded-pagination fixtures now cover those paths.
+- Verification: full uncached suite and focused tools race tests.
+- API contract: [GitLab repository trees and raw blobs](https://docs.gitlab.com/api/repositories/).
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

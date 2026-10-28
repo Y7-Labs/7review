@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -47,14 +46,28 @@ func TestGitHubReadRepositoryFileBindsRevision(t *testing.T) {
 func TestGitLabReadRepositoryFileBindsRevisionAndNormalizesNotFound(t *testing.T) {
 	client := NewGitLabClient("http://agent.test", "token")
 	missing := false
+	body := []byte("schema_version: 2")
+	blob := testGitBlobID(body)
 	client.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Query().Get("ref") != repositoryTestRevision {
-			t.Fatalf("revision not bound: %s", r.URL.String())
-		}
 		if missing {
 			return testResponse(http.StatusNotFound, "missing"), nil
 		}
-		return &http.Response{StatusCode: http.StatusOK, Status: "200 OK", Header: make(http.Header), Body: io.NopCloser(strings.NewReader("schema_version: 2"))}, nil
+		if strings.HasSuffix(r.URL.Path, "/repository/tree") {
+			if r.URL.Query().Get("ref") != repositoryTestRevision {
+				t.Fatalf("revision not bound: %s", r.URL)
+			}
+			if r.URL.Query().Get("path") == "" {
+				return testJSON(t, []any{map[string]any{"name": ".7review", "path": ".7review", "mode": "040000", "type": "tree", "id": strings.Repeat("b", 40)}}), nil
+			}
+			if r.URL.Query().Get("path") != ".7review" {
+				t.Fatalf("unexpected tree path: %s", r.URL)
+			}
+			return testJSON(t, []any{map[string]any{"name": "review.yaml", "path": ".7review/review.yaml", "mode": "100644", "type": "blob", "id": blob}}), nil
+		}
+		if r.URL.Path != "/api/v4/projects/42/repository/blobs/"+blob+"/raw" {
+			t.Fatalf("unexpected raw blob request: %s", r.URL)
+		}
+		return testResponse(200, string(body)), nil
 	})}
 	data, err := client.ReadRepositoryFile(context.Background(), "42", repositoryTestRevision, ".7review/review.yaml")
 	if err != nil || string(data) != "schema_version: 2" {

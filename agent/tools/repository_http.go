@@ -80,8 +80,8 @@ func (r *repositoryHTTP) get(ctx context.Context, endpoint string, limit int64) 
 		return nil, nil, err
 	}
 	req.Header.Set(r.authHeader, r.authValue)
-	req.Header.Set("Accept", "application/vnd.github+json")
 	if r.service == "github" {
+		req.Header.Set("Accept", "application/vnd.github+json")
 		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	}
 	resp, err := r.client.Do(req)

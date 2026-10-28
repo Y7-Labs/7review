@@ -113,8 +113,7 @@ func (c *GitLabClient) ReadRepositoryFile(ctx context.Context, repositoryID, rev
 	if err != nil {
 		return nil, err
 	}
-	endpoint := fmt.Sprintf("/api/v4/projects/%s/repository/files/%s/raw?ref=%s", url.PathEscape(repositoryID), url.PathEscape(filePath), url.QueryEscape(revision))
-	data, _, err := reader.get(ctx, endpoint, repositoryFileReadLimit)
+	data, err := readGitLabRepositoryBlob(ctx, reader, repositoryID, revision, filePath)
 	if isHTTPStatus(err, http.StatusNotFound) {
 		return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
 	}
