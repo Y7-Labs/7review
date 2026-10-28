@@ -98,6 +98,9 @@ func (g FrozenGitSCM) Enrich(ctx context.Context, req review.Request) (*review.S
 }
 
 func (g FrozenGitSCM) ReadRepositoryFile(ctx context.Context, repositoryID, revision, filePath string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := g.validate(); err != nil {
 		return nil, err
 	}
@@ -107,20 +110,13 @@ func (g FrozenGitSCM) ReadRepositoryFile(ctx context.Context, repositoryID, revi
 	if revision != g.BaseRevision && revision != g.HeadRevision && revision != g.comparisonRevision() {
 		return nil, errors.New("git file revision is outside the frozen snapshot")
 	}
-	if !validRepositoryRelativePath(filePath) {
-		return nil, errors.New("git file path must be repository-relative")
+	if err := validateRepositoryReadPath(filePath); err != nil {
+		return nil, err
 	}
 	if err := g.ensureRevision(ctx, revision); err != nil {
 		return nil, err
 	}
-	data, err := g.run(ctx, repositoryFileReadLimit, "show", revision+":"+filePath)
-	if err != nil {
-		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "exists on disk, but not in") {
-			return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
-		}
-		return nil, err
-	}
-	return data, nil
+	return readFrozenRepositoryBlob(ctx, g, revision, filePath)
 }
 
 // ExportSnapshot materializes the immutable analysis tree without consulting
@@ -272,8 +268,16 @@ func (g FrozenGitSCM) comparisonRevision() string {
 }
 
 func (g FrozenGitSCM) run(ctx context.Context, limit int64, args ...string) ([]byte, error) {
-	command := exec.CommandContext(ctx, "git", append([]string{"-C", g.RepositoryDir}, args...)...)
-	command.Env = append(command.Environ(), "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1")
+	command := exec.CommandContext(ctx, "git", append([]string{"--no-replace-objects", "--literal-pathspecs", "-C", g.RepositoryDir}, args...)...)
+	for _, entry := range command.Environ() {
+		name, _, _ := strings.Cut(entry, "=")
+		switch name {
+		case "GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_SHALLOW_FILE", "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS":
+			continue
+		}
+		command.Env = append(command.Env, entry)
+	}
+	command.Env = append(command.Env, "GIT_TERMINAL_PROMPT=0", "GIT_CONFIG_NOSYSTEM=1", "GIT_NO_REPLACE_OBJECTS=1", "GIT_CONFIG_COUNT=0", "GIT_CONFIG_PARAMETERS=")
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return nil, err

@@ -196,6 +196,23 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: full uncached suite and focused tools race tests.
 - API contract: [GitLab repository trees and raw blobs](https://docs.gitlab.com/api/repositories/).
 
+## Slice 13: Frozen Git Object Confinement
+
+- Red: `git show` exposed symlink bytes as regular policy content, replacement
+  refs changed bytes under an immutable SHA, and ambient repository/object paths
+  redirected reads away from the configured checkout.
+- Green: walk regular trees with literal pathspecs, accept only regular blob
+  leaves, read by blob ID and verify native Git object identity. Missing-file
+  classification no longer depends on parsing English `git show` errors.
+- Frozen commands disable replacement objects and remove ambient repository,
+  worktree, object-store and injected-config overrides. This is object confinement,
+  not the future general-purpose repository-command sandbox.
+- Real Git fixtures cover symlink text shaped like a method, directories,
+  submodules, blob/commit replacement, environment overrides and cancellation.
+  CI rejects a base symlink method even when head replaces it with a regular file,
+  before a panic model provider can run.
+- Verification: full uncached suite and targeted tools/CI race tests.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
