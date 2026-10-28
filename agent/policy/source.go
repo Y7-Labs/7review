@@ -37,6 +37,9 @@ func CompileBound(config ReviewConfigV2, source Source, attestation review.Snaps
 	if len(config.Capabilities.Required) > 0 && len(ctx.RuntimeAllowed) == 0 {
 		return EffectivePolicy{}, fmt.Errorf("policy: bound compilation requires a runtime capability inventory")
 	}
+	if ctx.RuntimeAllowed == nil {
+		ctx.RuntimeAllowed = []string{}
+	}
 	effective, err := Compile(config, ctx)
 	if err != nil {
 		return EffectivePolicy{}, err

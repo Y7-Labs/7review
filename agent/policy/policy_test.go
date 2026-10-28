@@ -54,6 +54,44 @@ func TestCompileBoundRejectsHeadPolicyAndAcceptsTrustedBase(t *testing.T) {
 	}
 }
 
+func TestBoundPolicyEmptyRuntimeDoesNotGrantOptionalCapabilities(t *testing.T) {
+	config := validConfig()
+	config.Capabilities.Required = nil
+	attestation := review.SnapshotAttestation{
+		Snapshot:   review.SnapshotIdentity{RepositoryID: "org/repo", BaseRevision: "base", HeadRevision: "head", FileManifestDigest: "sha256:" + strings.Repeat("a", 64)},
+		ProducerID: "github", ComparisonTree: "head", VerifiedAt: time.Now().UTC(), Verified: true,
+	}
+	source := Source{RepositoryID: "org/repo", Revision: "base", Digest: "sha256:" + strings.Repeat("b", 64), Trust: TrustBaseSnapshot}
+	for _, inventory := range [][]string{nil, {}} {
+		effective, err := CompileBound(config, source, attestation, CompileContext{ProjectID: "org/repo", RuntimeAllowed: inventory})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(effective.AllowedTools) != 0 {
+			t.Fatalf("empty runtime inventory granted repository-requested capabilities: %v", effective.AllowedTools)
+		}
+	}
+}
+
+func TestExplicitEmptyRuntimeInventoryIsNotUnboundPreview(t *testing.T) {
+	config := validConfig()
+	if _, err := Compile(config, CompileContext{RuntimeAllowed: []string{}}); err == nil {
+		t.Fatal("explicit empty runtime inventory satisfied a required capability")
+	}
+	config.Capabilities.Required = nil
+	effective, err := Compile(config, CompileContext{RuntimeAllowed: []string{}})
+	if err != nil || len(effective.AllowedTools) != 0 {
+		t.Fatalf("explicit empty runtime inventory must grant nothing: effective=%#v err=%v", effective, err)
+	}
+	preview, err := Compile(config, CompileContext{})
+	if err != nil || len(preview.AllowedTools) != 2 {
+		t.Fatalf("unbound preview should still show requested capabilities: %#v err=%v", preview, err)
+	}
+	if preview.Digest == effective.Digest {
+		t.Fatal("different runtime permissions produced the same effective policy identity")
+	}
+}
+
 func TestDelegationRequiresClockAndAppliesNamedReplacement(t *testing.T) {
 	config := validConfig()
 	expires := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)

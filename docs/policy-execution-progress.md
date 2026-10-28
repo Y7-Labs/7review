@@ -30,6 +30,18 @@ This is an incremental behavior ledger, not a completion declaration.
   It is not the future action-level permission system, nor a claim that all
   enrichment/publication effects are capability-governed.
 
+## Slice 3: Empty Runtime Inventory Grants Nothing
+
+- Red: bound compilation with no required capabilities widened an empty runtime
+  inventory into all requested optional capabilities. Explicit empty inventories
+  also incorrectly satisfied required capabilities in unbound compilation.
+- Green: bound compilation always treats an absent inventory as empty, never
+  wildcard. Only unbound previews with an unspecified inventory show requested
+  capabilities without runtime intersection.
+- The effective digest distinguishes an unbound preview from an explicit empty
+  inventory; a failing identity regression exposed that collision too.
+- Verification: full `go test ./...` and policy race tests.
+
 ## Remaining
 
 Trusted method-content resolution and execution; remaining effect capabilities;

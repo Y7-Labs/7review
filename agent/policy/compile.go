@@ -12,11 +12,12 @@ import (
 )
 
 type CompileContext struct {
-	ProjectID       string
-	ChangedPaths    []string
-	Branch          string
-	Author          string
-	Labels          []string
+	ProjectID    string
+	ChangedPaths []string
+	Branch       string
+	Author       string
+	Labels       []string
+	// Nil is an unbound preview; a non-nil empty inventory grants nothing.
 	RuntimeAllowed  []string
 	RuntimeCeilings *LimitsV2
 	EvaluationTime  time.Time
@@ -60,12 +61,12 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 	runtime := toSet(ctx.RuntimeAllowed)
 	allowed := make([]string, 0, len(config.Capabilities.Allowed))
 	for _, capability := range config.Capabilities.Allowed {
-		if len(runtime) == 0 || runtime[capability] {
+		if ctx.RuntimeAllowed == nil || runtime[capability] {
 			allowed = append(allowed, capability)
 		}
 	}
 	for _, capability := range config.Capabilities.Required {
-		if len(runtime) > 0 && !runtime[capability] {
+		if ctx.RuntimeAllowed != nil && !runtime[capability] {
 			return EffectivePolicy{}, fmt.Errorf("policy: required capability %q is unavailable at runtime", capability)
 		}
 	}
@@ -141,9 +142,10 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 	// Gate coverage is mandatory and cannot be removed through delegation.
 	effective.RequiredChecks = stableUnion(effective.RequiredChecks, effective.QualityGate.RequiredCoverage)
 	canonical, err := json.Marshal(struct {
-		Config  ReviewConfigV2
-		Context CompileContext
-	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}})
+		Config                ReviewConfigV2
+		Context               CompileContext
+		RuntimeInventoryKnown bool
+	}{config, CompileContext{ProjectID: ctx.ProjectID, ChangedPaths: sortedCopy(ctx.ChangedPaths), Branch: ctx.Branch, Author: ctx.Author, Labels: sortedCopy(ctx.Labels), RuntimeAllowed: sortedCopy(ctx.RuntimeAllowed)}, ctx.RuntimeAllowed != nil})
 	if err != nil {
 		return EffectivePolicy{}, fmt.Errorf("policy: canonicalize: %w", err)
 	}
