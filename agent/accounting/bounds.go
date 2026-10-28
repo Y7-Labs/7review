@@ -24,11 +24,15 @@ type RouteBound struct {
 	InputHardLimit, OutputHardLimit                         int64
 	InputMicroPerMillion, OutputMicroPerMillion, FixedMicro int64
 	AllOutputBounded                                        bool
+	MaxActiveMS                                             int64
 	NativeToolsQualified                                    bool
 }
 
 type Quote struct {
+	Qualification                                      RouteBound
+	QualificationDigest                                string
 	InputTokens, OutputTokens, MoneyMicro              int64
+	ActiveMS                                           int64
 	RouteVersion, EvidenceRef, RequestDigest, Currency string
 }
 
@@ -38,7 +42,7 @@ func NewCatalog(routes []RouteBound) (*Catalog, error) {
 	seen := map[string]bool{}
 	for _, r := range routes {
 		key := r.Provider + "\x00" + r.Model
-		if strings.TrimSpace(r.Provider) == "" || strings.TrimSpace(r.Model) == "" || r.Version == "" || r.EvidenceRef == "" || r.Currency == "" || r.InputHardLimit <= 0 || r.OutputHardLimit <= 0 || r.InputMicroPerMillion < 0 || r.OutputMicroPerMillion < 0 || r.FixedMicro < 0 || !r.AllOutputBounded || r.ValidFrom.IsZero() || !r.ValidUntil.After(r.ValidFrom) || seen[key] {
+		if strings.TrimSpace(r.Provider) == "" || strings.TrimSpace(r.Model) == "" || r.Version == "" || r.EvidenceRef == "" || r.Currency == "" || r.InputHardLimit <= 0 || r.OutputHardLimit <= 0 || r.InputMicroPerMillion < 0 || r.OutputMicroPerMillion < 0 || r.FixedMicro < 0 || r.MaxActiveMS <= 0 || r.MaxActiveMS > int64((1<<63-1)/time.Millisecond) || !r.AllOutputBounded || r.ValidFrom.IsZero() || !r.ValidUntil.After(r.ValidFrom) || seen[key] {
 			return nil, errors.New("invalid or duplicate route qualification")
 		}
 		seen[key] = true
@@ -77,7 +81,8 @@ func (c *Catalog) Quote(intent orchestrator.DispatchIntent, now time.Time) (Quot
 		if !total.IsInt64() {
 			return Quote{}, errors.New("monetary upper bound overflows int64")
 		}
-		return Quote{InputTokens: r.InputHardLimit, OutputTokens: int64(req.MaxTokens), MoneyMicro: total.Int64(), RouteVersion: r.Version, EvidenceRef: r.EvidenceRef, RequestDigest: intent.RequestDigest, Currency: r.Currency}, nil
+		qualification, _ := json.Marshal(r)
+		return Quote{Qualification: r, QualificationDigest: hash(qualification), InputTokens: r.InputHardLimit, OutputTokens: int64(req.MaxTokens), MoneyMicro: total.Int64(), ActiveMS: r.MaxActiveMS, RouteVersion: r.Version, EvidenceRef: r.EvidenceRef, RequestDigest: intent.RequestDigest, Currency: r.Currency}, nil
 	}
 	return Quote{}, errors.New("resolved provider/model has no qualified bound")
 }

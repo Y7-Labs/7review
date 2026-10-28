@@ -674,7 +674,10 @@ ENG-D7/D8 select a PostgreSQL-backed budget authority and action journal inside
 the 7review server for coordinated team/CI execution. No separate broker or
 workflow service is required initially. SQLite remains an autonomous local-store
 candidate, not a shared network file or the chosen coordinated ledger. This does
-not select storage for every memory/graph artifact. No dependency is installed.
+not select storage for every memory/graph artifact. Implementation update
+(2026-10-28): the accounting package uses pgx/PostgreSQL with explicit migrations
+and integration tests. This is not yet the complete action journal or the default
+service/CI intake path; its existence does not qualify coordinated-mode release.
 
 ### Durable Actions And Accounting
 

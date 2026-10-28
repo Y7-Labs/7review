@@ -379,8 +379,11 @@ configuration requires this document. Do not derive operator authority from the
 repository being reviewed.
 
 **Runtime limitation:** enforced model dispatch currently fails closed because
-the production durable reservation backend and trustworthy token/price bounds are
-not implemented. Configuring ceilings does not make enforced review operational.
+the default service/CI intake is not yet connected to canonical durable attempt
+registration and qualified routes. A PostgreSQL accounting package and conservative
+route-bound calculator exist with real database tests; they are not automatically
+enabled by environment configuration. Configuring ceilings does not make enforced
+review operational. See [Accounting](docs/accounting.md).
 Configured host ceilings also apply in legacy/preview mode; omitting them retains
 the legacy unbudgeted path, not a bounded-review guarantee. Test-only authorities
 qualify dispatch ordering, not cross-run accounting. This work is not alpha-ready

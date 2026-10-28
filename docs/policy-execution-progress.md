@@ -336,6 +336,31 @@ This is an incremental behavior ledger, not a completion declaration.
   temporarily blocked by an outside edit removing committed CI ceiling wiring;
   that unrelated removal is not included in this slice.
 
+## Slice 21: Real PostgreSQL Shared Model Admission
+
+- Red: real database fixtures failed against the empty authority: no three-scope
+  admission, durable sending marker, identity qualification or rollback contract.
+- Green: trusted attempt registration precedes worker dispatch. Ordered scope
+  locks atomically commit request, quote, attempt/change/project holds and sending.
+  Unknown outcomes retain holds; closed attempts cannot spend. Replay receipts
+  prohibit resend. Canonical tagged digests, unique action IDs and reserved
+  active-time bounds now cross the orchestrator boundary.
+- Additional red fixtures caught project scope resetting across repositories,
+  mutable price-version labels and a live authority spending against an
+  incompatible schema. These now fail closed using trusted project identity,
+  immutable qualification records and per-transaction schema checks.
+- Real-DB tests cover last-unit races, rollback of every hold, independent
+  connections, worker process death after commit, stale authority, unknown holds
+  carried from prior periods and provider calls preceded by durable admission.
+- PostgreSQL migrations and pgx are explicit. Go remains 1.24; no default service
+  route or legacy attempt is silently promoted into coordinated accounting.
+- Verification: full uncached suite with real PostgreSQL enabled, isolated
+  PostgreSQL race script, formatting and `go vet ./...` pass. The outside CI
+  removal noted in slice 20 was restored with explicit user authorization.
+- Boundary: synchronous model admission only, not the complete action journal.
+  Final reconciliation, over-bound incidents, prospective reconfiguration and
+  end-to-end intake/controller integration remain open. See `docs/accounting.md`.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

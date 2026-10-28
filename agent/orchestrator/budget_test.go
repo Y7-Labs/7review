@@ -25,6 +25,8 @@ type recordingBudget struct {
 	denyAfter  int
 	recordErr  error
 	badReceipt bool
+	replay     bool
+	activeMS   int64
 }
 
 func (b *recordingBudget) ReserveAndBegin(_ context.Context, i DispatchIntent) (DispatchPermit, error) {
@@ -34,7 +36,7 @@ func (b *recordingBudget) ReserveAndBegin(_ context.Context, i DispatchIntent) (
 		return DispatchPermit{}, errors.New("shared capacity exhausted")
 	}
 	b.intents = append(b.intents, i)
-	p := DispatchPermit{ID: fmt.Sprint(len(b.intents)), RequestDigest: i.RequestDigest}
+	p := DispatchPermit{ID: fmt.Sprint(len(b.intents)), RequestDigest: i.RequestDigest, AlreadyStarted: b.replay, ActiveMS: b.activeMS}
 	if b.badReceipt {
 		p.RequestDigest = "wrong"
 	}
@@ -199,6 +201,30 @@ func TestOperatorCeilingSnapshotsAreDetached(t *testing.T) {
 	copy.Change.Period.DurationMS = 0
 	if o.OperatorCeilings().Change.Period.DurationMS != 1000 {
 		t.Fatal("caller mutated authority ceilings")
+	}
+}
+
+func TestDurableSendingReplayNeverCallsProviderAgain(t *testing.T) {
+	l := budgetTestLimits()
+	authority := &recordingBudget{replay: true}
+	o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": forbiddenPolicyProvider{t}}, WithOperatorCeilings(&l), WithBudgetAuthority(authority))
+	_, err := o.Complete(context.Background(), fundedContext(l), RoleReasoner, "test", "system", "user")
+	if err == nil || !strings.Contains(err.Error(), "resending") || len(authority.outcomes) != 0 {
+		t.Fatalf("sending replay authorized I/O: %v", err)
+	}
+	if authority.intents[0].ActionID == "" || !strings.HasPrefix(authority.intents[0].RequestDigest, "sha256:") {
+		t.Fatal("missing canonical action/request identity")
+	}
+}
+
+func TestReservedActiveTimeBoundIsEnforcedByDispatch(t *testing.T) {
+	l := budgetTestLimits()
+	authority := &recordingBudget{activeMS: 5}
+	provider := budgetProvider{call: func(ctx context.Context, _ LLMRequest) (string, error) { <-ctx.Done(); return "", ctx.Err() }}
+	o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": provider}, WithOperatorCeilings(&l), WithBudgetAuthority(authority))
+	_, err := o.Complete(context.Background(), fundedContext(l), RoleReasoner, "test", "system", "user")
+	if !errors.Is(err, context.DeadlineExceeded) || len(authority.outcomes) != 1 {
+		t.Fatalf("reserved active bound lost: %v", err)
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 var boundsTime = time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
 
 func testRoute() RouteBound {
-	return RouteBound{Provider: "qualified", Model: "pinned-model-20261001", Version: "contract-v1", Currency: "USD", EvidenceRef: "operator:provider-contract-1", ValidFrom: boundsTime.Add(-time.Hour), ValidUntil: boundsTime.Add(time.Hour), InputHardLimit: 100, OutputHardLimit: 40, InputMicroPerMillion: 11, OutputMicroPerMillion: 13, FixedMicro: 2, AllOutputBounded: true}
+	return RouteBound{Provider: "qualified", Model: "pinned-model-20261001", Version: "contract-v1", Currency: "USD", EvidenceRef: "operator:provider-contract-1", ValidFrom: boundsTime.Add(-time.Hour), ValidUntil: boundsTime.Add(time.Hour), InputHardLimit: 100, OutputHardLimit: 40, InputMicroPerMillion: 11, OutputMicroPerMillion: 13, FixedMicro: 2, AllOutputBounded: true, MaxActiveMS: 50}
 }
 func digestBytes(b []byte) string { s := sha256.Sum256(b); return "sha256:" + hex.EncodeToString(s[:]) }
 func quoteIntent() orchestrator.DispatchIntent {
