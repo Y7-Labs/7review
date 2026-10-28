@@ -3,7 +3,6 @@ package tools
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -112,33 +111,14 @@ func (c *GitHubClient) ReadRepositoryFile(ctx context.Context, repositoryID, rev
 	if err != nil {
 		return nil, err
 	}
-	var content struct {
-		Type     string `json:"type"`
-		Encoding string `json:"encoding"`
-		Content  string `json:"content"`
-	}
-	endpoint := fmt.Sprintf("/repos/%s/contents/%s?ref=%s", repoPath(repositoryID), escapeRepositoryPath(filePath), url.QueryEscape(revision))
-	data, _, err := reader.get(ctx, endpoint, maxGitMetadataBytes)
+	data, err := readGitHubRepositoryBlob(ctx, reader, repositoryID, revision, filePath)
 	if err != nil {
 		if isHTTPStatus(err, http.StatusNotFound) {
 			return nil, fmt.Errorf("%w: %s", ErrRepositoryFileNotFound, filePath)
 		}
 		return nil, err
 	}
-	if err := json.Unmarshal(data, &content); err != nil {
-		return nil, err
-	}
-	if content.Type != "file" || content.Encoding != "base64" {
-		return nil, fmt.Errorf("github: %s is not a base64 file", filePath)
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(content.Content, "\n", ""))
-	if err != nil {
-		return nil, fmt.Errorf("github: decode %s: %w", filePath, err)
-	}
-	if len(decoded) > repositoryFileReadLimit {
-		return nil, fmt.Errorf("github: repository file exceeds %d bytes", repositoryFileReadLimit)
-	}
-	return decoded, nil
+	return data, nil
 }
 
 func (c *GitHubClient) PublishDraft(ctx context.Context, source *review.SCMContext, report string) error {

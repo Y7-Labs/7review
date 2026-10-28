@@ -163,6 +163,23 @@ This is an incremental behavior ledger, not a completion declaration.
 - Still open at this slice: tree-mode/object binding, symlink/submodule handling
   and frozen Git object confinement. Transport guards alone do not prove these.
 
+## Slice 11: GitHub Commit/Tree/Blob Confinement
+
+- Red: the contents reader accepted disguised symlinks/submodules/directories,
+  incomplete/mismatched tree receipts and wrong blob data without proving regular
+  file membership in the requested revision.
+- Green: resolve the requested immutable commit to its tree, walk only regular
+  tree ancestors and read only regular/executable blob leaves. Reject symlinks,
+  submodules, truncated trees, duplicate selected paths and identity/size mismatches.
+- Fetch blobs by object ID under the same configured API/repository and verify
+  raw bytes using native Git blob identity. Provider-returned URLs are ignored.
+- Positive nested-path/enterprise-prefix, missing-file, ancestor-symlink,
+  tampering and negative object-mode fixtures qualify the adapter without live API calls.
+- Verification: full uncached suite and focused tools race tests.
+- API contract evidence: [GitHub trees](https://docs.github.com/en/rest/git/trees),
+  [blobs](https://docs.github.com/en/rest/git/blobs) and the contents API's
+  [symlink behavior](https://docs.github.com/en/rest/repos/contents).
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

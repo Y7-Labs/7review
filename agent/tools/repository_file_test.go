@@ -12,15 +12,27 @@ import (
 
 func TestGitHubReadRepositoryFileBindsRevision(t *testing.T) {
 	missing := false
+	rootTree, subTree := strings.Repeat("b", 40), strings.Repeat("c", 40)
+	body := []byte("schema_version: 2")
+	blob := testGitBlobID(body)
 	client := NewGitHubClient("http://agent.test", "token")
 	client.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Path != "/repos/o/r/contents/.7review/review.yaml" || r.URL.Query().Get("ref") != repositoryTestRevision {
-			t.Fatalf("unexpected trusted file request: %s", r.URL.String())
-		}
 		if missing {
 			return testResponse(http.StatusNotFound, `{"message":"Not Found"}`), nil
 		}
-		return testJSON(t, map[string]string{"type": "file", "encoding": "base64", "content": base64.StdEncoding.EncodeToString([]byte("schema_version: 2"))}), nil
+		switch r.URL.Path {
+		case "/repos/o/r/git/commits/" + repositoryTestRevision:
+			return testJSON(t, map[string]any{"sha": repositoryTestRevision, "tree": map[string]any{"sha": rootTree}}), nil
+		case "/repos/o/r/git/trees/" + rootTree:
+			return testJSON(t, map[string]any{"sha": rootTree, "tree": []any{map[string]any{"path": ".7review", "mode": "040000", "type": "tree", "sha": subTree}}}), nil
+		case "/repos/o/r/git/trees/" + subTree:
+			return testJSON(t, map[string]any{"sha": subTree, "tree": []any{map[string]any{"path": "review.yaml", "mode": "100644", "type": "blob", "sha": blob, "size": len(body)}}}), nil
+		case "/repos/o/r/git/blobs/" + blob:
+			return testJSON(t, map[string]any{"sha": blob, "size": len(body), "encoding": "base64", "content": base64.StdEncoding.EncodeToString(body)}), nil
+		default:
+			t.Fatalf("unexpected trusted object request: %s", r.URL)
+			return nil, nil
+		}
 	})}
 	data, err := client.ReadRepositoryFile(context.Background(), "o/r", repositoryTestRevision, ".7review/review.yaml")
 	if err != nil || string(data) != "schema_version: 2" {
