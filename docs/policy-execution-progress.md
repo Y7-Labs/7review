@@ -316,6 +316,26 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: this is conservative failure handling, not a durable ledger or a
   claim that resource accounting is complete.
 
+## Slice 20: Qualified Model Cost Upper Bounds
+
+- Red: cost qualification had no implementation; valid hard-limit pricing failed
+  and malformed/duplicate authority records were accepted by the initial stub.
+- Green: an immutable exact-provider/model catalog rejects absent/expired
+  qualification, mismatched request bytes/model, unqualified native tools,
+  excessive output and integer overflow. Input reservation uses a documented
+  provider-enforced billable hard limit, not prompt character heuristics or an
+  estimated token-count endpoint. All billable output must be bounded by the
+  request cap; fixed charges are included. Integer micro-prices round upward.
+- Operator qualification records require version, evidence reference, currency
+  and half-open validity. No built-in production models or current prices are
+  asserted; fixture routes are test-only. A hard-limit quote can be deliberately
+  expensive and deny requests that a future exact tokenizer could safely admit.
+- Boundary: this is the bound calculator, not durable admission or live route
+  qualification. No default service route becomes spend-authorized.
+- Verification: accounting unit and race tests pass. Full-suite verification is
+  temporarily blocked by an outside edit removing committed CI ceiling wiring;
+  that unrelated removal is not included in this slice.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
