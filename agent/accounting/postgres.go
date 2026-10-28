@@ -52,6 +52,9 @@ var schemaSQL string
 //go:embed migration002.sql
 var migration002 string
 
+//go:embed migration003.sql
+var migration003 string
+
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, setting := range []string{"fsync", "full_page_writes"} {
@@ -105,10 +108,24 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 2
 	}
-	if version != 2 {
+	if version == 2 {
+		if _, err = tx.ExecContext(ctx, migration003); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_schema SET version=3 WHERE singleton=true`); err != nil {
+			return err
+		}
+		version = 3
+	}
+	if version != 3 {
 		return errors.New("incompatible accounting schema")
 	}
 	for _, table := range []string{"budget_receipts", "budget_quarantine"} {
+		if err = requireRelation(ctx, tx, table); err != nil {
+			return err
+		}
+	}
+	for _, table := range []string{"budget_heads", "budget_intakes", "budget_intake_conflicts"} {
 		if err = requireRelation(ctx, tx, table); err != nil {
 			return err
 		}
@@ -278,6 +295,19 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 		return orchestrator.DispatchPermit{}, err
 	}
 	defer tx.Rollback()
+	var tracking sql.NullString
+	if err = tx.QueryRowContext(ctx, `SELECT tracking_id FROM budget_attempts WHERE id=$1`, i.Attempt.AttemptID).Scan(&tracking); err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	if tracking.Valid {
+		var current sql.NullString
+		if err = tx.QueryRowContext(ctx, `SELECT current_attempt_id FROM budget_heads WHERE id=$1 FOR UPDATE`, tracking.String).Scan(&current); err != nil {
+			return orchestrator.DispatchPermit{}, err
+		}
+		if current.String != i.Attempt.AttemptID {
+			return orchestrator.DispatchPermit{}, errors.New("attempt is no longer current")
+		}
+	}
 	var stored string
 	var active bool
 	if err = tx.QueryRowContext(ctx, `SELECT binding_digest,active FROM budget_attempts WHERE id=$1 FOR UPDATE`, i.Attempt.AttemptID).Scan(&stored, &active); err != nil {
@@ -514,7 +544,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 2 {
+	if version != 3 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

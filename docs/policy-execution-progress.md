@@ -416,6 +416,25 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: full uncached suite and review race tests. Database admission
   and service/CI wiring are separate following slices, not implied by constructors.
 
+## Slice 25: Durable Canonical Intake And Generation Fencing
+
+- Red: no canonical admission operation existed. Real PostgreSQL cases required
+  delivery replay, fresh linked reruns, stale-acquisition rejection and isolated
+  ephemeral identity. Additional red cases caught timestamp round-trip mismatch
+  and automatic same-snapshot generation churn.
+- Green: schema v3 commits immutable intake receipts and registered attempts with
+  a per-change tracking pointer. Intake compares the generation observed before
+  acquisition; a changed pointer rejects late work rather than rolling it back.
+  New service generations fence old dispatch without releasing shared holds.
+  Delivery conflicts are rejected and audited; replay retains original deadlines.
+- Ephemeral/historical intake does not advance the service tracking pointer.
+  Automatic events for the same snapshot/policy reuse the existing attempt;
+  explicit manual reruns create fresh linked identities. UTC-normalized receipts
+  survive serialization without changing authority binding.
+- Verification: full uncached suite with PostgreSQL and accounting race tests.
+  This adds the durable operation; pipeline/app wiring follows separately. It is
+  not durable HTTP inbox acknowledgement or complete action recovery.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

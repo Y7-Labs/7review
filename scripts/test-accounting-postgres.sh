@@ -9,15 +9,16 @@ docker run --rm -d --name "$name" \
   -e POSTGRES_USER=budget_test -e POSTGRES_PASSWORD=budget_test_local_only \
   -e POSTGRES_DB=budget_test -p 127.0.0.1::5432 postgres:16-alpine >/dev/null
 ready=false
-for ((i=0; i<60; i++)); do
+for ((i=0; i<120; i++)); do
   if docker exec "$name" pg_isready -U budget_test -d budget_test >/dev/null 2>&1; then
     ready=true
     break
   fi
-  sleep 0.2
+  sleep 0.25
 done
 if [[ "$ready" != true ]]; then
   printf 'PostgreSQL test container did not become ready\n' >&2
+  docker logs "$name" >&2
   exit 1
 fi
 address="$(docker port "$name" 5432/tcp)"
