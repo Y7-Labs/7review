@@ -54,14 +54,18 @@ func (s *Server) handleChannelInbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
-	case strings.HasPrefix(r.URL.Path, "/channels/twilio/whatsapp"):
+	case r.URL.Path == "/channels/twilio/whatsapp":
 		s.handleTwilioWhatsAppInbound(w, r)
 		return
-	case strings.HasPrefix(r.URL.Path, "/channels/telegram/webhook"):
+	case r.URL.Path == "/channels/telegram/webhook":
 		s.handleTelegramInbound(w, r)
 		return
 	}
 	channelName := channelNameFromPath(r.URL.Path)
+	if r.URL.Path != "/channels/"+channelName+"/inbound" || !s.pipeline.Channels.AllowsGenericInbound(channelName) {
+		http.Error(w, "channel endpoint not found", http.StatusNotFound)
+		return
+	}
 	if channelName == "" {
 		http.Error(w, "missing channel", http.StatusBadRequest)
 		return
@@ -76,7 +80,7 @@ func (s *Server) handleChannelInbound(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid channel payload", http.StatusBadRequest)
 		return
 	}
-	msg.Channel = firstNonEmptyString(msg.Channel, channelName)
+	msg.Channel = channelName
 	if msg.ReceivedAt.IsZero() {
 		msg.ReceivedAt = time.Now().UTC()
 	}

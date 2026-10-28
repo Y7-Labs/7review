@@ -142,7 +142,7 @@ func TestParseTelegramInboundAndSecret(t *testing.T) {
 		Message:  &TelegramMessage{MessageID: 42, From: TelegramUser{ID: 12345, Username: "operator"}, Text: "/approve owner/repo!7"},
 	}
 	msg := ParseTelegramInbound("operator_telegram", update)
-	if msg.RunID != "owner/repo!7" || msg.SenderID != "12345" || msg.SenderAddress != "operator" || msg.ExternalID != "42" {
+	if msg.RunID != "owner/repo!7" || msg.SenderID != "12345" || msg.SenderAddress != "operator" || msg.ExternalID != "99" {
 		t.Fatalf("telegram inbound not parsed: %#v", msg)
 	}
 	if !VerifyTelegramWebhookSecret("secret", "secret") {
@@ -154,13 +154,13 @@ func TestParseTelegramInboundAndSecret(t *testing.T) {
 }
 
 func TestParseSimpleXInbound(t *testing.T) {
-	data := []byte(`{"type":"NewChatItems","chatItems":[{"id":"ci1","text":"/revise owner/repo!7\nFocus on auth","chat":{"contactId":"contact-1","contactName":"Operator"}}]}`)
+	data := []byte(`{"resp":{"type":"newChatItems","chatItems":[{"chatInfo":{"type":"direct","contact":{"contactId":1,"localDisplayName":"Operator"}},"chatItem":{"chatDir":{"type":"directRcv"},"meta":{"itemId":42},"content":{"type":"rcvMsgContent","msgContent":{"type":"text","text":"/revise owner/repo!7\nFocus on auth"}}}}]}}`)
 	messages := ParseSimpleXInbound("operator_simplex", data)
 	if len(messages) != 1 {
 		t.Fatalf("expected one message: %#v", messages)
 	}
 	msg := messages[0]
-	if msg.RunID != "owner/repo!7" || msg.SenderID != "contact-1" || msg.SenderAddress != "Operator" || msg.ExternalID != "ci1" {
+	if msg.RunID != "owner/repo!7" || msg.SenderID != "1" || msg.SenderAddress != "Operator" || msg.ExternalID != "42" {
 		t.Fatalf("simplex inbound not parsed: %#v", msg)
 	}
 }

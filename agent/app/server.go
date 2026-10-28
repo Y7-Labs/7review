@@ -20,15 +20,16 @@ import (
 
 // Server wires HTTP routes to the review pipeline.
 type Server struct {
-	cfg      *config.Config
-	pipeline *pipeline.Pipeline
-	mux      *http.ServeMux
-	work     chan workItem
-	seenMu   sync.Mutex
-	seen     map[string]time.Time
-	activeMu sync.Mutex
-	active   map[string]bool
-	stats    workerStats
+	cfg           *config.Config
+	pipeline      *pipeline.Pipeline
+	mux           *http.ServeMux
+	work          chan workItem
+	seenMu        sync.Mutex
+	seen          map[string]time.Time
+	activeMu      sync.Mutex
+	active        map[string]bool
+	stats         workerStats
+	channelCancel context.CancelFunc
 }
 
 const defaultWebhookJobTimeout = 15 * time.Minute
@@ -104,7 +105,9 @@ func NewServer() (*Server, error) {
 	s.pipeline.Memory = reviewMemoryStore(cfg)
 	s.pipeline.Channels = channel.NewManager(channelConfigs(inputProfile, cfg))
 	s.startWorkers()
-	s.startChannelListeners(context.Background())
+	listenerCtx, cancel := context.WithCancel(context.Background())
+	s.channelCancel = cancel
+	s.startChannelListeners(listenerCtx)
 	s.routes()
 	return s, nil
 }
@@ -114,6 +117,10 @@ func (s *Server) startChannelListeners(ctx context.Context) {
 		return
 	}
 	if err := s.pipeline.Channels.Start(ctx, func(msg channel.InboundMessage) {
+		if _, err := s.pipeline.Channels.VerifyInbound(msg.Channel, "", msg); err != nil {
+			log.Printf("[server] channel listener sender rejected: channel=%s", msg.Channel)
+			return
+		}
 		if _, _, err := s.routeChannelMessageContext(ctx, msg); err != nil {
 			log.Printf("[server] channel listener message rejected: channel=%s run=%s error=%v", msg.Channel, msg.RunID, err)
 		}
@@ -179,6 +186,9 @@ func envSet(key string) bool {
 
 // ListenAndServe starts the HTTP server.
 func (s *Server) ListenAndServe() error {
+	if s.channelCancel != nil {
+		defer s.channelCancel()
+	}
 	log.Printf("[server] 7review listening on %s", s.cfg.ListenAddr)
 	return s.httpServer().ListenAndServe()
 }

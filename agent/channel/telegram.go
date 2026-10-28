@@ -3,6 +3,7 @@ package channel
 import (
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,7 +41,7 @@ type TelegramUser struct {
 }
 
 func NewTelegramChannel(cfg Config) TelegramChannel {
-	return TelegramChannel{cfg: cfg, httpClient: http.DefaultClient}
+	return TelegramChannel{cfg: cfg, httpClient: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (c TelegramChannel) Name() string {
@@ -57,6 +58,24 @@ func (c TelegramChannel) SendFinalConfirmation(ctx context.Context, msg FinalCon
 }
 
 func (c TelegramChannel) sendMessage(ctx context.Context, text string) (DeliveryReceipt, error) {
+	// 2000 runes stay below Telegram's 4096-character cap even for UTF-16 pairs.
+	runes := []rune(strings.TrimSpace(text))
+	var receipt DeliveryReceipt
+	for len(runes) > 0 {
+		n := min(2000, len(runes))
+		part, err := c.sendMessagePart(ctx, string(runes[:n]))
+		if err != nil {
+			return receipt, err
+		}
+		if receipt.ExternalID == "" {
+			receipt = part
+		}
+		runes = runes[n:]
+	}
+	return receipt, nil
+}
+
+func (c TelegramChannel) sendMessagePart(ctx context.Context, text string) (DeliveryReceipt, error) {
 	token := Setting(c.cfg.Settings, "bot_token")
 	chatID := firstNonEmpty(Setting(c.cfg.Settings, "chat_id"), firstSender(c.cfg.AuthorizedSenders))
 	if token == "" || chatID == "" {
@@ -64,7 +83,7 @@ func (c TelegramChannel) sendMessage(ctx context.Context, text string) (Delivery
 	}
 	payload, err := json.Marshal(map[string]string{
 		"chat_id": chatID,
-		"text":    strings.TrimSpace(text),
+		"text":    text,
 	})
 	if err != nil {
 		return DeliveryReceipt{}, err
@@ -82,7 +101,7 @@ func (c TelegramChannel) sendMessage(ctx context.Context, text string) (Delivery
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return DeliveryReceipt{}, err
+		return DeliveryReceipt{}, fmt.Errorf("telegram sendMessage request failed")
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
@@ -90,18 +109,21 @@ func (c TelegramChannel) sendMessage(ctx context.Context, text string) (Delivery
 		return DeliveryReceipt{}, fmt.Errorf("telegram send status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
 	}
 	var parsed struct {
+		OK     bool `json:"ok"`
 		Result struct {
 			MessageID int64 `json:"message_id"`
 		} `json:"result"`
 	}
-	_ = json.Unmarshal(respBody, &parsed)
+	if err := json.Unmarshal(respBody, &parsed); err != nil || !parsed.OK || parsed.Result.MessageID == 0 {
+		return DeliveryReceipt{}, fmt.Errorf("telegram returned an invalid or unsuccessful sendMessage response")
+	}
 	return DeliveryReceipt{Channel: c.cfg.Name, ExternalID: strconv.FormatInt(parsed.Result.MessageID, 10)}, nil
 }
 
 func VerifyTelegramWebhookSecret(expected string, got string) bool {
 	expected = strings.TrimSpace(expected)
 	got = strings.TrimSpace(got)
-	return expected != "" && got != "" && expected == got
+	return expected != "" && got != "" && subtle.ConstantTimeCompare([]byte(expected), []byte(got)) == 1
 }
 
 func ParseTelegramInbound(channelName string, update TelegramUpdate) InboundMessage {
@@ -111,9 +133,6 @@ func ParseTelegramInbound(channelName string, update TelegramUpdate) InboundMess
 	if update.Message != nil {
 		text = update.Message.Text
 		from = update.Message.From
-		if update.Message.MessageID != 0 {
-			externalID = strconv.FormatInt(update.Message.MessageID, 10)
-		}
 	}
 	if update.CallbackQuery != nil {
 		from = update.CallbackQuery.From
@@ -121,9 +140,6 @@ func ParseTelegramInbound(channelName string, update TelegramUpdate) InboundMess
 			text = update.CallbackQuery.Data
 		} else if update.CallbackQuery.Message != nil {
 			text = update.CallbackQuery.Message.Text
-		}
-		if update.CallbackQuery.ID != "" {
-			externalID = update.CallbackQuery.ID
 		}
 	}
 	text = strings.TrimSpace(text)

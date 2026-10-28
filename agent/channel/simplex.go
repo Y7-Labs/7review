@@ -1,76 +1,109 @@
 package channel
 
 import (
-	"bufio"
 	"context"
-	"crypto/rand"
-	"crypto/sha1"
-	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-type SimpleXChannel struct {
-	cfg Config
+type SimpleXChannel struct{ cfg Config }
+
+type simpleXEnvelope struct {
+	CorrID string `json:"corrId"`
+	Resp   struct {
+		Type     string `json:"type"`
+		Contacts []struct {
+			ID   int64  `json:"contactId"`
+			Name string `json:"localDisplayName"`
+		} `json:"contacts"`
+		ChatItems []struct {
+			ChatInfo struct {
+				Type    string `json:"type"`
+				Contact struct {
+					ID   int64  `json:"contactId"`
+					Name string `json:"localDisplayName"`
+				} `json:"contact"`
+			} `json:"chatInfo"`
+			ChatItem struct {
+				Direction struct {
+					Type string `json:"type"`
+				} `json:"chatDir"`
+				Meta struct {
+					ID int64 `json:"itemId"`
+				} `json:"meta"`
+				Content struct {
+					Type    string `json:"type"`
+					Message struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"msgContent"`
+				} `json:"content"`
+			} `json:"chatItem"`
+		} `json:"chatItems"`
+	} `json:"resp"`
 }
 
-type SimpleXEvent struct {
-	Type      string            `json:"type,omitempty"`
-	Resp      *SimpleXEventResp `json:"resp,omitempty"`
-	ChatItems []SimpleXChatItem `json:"chatItems,omitempty"`
-}
-
-type SimpleXEventResp struct {
-	Type      string            `json:"type,omitempty"`
-	ChatItems []SimpleXChatItem `json:"chatItems,omitempty"`
-}
-
-type SimpleXChatItem struct {
-	ID      string         `json:"id,omitempty"`
-	Text    string         `json:"text,omitempty"`
-	Content map[string]any `json:"content,omitempty"`
-	Chat    SimpleXChat    `json:"chat,omitempty"`
-}
-
-type SimpleXChat struct {
-	ID          string `json:"id,omitempty"`
-	ContactID   string `json:"contactId,omitempty"`
-	ContactName string `json:"contactName,omitempty"`
-	DisplayName string `json:"displayName,omitempty"`
-}
-
-func NewSimpleXChannel(cfg Config) SimpleXChannel {
-	return SimpleXChannel{cfg: cfg}
-}
-
-func (c SimpleXChannel) Name() string {
-	return c.cfg.Name
-}
-
+func NewSimpleXChannel(cfg Config) SimpleXChannel { return SimpleXChannel{cfg: cfg} }
+func (c SimpleXChannel) Name() string             { return c.cfg.Name }
 func (c SimpleXChannel) SendDraft(ctx context.Context, msg DraftMessage) (DeliveryReceipt, error) {
 	return c.send(ctx, draftBody("7review draft ready", msg))
 }
-
 func (c SimpleXChannel) SendFinalConfirmation(ctx context.Context, msg FinalConfirmationMessage) error {
 	_, err := c.send(ctx, "7review final published\nrun: "+msg.RunID+"\n\n"+strings.TrimSpace(msg.FinalReport))
 	return err
 }
 
 func (c SimpleXChannel) send(ctx context.Context, text string) (DeliveryReceipt, error) {
-	contact := firstNonEmpty(Setting(c.cfg.Settings, "contact_id"), Setting(c.cfg.Settings, "contact_name"), firstSender(c.cfg.AuthorizedSenders))
+	contact := Setting(c.cfg.Settings, "contact_id")
 	if contact == "" {
-		return DeliveryReceipt{}, fmt.Errorf("simplex channel %s missing contact_id/contact_name", c.cfg.Name)
+		name := Setting(c.cfg.Settings, "contact_name")
+		if name == "" {
+			return DeliveryReceipt{}, fmt.Errorf("simplex requires contact_id or contact_name")
+		}
+		response, err := executeSimpleXCommand(ctx, simpleXURL(c.cfg), "contacts-"+strconv.FormatInt(time.Now().UnixNano(), 10), "/contacts")
+		if err != nil {
+			return DeliveryReceipt{}, err
+		}
+		if response.Resp.Type != "contactsList" {
+			return DeliveryReceipt{}, fmt.Errorf("simplex could not list contacts")
+		}
+		for _, candidate := range response.Resp.Contacts {
+			if candidate.Name == name {
+				if contact != "" {
+					return DeliveryReceipt{}, fmt.Errorf("simplex contact_name is ambiguous; configure contact_id")
+				}
+				contact = strconv.FormatInt(candidate.ID, 10)
+			}
+		}
+		if contact == "" {
+			return DeliveryReceipt{}, fmt.Errorf("simplex contact_name was not found")
+		}
 	}
-	corrID := "7review-" + time.Now().UTC().Format("20060102150405.000000000")
-	cmd := "/_send @" + contact + " " + strings.TrimSpace(text)
+	var cmd string
+	if contact != "" {
+		id, err := strconv.ParseInt(contact, 10, 64)
+		if err != nil || id <= 0 {
+			return DeliveryReceipt{}, fmt.Errorf("simplex contact_id must be a positive integer")
+		}
+		messages, err := json.Marshal([]any{map[string]any{
+			"msgContent": map[string]string{"type": "text", "text": text},
+			"mentions":   map[string]int64{},
+		}})
+		if err != nil {
+			return DeliveryReceipt{}, err
+		}
+		cmd = "/_send @" + contact + " json " + string(messages)
+	}
+	corrID := "7review-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	if err := writeSimpleXCommand(ctx, simpleXURL(c.cfg), corrID, cmd); err != nil {
 		return DeliveryReceipt{}, err
 	}
@@ -80,19 +113,19 @@ func (c SimpleXChannel) send(ctx context.Context, text string) (DeliveryReceipt,
 func (c SimpleXChannel) Start(ctx context.Context, handler func(InboundMessage)) error {
 	backoff := time.Second
 	for ctx.Err() == nil {
+		connected := time.Now()
 		err := readSimpleXEvents(ctx, simpleXURL(c.cfg), func(data []byte) {
 			for _, msg := range ParseSimpleXInbound(c.cfg.Name, data) {
-				if _, err := NewManager([]Config{c.cfg}).VerifyInbound(c.cfg.Name, "", msg); err != nil {
-					log.Printf("[channel:%s] rejected simplex message: %v", c.cfg.Name, err)
-					continue
-				}
 				handler(msg)
 			}
 		})
 		if ctx.Err() != nil {
 			return nil
 		}
-		log.Printf("[channel:%s] simplex listener reconnecting after error: %v", c.cfg.Name, err)
+		if time.Since(connected) > time.Minute {
+			backoff = time.Second
+		}
+		log.Printf("[channel:%s] simplex reconnecting: %v", c.cfg.Name, err)
 		timer := time.NewTimer(backoff)
 		select {
 		case <-ctx.Done():
@@ -100,236 +133,128 @@ func (c SimpleXChannel) Start(ctx context.Context, handler func(InboundMessage))
 			return nil
 		case <-timer.C:
 		}
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
+		backoff = min(2*backoff, 30*time.Second)
 	}
 	return nil
 }
 
-func ParseSimpleXInbound(channelName string, data []byte) []InboundMessage {
-	var event SimpleXEvent
-	if err := json.Unmarshal(data, &event); err != nil {
+func ParseSimpleXInbound(name string, data []byte) []InboundMessage {
+	var event simpleXEnvelope
+	if json.Unmarshal(data, &event) != nil || event.CorrID != "" || event.Resp.Type != "newChatItems" {
 		return nil
 	}
-	eventType := firstNonEmpty(event.Type, eventRespType(event.Resp))
-	if eventType != "NewChatItems" {
-		return nil
-	}
-	items := event.ChatItems
-	if len(items) == 0 && event.Resp != nil {
-		items = event.Resp.ChatItems
-	}
-	var out []InboundMessage
-	for _, item := range items {
-		text := strings.TrimSpace(firstNonEmpty(item.Text, stringFromMap(item.Content, "text"), stringFromMap(item.Content, "msgContent", "text")))
+	var messages []InboundMessage
+	for _, item := range event.Resp.ChatItems {
+		chat, content := item.ChatInfo, item.ChatItem.Content
+		// Ignore sent-message acknowledgements and group messages: a group ID is not a sender.
+		if chat.Type != "direct" || chat.Contact.ID <= 0 || item.ChatItem.Direction.Type != "directRcv" || content.Type != "rcvMsgContent" || content.Message.Type != "text" {
+			continue
+		}
+		text := strings.TrimSpace(content.Message.Text)
 		if text == "" {
 			continue
 		}
-		senderID := firstNonEmpty(item.Chat.ContactID, item.Chat.ID)
-		senderAddress := firstNonEmpty(item.Chat.ContactName, item.Chat.DisplayName)
-		out = append(out, InboundMessage{
-			Channel:       channelName,
-			ExternalID:    strings.TrimSpace(item.ID),
-			RunID:         RunIDFromCommand(text),
-			SenderID:      senderID,
-			SenderAddress: senderAddress,
-			Text:          text,
-			ReceivedAt:    time.Now().UTC(),
+		messages = append(messages, InboundMessage{
+			Channel: name, ExternalID: strconv.FormatInt(item.ChatItem.Meta.ID, 10),
+			SenderID: strconv.FormatInt(chat.Contact.ID, 10), SenderAddress: chat.Contact.Name,
+			RunID: RunIDFromCommand(text), Text: text, ReceivedAt: time.Now().UTC(),
 		})
 	}
-	return out
-}
-
-func eventRespType(resp *SimpleXEventResp) string {
-	if resp == nil {
-		return ""
-	}
-	return resp.Type
-}
-
-func stringFromMap(m map[string]any, path ...string) string {
-	var current any = m
-	for _, key := range path {
-		next, ok := current.(map[string]any)
-		if !ok {
-			return ""
-		}
-		current = next[key]
-	}
-	value, _ := current.(string)
-	return value
+	return messages
 }
 
 func simpleXURL(cfg Config) string {
 	return firstNonEmpty(Setting(cfg.Settings, "ws_url"), "ws://127.0.0.1:5225")
 }
 
-func writeSimpleXCommand(ctx context.Context, rawURL string, corrID string, cmd string) error {
-	conn, err := dialWebSocket(ctx, rawURL)
+func dialSimpleX(ctx context.Context, rawURL string) (*websocket.Conn, error) {
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("invalid simplex URL")
 	}
-	defer conn.Close()
-	payload, err := json.Marshal(map[string]string{"corrId": corrID, "cmd": cmd})
+	if u.Scheme != "ws" && u.Scheme != "wss" {
+		return nil, fmt.Errorf("simplex requires ws or wss")
+	}
+	if u.Scheme == "ws" {
+		ip := net.ParseIP(u.Hostname())
+		if u.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback()) {
+			return nil, fmt.Errorf("simplex plaintext WebSocket must use localhost; use wss with an authenticated proxy remotely")
+		}
+	}
+	headers := http.Header{}
+	if u.User != nil {
+		password, _ := u.User.Password()
+		req := &http.Request{Header: headers}
+		req.SetBasicAuth(u.User.Username(), password)
+		u.User = nil
+	}
+	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
+	conn, resp, err := dialer.DialContext(ctx, u.String(), headers)
 	if err != nil {
-		return err
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return nil, fmt.Errorf("simplex WebSocket connection failed")
 	}
-	return writeWebSocketText(conn, payload)
+	conn.SetReadLimit(1024 * 1024)
+	return conn, nil
 }
 
-func readSimpleXEvents(ctx context.Context, rawURL string, handler func([]byte)) error {
-	conn, err := dialWebSocket(ctx, rawURL)
+func writeSimpleXCommand(ctx context.Context, rawURL, corrID, cmd string) error {
+	response, err := executeSimpleXCommand(ctx, rawURL, corrID, cmd)
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-	for ctx.Err() == nil {
-		data, err := readWebSocketText(conn)
-		if err != nil {
-			return err
-		}
-		handler(data)
+	if response.Resp.Type != "newChatItems" {
+		return fmt.Errorf("simplex command rejected: %s", response.Resp.Type)
 	}
 	return nil
 }
 
-func dialWebSocket(ctx context.Context, rawURL string) (net.Conn, error) {
-	parsed, err := url.Parse(rawURL)
+func executeSimpleXCommand(ctx context.Context, rawURL, corrID, cmd string) (simpleXEnvelope, error) {
+	var response simpleXEnvelope
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	conn, err := dialSimpleX(ctx, rawURL)
 	if err != nil {
-		return nil, err
+		return response, err
 	}
-	if parsed.Scheme != "ws" {
-		return nil, fmt.Errorf("simplex only supports local ws URLs")
+	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	deadline, _ := ctx.Deadline()
+	_ = conn.SetWriteDeadline(deadline)
+	_ = conn.SetReadDeadline(deadline)
+	if err := conn.WriteJSON(map[string]string{"corrId": corrID, "cmd": cmd}); err != nil {
+		return response, fmt.Errorf("simplex write: %w", err)
 	}
-	host := parsed.Host
-	if !strings.Contains(host, ":") {
-		host += ":80"
+	for {
+		response = simpleXEnvelope{}
+		if err := conn.ReadJSON(&response); err != nil {
+			return response, fmt.Errorf("simplex response: %w", err)
+		}
+		if response.CorrID != corrID {
+			continue
+		}
+		return response, nil
 	}
-	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", host)
-	if err != nil {
-		return nil, err
-	}
-	keyBytes := make([]byte, 16)
-	if _, err := rand.Read(keyBytes); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	key := base64.StdEncoding.EncodeToString(keyBytes)
-	path := parsed.RequestURI()
-	if path == "" {
-		path = "/"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+parsed.Host+path, nil)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	req.Host = parsed.Host
-	req.Header.Set("Upgrade", "websocket")
-	req.Header.Set("Connection", "Upgrade")
-	req.Header.Set("Sec-WebSocket-Version", "13")
-	req.Header.Set("Sec-WebSocket-Key", key)
-	if err := req.Write(conn); err != nil {
-		conn.Close()
-		return nil, err
-	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
-	if err != nil {
-		conn.Close()
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusSwitchingProtocols {
-		conn.Close()
-		return nil, fmt.Errorf("websocket upgrade status %d", resp.StatusCode)
-	}
-	expectedAccept := websocketAccept(key)
-	if resp.Header.Get("Sec-WebSocket-Accept") != expectedAccept {
-		conn.Close()
-		return nil, fmt.Errorf("invalid websocket accept")
-	}
-	return conn, nil
 }
 
-func websocketAccept(key string) string {
-	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
-	return base64.StdEncoding.EncodeToString(sum[:])
-}
-
-func writeWebSocketText(w io.Writer, payload []byte) error {
-	header := []byte{0x81}
-	length := len(payload)
-	switch {
-	case length < 126:
-		header = append(header, byte(length)|0x80)
-	case length <= 65535:
-		header = append(header, 126|0x80, byte(length>>8), byte(length))
-	default:
-		header = append(header, 127|0x80)
-		var buf [8]byte
-		binary.BigEndian.PutUint64(buf[:], uint64(length))
-		header = append(header, buf[:]...)
-	}
-	mask := make([]byte, 4)
-	if _, err := rand.Read(mask); err != nil {
+func readSimpleXEvents(ctx context.Context, rawURL string, handler func([]byte)) error {
+	conn, err := dialSimpleX(ctx, rawURL)
+	if err != nil {
 		return err
 	}
-	header = append(header, mask...)
-	masked := make([]byte, length)
-	for i, b := range payload {
-		masked[i] = b ^ mask[i%4]
-	}
-	if _, err := w.Write(header); err != nil {
-		return err
-	}
-	_, err := w.Write(masked)
-	return err
-}
-
-func readWebSocketText(r io.Reader) ([]byte, error) {
-	var header [2]byte
-	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return nil, err
-	}
-	opcode := header[0] & 0x0f
-	if opcode == 0x8 {
-		return nil, io.EOF
-	}
-	masked := header[1]&0x80 != 0
-	length := uint64(header[1] & 0x7f)
-	switch length {
-	case 126:
-		var buf [2]byte
-		if _, err := io.ReadFull(r, buf[:]); err != nil {
-			return nil, err
+	defer conn.Close()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	for {
+		kind, data, err := conn.ReadMessage()
+		if err != nil {
+			return err
 		}
-		length = uint64(binary.BigEndian.Uint16(buf[:]))
-	case 127:
-		var buf [8]byte
-		if _, err := io.ReadFull(r, buf[:]); err != nil {
-			return nil, err
-		}
-		length = binary.BigEndian.Uint64(buf[:])
-	}
-	var mask [4]byte
-	if masked {
-		if _, err := io.ReadFull(r, mask[:]); err != nil {
-			return nil, err
+		if kind == websocket.TextMessage {
+			handler(data)
 		}
 	}
-	payload := make([]byte, length)
-	if _, err := io.ReadFull(r, payload); err != nil {
-		return nil, err
-	}
-	if masked {
-		for i := range payload {
-			payload[i] ^= mask[i%4]
-		}
-	}
-	if opcode != 0x1 {
-		return nil, fmt.Errorf("unexpected websocket opcode %d", opcode)
-	}
-	return payload, nil
 }

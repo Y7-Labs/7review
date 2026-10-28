@@ -10,6 +10,9 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/pipeline"
@@ -206,6 +209,7 @@ func TestHandleTelegramInboundEnqueuesRevision(t *testing.T) {
 				Name:              "operator_telegram",
 				Provider:          "telegram",
 				Enabled:           true,
+				InboundToken:      "global-bridge-token",
 				AuthorizedSenders: []string{"12345"},
 				Settings:          map[string]string{"webhook_secret": "telegram-secret"},
 			}}),
@@ -225,6 +229,76 @@ func TestHandleTelegramInboundEnqueuesRevision(t *testing.T) {
 	}
 	if len(s.work) != 1 {
 		t.Fatalf("telegram revision should enqueue work, queued=%d", len(s.work))
+	}
+}
+
+func TestChannelInbound_ProviderCannotUseGenericBridge(t *testing.T) {
+	for _, provider := range []string{"telegram", "simplex", "twilio_whatsapp"} {
+		t.Run(provider, func(t *testing.T) {
+			s := &Server{pipeline: &pipeline.Pipeline{Jobs: pipeline.NewMemoryRunStore(), Channels: channel.NewManager([]channel.Config{
+				{Name: "ops", Provider: provider, Enabled: true, AuthorizedSenders: []string{"123"}},
+			})}, work: make(chan workItem, 1)}
+			r := httptest.NewRequest(http.MethodPost, "/channels/ops/inbound", strings.NewReader(`{"sender_id":"123","run_id":"run","text":"/approve run"}`))
+			w := httptest.NewRecorder()
+			s.handleChannelInbound(w, r)
+			if w.Code != http.StatusNotFound || len(s.work) != 0 {
+				t.Fatalf("provider bypass: %d", w.Code)
+			}
+		})
+	}
+}
+
+func TestSimpleX_ListenerRoutesAuthorizedRevision(t *testing.T) {
+	store := pipeline.NewMemoryRunStore()
+	run, err := store.Start(t.Context(), review.Request{Provider: "github", ProjectID: "owner/repo", ChangeID: "7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&websocket.Upgrader{}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for _, sender := range []int{999, 1} {
+			_ = conn.WriteJSON(map[string]any{"resp": map[string]any{"type": "newChatItems", "chatItems": []any{
+				map[string]any{"chatInfo": map[string]any{"type": "direct", "contact": map[string]any{"contactId": sender, "localDisplayName": "Operator"}},
+					"chatItem": map[string]any{"chatDir": map[string]string{"type": "directRcv"}, "meta": map[string]int{"itemId": sender}, "content": map[string]any{"type": "rcvMsgContent", "msgContent": map[string]string{"type": "text", "text": "/revise " + run.ID + "\nFocus on auth"}}}},
+			}}})
+		}
+		_, _, _ = conn.ReadMessage()
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	s := &Server{pipeline: &pipeline.Pipeline{Jobs: store, Channels: channel.NewManager([]channel.Config{
+		{Name: "simplex", Provider: "simplex", Enabled: true, InboundToken: "global", Settings: map[string]string{"contact_id": "1", "ws_url": "ws" + strings.TrimPrefix(server.URL, "http")}},
+	})}, work: make(chan workItem, 2)}
+	s.startChannelListeners(ctx)
+	select {
+	case item := <-s.work:
+		if item.name != "channel/revise/"+run.ID {
+			t.Fatalf("wrong work: %s", item.name)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listener did not queue revision")
+	}
+	cancel()
+	if len(s.work) != 0 {
+		t.Fatal("unauthorized sender queued work")
+	}
+	stored, err := store.Get(t.Context(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, event := range stored.Events {
+		if event.Type == "channel_message_received" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected only authorized event, got %d", count)
 	}
 }
 

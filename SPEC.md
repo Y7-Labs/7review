@@ -499,6 +499,18 @@ reuse of its former conclusions are separate decisions.
 
 ## 8. Commands And Human Authority
 
+Legacy approval-channel transports MUST authenticate provider callbacks before
+evaluating commands. Telegram uses its webhook secret and a numeric `from.id`
+allowlist; Twilio uses its webhook signature and sender allowlist. SimpleX accepts
+only received direct text messages from configured local contacts. Provider
+channels MUST NOT accept the generic JSON bridge. That bridge requires a configured
+log channel and a nonempty token. Only slash-prefixed, run-scoped commands with
+the exact argument count may enqueue approval, revision or suppression work.
+SimpleX sends use structured APISendMessages commands and require a matching
+successful response; transport writes alone do not establish delivery acceptance.
+See [approval-channel setup](docs/integrations.md#approval-channels) for runtime
+settings, transport limits and live qualification steps.
+
 Proposed application commands share an envelope:
 `command_id, attempt_id, expected_version, revision, actor, kind, payload`.
 Actor identity comes from authenticated transport, never request-body claims.

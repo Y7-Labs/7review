@@ -48,6 +48,9 @@ func parseCommand(text string, runID string) (string, string, bool, string, stri
 		return "", "", false, "", "", ""
 	}
 	command := strings.ToLower(strings.TrimPrefix(fields[0], "/"))
+	if !strings.HasPrefix(fields[0], "/") {
+		return command, "", false, "", "", ""
+	}
 	if command != "approve" && command != "revise" && command != "suppress" {
 		return command, "", false, "", "", ""
 	}
@@ -59,6 +62,9 @@ func parseCommand(text string, runID string) (string, string, bool, string, stri
 		return command, commandRunID, false, "", "", ""
 	}
 	body := strings.TrimSpace(strings.Join(lines[1:], "\n"))
+	if (command == "suppress" && len(fields) != 3) || (command != "suppress" && len(fields) != 2) {
+		return command, commandRunID, false, "", "", ""
+	}
 	switch command {
 	case "approve":
 		return command, commandRunID, true, body, "", ""

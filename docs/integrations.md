@@ -60,3 +60,68 @@ Review behavior is strict:
 - MemPalace write failure fails the post-HIL path.
 
 This is intentional for production consistency.
+
+## Approval Channels
+
+Enable the desired channel in `profiles/default.input-profile.json`. The
+supported providers are Twilio WhatsApp, Telegram, SimpleX and the internal log
+bridge. Configure an explicit sender allowlist for public provider webhooks.
+
+### Telegram
+
+Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`; configure `chat_id`
+and numeric Telegram user IDs in `authorized_senders`. Usernames are not
+authorization identities. Register an HTTPS webhook with Telegram's
+`setWebhook` method, supplying `url=https://<host>/channels/telegram/webhook`
+and `secret_token` equal to the configured webhook secret.
+
+The server checks `X-Telegram-Bot-Api-Secret-Token`, then authorizes `from.id`.
+`CHANNEL_INBOUND_TOKEN` is only for the internal JSON bridge and is not a
+second Telegram credential. Long reports are split into ordered messages; a
+failed send is returned as an error, including unsuccessful Bot API responses.
+Update IDs are recorded as external IDs.
+
+### SimpleX
+
+Start `simplex-chat -p 5225` with the bot's existing chat database. Set
+`SIMPLEX_WS_URL=ws://127.0.0.1:5225`. Prefer a numeric `contact_id` in channel
+settings and the same ID in `authorized_senders`. Alternatively, configure
+`contact_name` with the contact's local display name; outbound lookup uses
+`/contacts` and rejects missing or ambiguous names. With no explicit allowlist,
+the configured contact ID or name is the sole authorized operator.
+
+SimpleX CLI has no API authentication. Plaintext `ws://` is restricted to
+loopback addresses. A remote connection must use `wss://` through a trusted TLS
+proxy with access control; URL user information supports HTTP Basic auth.
+Keep credential-bearing URLs in environment variables rather than committed
+profiles. Gorilla WebSocket owns framing, ping/pong and message size limits.
+Commands wait up to 30 seconds for a correlated acknowledgement. The listener
+reconnects with backoff capped at 30 seconds and closes idle reads on cancellation.
+Only `newChatItems` received direct text events are eligible; sent acknowledgements,
+group messages and unknown event types cannot authorize publication.
+
+### Commands And Qualification
+
+Use `/approve <run_id>` to authorize publication. Revision and suppression
+require a second line containing the instruction or reason:
+
+```text
+/revise <run_id>
+Focus on authentication
+
+/suppress <run_id> <finding_id>
+Reason for suppression
+```
+
+Unprefixed commands, extra arguments and ambiguous replies do not publish.
+Provider webhooks cannot be submitted through `/channels/<name>/inbound`.
+That endpoint is reserved for log channels with a nonempty inbound token.
+
+Before production use, qualify each enabled provider against a disposable review:
+verify draft receipt, rejection of unauthorized senders, explicit approval,
+revision, suppression and final confirmation. Normal Go tests use simulated
+HTTP/WebSocket providers and do not establish live delivery.
+
+References: [SimpleX bot API](https://github.com/simplex-chat/simplex-chat/blob/stable/bots/README.md),
+[SimpleX command types](https://github.com/simplex-chat/simplex-chat/blob/stable/bots/api/COMMANDS.md),
+and [Telegram Bot API](https://core.telegram.org/bots/api).

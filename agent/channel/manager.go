@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -76,6 +77,7 @@ type Manager struct {
 	configs   map[string]Config
 	channels  map[string]NotificationChannel
 	listeners map[string]ListenerChannel
+	startOnce sync.Once
 }
 
 func NewManager(configs []Config) *Manager {
@@ -95,7 +97,7 @@ func NewManager(configs []Config) *Manager {
 		cfg.Name = name
 		cfg.Provider = normalizeName(firstNonEmpty(cfg.Provider, "log"))
 		cfg.AuthorizedSenders = cleanSenders(cfg.AuthorizedSenders)
-		m.configs[name] = cfg
+		delete(m.listeners, name)
 		switch cfg.Provider {
 		case "twilio_whatsapp":
 			m.channels[name] = NewTwilioWhatsAppChannel(cfg)
@@ -108,8 +110,9 @@ func NewManager(configs []Config) *Manager {
 		case "log":
 			m.channels[name] = NewLogChannel(name)
 		default:
-			m.channels[name] = NewLogChannel(name)
+			continue
 		}
+		m.configs[name] = cfg
 	}
 	return m
 }
@@ -152,15 +155,17 @@ func (m *Manager) Start(ctx context.Context, handler func(InboundMessage)) error
 	if m == nil || len(m.listeners) == 0 {
 		return nil
 	}
-	for name, listener := range m.listeners {
-		name := name
-		listener := listener
-		go func() {
-			if err := listener.Start(ctx, handler); err != nil && ctx.Err() == nil {
-				log.Printf("[channel:%s] listener stopped: %v", name, err)
-			}
-		}()
-	}
+	m.startOnce.Do(func() {
+		for name, listener := range m.listeners {
+			name := name
+			listener := listener
+			go func() {
+				if err := listener.Start(ctx, handler); err != nil && ctx.Err() == nil {
+					log.Printf("[channel:%s] listener stopped: %v", name, err)
+				}
+			}()
+		}
+	})
 	return nil
 }
 
@@ -173,13 +178,33 @@ func (m *Manager) VerifyInbound(channelName string, token string, msg InboundMes
 	if !ok {
 		return Config{}, fmt.Errorf("channel %q is not configured", channelName)
 	}
-	if strings.TrimSpace(cfg.InboundToken) != "" && strings.TrimSpace(token) != strings.TrimSpace(cfg.InboundToken) {
+	if cfg.Provider == "log" && (strings.TrimSpace(cfg.InboundToken) == "" || strings.TrimSpace(token) != strings.TrimSpace(cfg.InboundToken)) {
 		return Config{}, fmt.Errorf("invalid channel token")
 	}
-	if !senderAllowed(cfg.AuthorizedSenders, msg) {
+	allowed := cfg.AuthorizedSenders
+	if cfg.Provider == "simplex" && len(allowed) == 0 {
+		allowed = cleanSenders([]string{firstNonEmpty(Setting(cfg.Settings, "contact_id"), Setting(cfg.Settings, "contact_name"))})
+	}
+	sender := msg
+	if cfg.Provider == "telegram" {
+		sender.SenderAddress = ""
+	}
+	if cfg.Provider == "simplex" && Setting(cfg.Settings, "contact_id") != "" && len(cfg.AuthorizedSenders) == 0 {
+		sender.SenderAddress = ""
+	}
+	if (cfg.Provider != "log" && len(allowed) == 0) || !senderAllowed(allowed, sender) {
 		return Config{}, fmt.Errorf("sender is not authorized")
 	}
 	return cfg, nil
+}
+
+// AllowsGenericInbound limits the JSON bridge to explicitly authenticated log channels.
+func (m *Manager) AllowsGenericInbound(name string) bool {
+	if m == nil {
+		return false
+	}
+	cfg, ok := m.configs[normalizeName(name)]
+	return ok && cfg.Provider == "log" && strings.TrimSpace(cfg.InboundToken) != ""
 }
 
 func (m *Manager) ConfigForProvider(provider string) (Config, bool) {
