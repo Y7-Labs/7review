@@ -64,10 +64,7 @@ func TestRunCompletesArtifactOnlyReviewWithPolicyCoverage(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := fmt.Sprintf(`{"findings":[],"skill_coverage":[{"name":%q,"status":"covered","evidence":["diff:service.go"],"tools":[],"checks":["correctness"],"notes":"changed code inspected"}]}`, tc.method)
-			orch := orchestrator.NewOrchestrator(
-				orchestrator.DefaultOrchestratorConfig("review", "small", "fake"),
-				map[string]orchestrator.LLMProvider{"fake": ciStaticProvider{response: response}},
-			)
+			orch := fundedCIOrchestrator("fake", ciStaticProvider{response: response})
 			result, err := Run(context.Background(), Options{
 				RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
 				Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},
@@ -199,7 +196,7 @@ func TestFrozenRunnerExecutesBaseMethodDespiteHeadReplacement(t *testing.T) {
 	ciGitRun(t, repo, "commit", "-m", "proposed method replacement")
 	head := strings.TrimSpace(ciGitRun(t, repo, "rev-parse", "HEAD"))
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
-	orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": baseMethodProvider{t}})
+	orch := fundedCIOrchestrator("fake", baseMethodProvider{t})
 	result, err := Run(context.Background(), Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,
 		Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"},

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/Y4NN777/7review/agent/llm"
-	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/policy"
 	"github.com/Y4NN777/7review/agent/review"
 )
@@ -90,7 +89,7 @@ func TestFrozenPackAndRuleReferencesGovernCoverageAndGate(t *testing.T) {
 				t.Fatal(err)
 			}
 			provider := &ruleCIProvider{t: t, response: string(response)}
-			orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": provider})
+			orch := fundedCIOrchestrator("fake", provider)
 			now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 			result, err := Run(context.Background(), Options{RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true, Environment: Environment{Provider: "github", RepositoryID: "org/repo", BaseRevision: base, HeadRevision: head, PipelineID: "42", JobID: "review", ChangeID: "7"}, DeadlineAt: now.Add(time.Minute), Now: func() time.Time { return now }, Orchestrator: orch})
 			if err != nil {

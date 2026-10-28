@@ -1,6 +1,10 @@
 package policy
 
-import "time"
+import (
+	"time"
+
+	"github.com/Y4NN777/7review/agent/review"
+)
 
 type ReviewConfigV2 struct {
 	SchemaVersion     int                 `json:"schema_version" yaml:"schema_version"`
@@ -32,29 +36,9 @@ type DefaultsV2 struct {
 	RequiredChecks        []string `json:"required_checks" yaml:"required_checks"`
 }
 
-type LimitsV2 struct {
-	Currency string       `json:"currency,omitempty" yaml:"currency,omitempty"`
-	Attempt  LimitScopeV2 `json:"attempt" yaml:"attempt"`
-	Change   LimitScopeV2 `json:"change" yaml:"change"`
-	Project  LimitScopeV2 `json:"project" yaml:"project"`
-}
-
-type LimitScopeV2 struct {
-	ModelCalls       int64          `json:"model_calls" yaml:"model_calls"`
-	ToolCalls        int64          `json:"tool_calls" yaml:"tool_calls"`
-	InputTokens      int64          `json:"input_tokens" yaml:"input_tokens"`
-	OutputTokens     int64          `json:"output_tokens" yaml:"output_tokens"`
-	MoneyMicro       int64          `json:"money_micro" yaml:"money_micro"`
-	ActiveMS         int64          `json:"active_ms" yaml:"active_ms"`
-	ObservationBytes int64          `json:"observation_bytes" yaml:"observation_bytes"`
-	Period           *FixedPeriodV2 `json:"period,omitempty" yaml:"period,omitempty"`
-}
-
-type FixedPeriodV2 struct {
-	Kind       string    `json:"kind" yaml:"kind"`
-	Anchor     time.Time `json:"anchor" yaml:"anchor"`
-	DurationMS int64     `json:"duration_ms" yaml:"duration_ms"`
-}
+type LimitsV2 = review.ResourceLimits
+type LimitScopeV2 = review.ResourceLimitScope
+type FixedPeriodV2 = review.FixedBudgetPeriod
 
 type TriggersV2 struct {
 	Enabled         bool     `json:"enabled" yaml:"enabled"`

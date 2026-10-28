@@ -61,7 +61,8 @@ func methodAdmissionFixture(t *testing.T, methodID, body string) (SCMPolicyAdmis
 	if body != "" {
 		reader.files[".7review/methods/backend/SKILL.md"] = body
 	}
-	return SCMPolicyAdmission{Mode: "enforce", Path: ".7review/review.yaml", Reader: reader, RuntimeCapabilities: []string{"repo.read", "model.review"}}, reader
+	limits := policyTestLimits()
+	return SCMPolicyAdmission{Mode: "enforce", Path: ".7review/review.yaml", Reader: reader, RuntimeCapabilities: []string{"repo.read", "model.review"}, RuntimeCeilings: &limits}, reader
 }
 
 func TestScenario_S22_BaseMethodControlsExecutionNotLegacyOrHead(t *testing.T) {

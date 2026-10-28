@@ -99,10 +99,12 @@ func (p *policyRecordingProvider) Complete(_ context.Context, req llm.LLMRequest
 
 func TestPolicyDenialSurvivesModelRequestedToolAndFollowup(t *testing.T) {
 	model := &policyRecordingProvider{}
-	p := &Pipeline{Orchestrator: orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": model})}
+	limits := policyTestLimits()
+	p := &Pipeline{Orchestrator: orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": model}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(policyTestBudget{}))}
 	rc := review.NewContext(review.Request{})
 	rc.Diff = &review.StructuredDiff{Files: []review.FileDiff{{Path: "main.go", Patch: "+change"}}}
 	rc.Source.Policy = projectTrustedPolicy(TrustedPolicyResult{Enforced: true, Effective: &policy.EffectivePolicy{AllowedTools: []string{"model.review"}}})
+	bindPolicyTestBudget(&rc.Source.Policy)
 	rc.Source.SkillActivations = []review.SkillActivation{{Name: "permissive", AllowedTools: []string{"scm-api"}}}
 	rc.Source.SCM = &review.SCMContext{Description: "PRIVATE_TOOL_RESULT"}
 	if _, _, _, _, err := p.runReview(context.Background(), "test", rc); err != nil {

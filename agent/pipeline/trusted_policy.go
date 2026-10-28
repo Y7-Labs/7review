@@ -172,6 +172,12 @@ func projectTrustedPolicy(result TrustedPolicyResult) review.PolicyProjection {
 		return projection
 	}
 	projection.Digest = result.Effective.Digest
+	limits := result.Effective.Limits.Clone()
+	projection.Limits = &limits
+	if result.Effective.OperatorCeilings != nil {
+		copy := result.Effective.OperatorCeilings.Clone()
+		projection.OperatorCeilings = &copy
+	}
 	projection.MethodRegistry = append([]review.PolicyMethod(nil), result.MethodRegistry...)
 	for _, rule := range result.Effective.Rules {
 		projection.Rules = append(projection.Rules, review.PolicyDocument{Kind: "rule", ID: rule.ID, Path: rule.Source.Path, Revision: result.Source.Revision, Digest: rule.Source.Digest})

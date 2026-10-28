@@ -44,6 +44,14 @@ func (s Source) Clone() Source {
 	out.Readiness.AcceptanceCriteria.Provenance = append([]string(nil), s.Readiness.AcceptanceCriteria.Provenance...)
 	out.Readiness.TestEvidence.Provenance = append([]string(nil), s.Readiness.TestEvidence.Provenance...)
 	out.Policy.Methods = cloneStrings(s.Policy.Methods)
+	if s.Policy.Limits != nil {
+		copy := s.Policy.Limits.Clone()
+		out.Policy.Limits = &copy
+	}
+	if s.Policy.OperatorCeilings != nil {
+		copy := s.Policy.OperatorCeilings.Clone()
+		out.Policy.OperatorCeilings = &copy
+	}
 	out.Policy.ResolvedMethods = append([]PolicyMethod(nil), s.Policy.ResolvedMethods...)
 	out.Policy.MethodRegistry = append([]PolicyMethod(nil), s.Policy.MethodRegistry...)
 	out.Policy.Documents = append([]PolicyDocument(nil), s.Policy.Documents...)

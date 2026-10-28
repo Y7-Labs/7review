@@ -6,6 +6,7 @@ import (
 
 	"github.com/Y4NN777/7review/agent/config"
 	"github.com/Y4NN777/7review/agent/orchestrator"
+	"github.com/Y4NN777/7review/agent/policy"
 )
 
 func BuildModelOrchestratorFromEnvironment() (*orchestrator.Orchestrator, bool, error) {
@@ -26,6 +27,13 @@ func BuildModelOrchestratorFromEnvironment() (*orchestrator.Orchestrator, bool, 
 	}
 	if cfg.ReviewModel == "" {
 		cfg.ReviewModel = defaultCIModel(provider, true)
+	}
+	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {
+		limits, err := policy.DecodeOperatorCeilings([]byte(raw))
+		if err != nil {
+			return nil, false, err
+		}
+		cfg.PolicyRuntimeCeilings = &limits
 	}
 	if cfg.SmallModel == "" {
 		cfg.SmallModel = defaultCIModel(provider, false)

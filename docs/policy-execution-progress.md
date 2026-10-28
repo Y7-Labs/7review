@@ -267,6 +267,34 @@ This is an incremental behavior ledger, not a completion declaration.
 - Boundary: these checks do not reserve spend or police aggregate usage. Dispatch
   must separately refuse missing/unavailable accounting authority.
 
+## Slice 18: Fail-Closed Model Dispatch Budget Boundary
+
+- Red: complete, native streaming and parallel batches reached providers with
+  enforced policy but no reservation authority. These are provider-I/O tests,
+  not configuration-only assertions.
+- Green: every model invocation now reserves through an explicit trusted
+  authority before I/O, including formatter/repair/fallback and compatibility
+  streaming paths. The receipt binds the serialized request and actual route.
+  Missing authority, stale operator binding, zero capacity, excessive output and
+  invalid receipts deny dispatch. Budget errors cannot trigger provider fallback.
+- The authority contract requires atomic hierarchical reservation, trustworthy
+  input/price bounds, valid canonical identity and durable sending markers. No
+  production implementation or in-memory substitute is installed. Enforced
+  inference is therefore intentionally unavailable until that backend exists.
+- Response outcomes are recorded even after cancellation. Current string-only
+  providers cannot supply trustworthy usage: unknown usage is never represented
+  as settled or released. Active-time bounds cancel provider contexts.
+- Trusted ceilings also guard legacy/preview dispatch when configured. With no
+  host ceilings those older modes retain their characterized unbudgeted behavior.
+- Tests fund unrelated method/rule fixtures with clearly test-only authorities;
+  shared parallel admission, separate fallback reservations, record failure,
+  cancellation, stream ordering and CI incomplete behavior are covered.
+- Verification: full uncached Go suite, targeted race tests and `go vet ./...`.
+- Boundary: this does not complete operator ceilings. PostgreSQL coordination,
+  crash recovery, canonical attempt wiring, price/token qualification, provider
+  usage receipts and non-model effect/tool accounting remain open. Scoped
+  conflicts have not been started.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

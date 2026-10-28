@@ -49,6 +49,8 @@ type PolicyProjection struct {
 	Mode                string           `json:"mode"`
 	Enforced            bool             `json:"enforced"`
 	Digest              string           `json:"digest,omitempty"`
+	Limits              *ResourceLimits  `json:"limits,omitempty"`
+	OperatorCeilings    *ResourceLimits  `json:"operator_ceilings,omitempty"`
 	SourceRevision      string           `json:"source_revision,omitempty"`
 	SourceDigest        string           `json:"source_digest,omitempty"`
 	Methods             []string         `json:"methods,omitempty"`

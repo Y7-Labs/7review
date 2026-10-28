@@ -18,8 +18,10 @@ import (
 //   - how to fan out parallel calls and merge results
 //   - how to walk the fallback chain on failure
 type Orchestrator struct {
-	cfg       *OrchestratorConfig
-	providers map[string]LLMProvider // keyed by provider name
+	cfg              *OrchestratorConfig
+	providers        map[string]LLMProvider // keyed by provider name
+	operatorCeilings *review.ResourceLimits
+	budgetAuthority  BudgetAuthority
 }
 
 type RoleStatus struct {
@@ -110,11 +112,17 @@ func (o *Orchestrator) StreamComplete(
 		}
 		if streaming, ok := provider.(StreamingLLMProvider); ok {
 			log.Printf("[orchestrator] %s: streaming %s/%s", step, spec.Provider, spec.Model)
-			err := streaming.Stream(ctx, streamReq, func(delta string) error {
-				b.WriteString(delta)
-				return emit(delta)
+			_, err := o.dispatch(ctx, rc, spec, role, step, streamReq, func(callCtx context.Context) (string, error) {
+				err := streaming.Stream(callCtx, streamReq, func(delta string) error {
+					b.WriteString(delta)
+					return emit(delta)
+				})
+				return b.String(), err
 			})
 			if err != nil {
+				if fatalDispatch(err) {
+					return "", err
+				}
 				lastErr = err
 				log.Printf("[orchestrator] %s: stream %s/%s failed: %v", step, spec.Provider, spec.Model, err)
 				continue
@@ -124,8 +132,11 @@ func (o *Orchestrator) StreamComplete(
 		}
 
 		log.Printf("[orchestrator] %s: provider %s/%s has no streaming API, using compatibility response", step, spec.Provider, spec.Model)
-		result, err := provider.Complete(ctx, streamReq)
+		result, err := o.dispatch(ctx, rc, spec, role, step, streamReq, func(callCtx context.Context) (string, error) { return provider.Complete(callCtx, streamReq) })
 		if err != nil {
+			if fatalDispatch(err) {
+				return "", err
+			}
 			lastErr = err
 			continue
 		}
@@ -140,8 +151,12 @@ func (o *Orchestrator) StreamComplete(
 
 // NewOrchestrator builds an Orchestrator from an OrchestratorConfig.
 // All providers referenced in the config must be registered.
-func NewOrchestrator(cfg *OrchestratorConfig, providers map[string]LLMProvider) *Orchestrator {
-	return &Orchestrator{cfg: cfg, providers: providers}
+func NewOrchestrator(cfg *OrchestratorConfig, providers map[string]LLMProvider, options ...Option) *Orchestrator {
+	o := &Orchestrator{cfg: cfg, providers: providers}
+	for _, option := range options {
+		option(o)
+	}
+	return o
 }
 
 // Complete sends a request under a given role.
@@ -174,14 +189,18 @@ func (o *Orchestrator) Complete(
 		}
 
 		log.Printf("[orchestrator] %s: trying %s/%s", step, spec.Provider, spec.Model)
-		result, err := provider.Complete(ctx, LLMRequest{
+		req := LLMRequest{
 			Model:        spec.Model,
 			SystemPrompt: systemPrompt,
 			UserMessage:  userMessage,
 			MaxTokens:    roleCfg.MaxTokens,
 			Tools:        append([]ToolDefinition(nil), tools...),
-		})
+		}
+		result, err := o.dispatch(ctx, rc, spec, role, step, req, func(callCtx context.Context) (string, error) { return provider.Complete(callCtx, req) })
 		if err != nil {
+			if fatalDispatch(err) {
+				return "", err
+			}
 			log.Printf("[orchestrator] %s: %s/%s failed: %v — trying fallback", step, spec.Provider, spec.Model, err)
 			lastErr = err
 			continue
@@ -291,13 +310,14 @@ func processBatch(
 	log.Printf("[orchestrator] step5 batch %d/%d → %s/%s",
 		batchIdx+1, batchCount, spec.Provider, spec.Model)
 
-	result, err := provider.Complete(ctx, LLMRequest{
+	req := LLMRequest{
 		Model:        spec.Model,
 		SystemPrompt: systemPrompt,
 		UserMessage:  userMsg,
 		MaxTokens:    roleCfg.MaxTokens,
 		Tools:        append([]ToolDefinition(nil), tools...),
-	})
+	}
+	result, err := o.dispatch(ctx, rc, spec, RoleReasoner, fmt.Sprintf("step5_batch%d", batchIdx+1), req, func(callCtx context.Context) (string, error) { return provider.Complete(callCtx, req) })
 	if err != nil {
 		mu.Lock()
 		if *firstErr == nil {

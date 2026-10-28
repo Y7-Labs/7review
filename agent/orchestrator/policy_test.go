@@ -54,6 +54,13 @@ func TestPolicyAllowsModelInEnforcedPreviewAndLegacyModes(t *testing.T) {
 	} {
 		t.Run(policy.Mode, func(t *testing.T) {
 			o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": recordingProvider{prefix: "fake"}})
+			if policy.Enforced {
+				limits := budgetTestLimits()
+				policy.Limits = &limits
+				policy.OperatorCeilings = &limits
+				policy.Digest = "test-policy"
+				o = NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": recordingProvider{prefix: "fake"}}, WithOperatorCeilings(&limits), WithBudgetAuthority(&recordingBudget{}))
+			}
 			rc := review.NewContext(review.Request{})
 			rc.Source.Policy = policy
 			if _, err := o.Complete(context.Background(), rc, RoleReasoner, "allowed", "system", "user"); err != nil {

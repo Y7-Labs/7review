@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/Y4NN777/7review/agent/llm"
-	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
 )
 
@@ -27,7 +26,7 @@ func TestScenario_S45_CIRunnerOutcomesAndDeadline(t *testing.T) {
 	repo, base, head := ciGitFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	provider := cancellingProvider{cancel: cancel}
-	orch := orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "cancel"), map[string]orchestrator.LLMProvider{"cancel": provider})
+	orch := fundedCIOrchestrator("cancel", provider)
 	now := time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 	result, err := Run(ctx, Options{
 		RepositoryDir: repo, PolicyPath: ".7review/review.json", Offline: true,

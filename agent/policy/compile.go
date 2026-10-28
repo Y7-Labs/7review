@@ -36,6 +36,7 @@ type EffectivePolicy struct {
 	AllowedTools      []string
 	RequiredTools     []string
 	Limits            LimitsV2
+	OperatorCeilings  *LimitsV2
 	MatchedPacks      []string
 	Explanation       []ExplanationEntry
 	Documents         []DocumentSource
@@ -105,6 +106,10 @@ func Compile(config ReviewConfigV2, ctx CompileContext) (EffectivePolicy, error)
 			{Field: "methods", Value: strings.Join(config.Defaults.Methods, ","), Source: "defaults", Reason: "trusted project defaults", Precedence: -1},
 			{Field: "publication", Value: config.Defaults.Publication, Source: "defaults", Reason: "trusted project default", Precedence: -1},
 		},
+	}
+	if ctx.RuntimeCeilings != nil {
+		copy := ctx.RuntimeCeilings.Clone()
+		effective.OperatorCeilings = &copy
 	}
 
 	for _, ref := range config.defaultRuleRefs {

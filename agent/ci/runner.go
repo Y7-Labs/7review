@@ -38,9 +38,9 @@ type Options struct {
 	Quality         []ArtifactRef
 	DependencyGraph map[string][]string
 	Orchestrator    *orchestrator.Orchestrator
+	RuntimeCeilings *policy.LimitsV2
 	HTTPClient      *http.Client
 	Now             func() time.Time
-	RuntimeCeilings *policy.LimitsV2
 }
 
 type Result struct {
@@ -109,7 +109,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return result, err
 	}
 	admission := pipeline.FrozenPolicyAdmission{
-		Path: opts.PolicyPath, Reader: adapter, RuntimeCapabilities: []string{"repo.read", "model.review"}, RuntimeCeilings: opts.RuntimeCeilings, Now: opts.Now,
+		Path: opts.PolicyPath, Reader: adapter, RuntimeCapabilities: []string{"repo.read", "model.review"}, Now: opts.Now,
+		RuntimeCeilings: opts.RuntimeCeilings,
+	}
+	if admission.RuntimeCeilings == nil && opts.Orchestrator != nil {
+		admission.RuntimeCeilings = opts.Orchestrator.OperatorCeilings()
 	}
 	policyResult, err := admission.Evaluate(ctx, req, scm)
 	if err != nil {
@@ -241,6 +245,12 @@ func minimalSource(req review.Request, scm *review.SCMContext, admitted pipeline
 	if admitted.Effective != nil {
 		source.Policy = review.PolicyProjection{Mode: admitted.Mode, Digest: admitted.Effective.Digest, SourceRevision: admitted.Source.Revision, SourceDigest: admitted.Source.Digest, Methods: append([]string(nil), admitted.Effective.Methods...), RequiredChecks: append([]string(nil), admitted.Effective.RequiredChecks...), MatchedPacks: append([]string(nil), admitted.Effective.MatchedPacks...), RiskFloor: admitted.Effective.RiskFloor, IndependentReview: admitted.Effective.IndependentReview, TriggerAccepted: true}
 		source.Policy.Enforced = admitted.Enforced
+		limits := admitted.Effective.Limits.Clone()
+		source.Policy.Limits = &limits
+		if admitted.Effective.OperatorCeilings != nil {
+			copy := admitted.Effective.OperatorCeilings.Clone()
+			source.Policy.OperatorCeilings = &copy
+		}
 		source.Policy.MethodRegistry = append([]review.PolicyMethod(nil), admitted.MethodRegistry...)
 		for _, rule := range admitted.Effective.Rules {
 			source.Policy.Rules = append(source.Policy.Rules, review.PolicyDocument{Kind: "rule", ID: rule.ID, Path: rule.Source.Path, Revision: admitted.Source.Revision, Digest: rule.Source.Digest})

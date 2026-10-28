@@ -97,7 +97,7 @@ func BuildOrchestrator(cfg *config.Config) (*Orchestrator, error) {
 		return nil, err
 	}
 
-	return NewOrchestrator(orchCfg, providerMap), nil
+	return NewOrchestrator(orchCfg, providerMap, WithOperatorCeilings(cfg.PolicyRuntimeCeilings)), nil
 }
 
 func applyEnvRoleOverrides(orchCfg *OrchestratorConfig, cfg *config.Config) {

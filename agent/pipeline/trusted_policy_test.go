@@ -206,8 +206,18 @@ func TestPipelineEnforcedPolicyActivatesRequiredChecks(t *testing.T) {
 }
 
 func policyExecutionPipeline(store RunStore, model orchestrator.LLMProvider, scm *review.SCMContext, admission TrustedPolicyResult) *Pipeline {
+	limits := policyTestLimits()
+	if admission.Effective != nil && admission.Enforced {
+		if admission.Effective.Limits.Currency == "" {
+			admission.Effective.Limits = limits
+		}
+		admission.Effective.OperatorCeilings = &limits
+		if admission.Effective.Digest == "" {
+			admission.Effective.Digest = "test-policy"
+		}
+	}
 	return &Pipeline{
-		Orchestrator: orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": model}),
+		Orchestrator: orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("review", "small", "fake"), map[string]orchestrator.LLMProvider{"fake": model}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(policyTestBudget{})),
 		Jobs:         store, SCM: staticSCM{context: scm}, DeliveryMode: DeliveryArtifactOnly,
 		SCMPublisher: fakePublisher{}, Memory: NoopMemoryStore{}, ContextReducer: NoopContextReducer{},
 		Policy: DefaultPolicyFilter{}, FindingValidator: DefaultFindingValidator{},

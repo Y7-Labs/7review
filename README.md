@@ -370,6 +370,22 @@ API at the verified base SHA. Operator project/repository, label-exclusion and
 branch-exclusion guards remain absolute. Use `policy validate` and `policy
 explain` before enabling enforcement.
 
+Operator resource ceilings come only from trusted deployment configuration:
+`POLICY_RUNTIME_CEILINGS_JSON` is a closed JSON document with `schema_version: 1`
+and `limits`. All attempt/change/project numeric fields are mandatory; change and
+project require fixed periods matching repository policy. Unknown/duplicate
+fields, invalid values and requested increases are rejected. Enforce-mode service
+configuration requires this document. Do not derive operator authority from the
+repository being reviewed.
+
+**Runtime limitation:** enforced model dispatch currently fails closed because
+the production durable reservation backend and trustworthy token/price bounds are
+not implemented. Configuring ceilings does not make enforced review operational.
+Configured host ceilings also apply in legacy/preview mode; omitting them retains
+the legacy unbudgeted path, not a bounded-review guarantee. Test-only authorities
+qualify dispatch ordering, not cross-run accounting. This work is not alpha-ready
+budget enforcement.
+
 GitHub:
 
 ```sh
