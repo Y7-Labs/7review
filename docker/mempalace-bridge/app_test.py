@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -43,7 +44,7 @@ class MemPalaceBridgeTests(unittest.TestCase):
         def fake_run_cli(args):
             calls.append(args)
             if args[0] == "init":
-                Path(self.tmp.name, "palace").mkdir()
+                Path(self.tmp.name, "source", "mempalace.yaml").write_text("wing: source\n", encoding="utf-8")
             return SimpleNamespace(returncode=0, stdout="", stderr="")
 
         self.app.require_mempalace = lambda: None
@@ -53,6 +54,7 @@ class MemPalaceBridgeTests(unittest.TestCase):
         self.assertEqual(self.app.health(), {"status": "ok"})
         self.assertEqual(calls, [["init", str(Path(self.tmp.name, "source")), "--yes", "--no-llm"]])
         self.assertEqual(Path(self.tmp.name, ".mempalace-ready").read_text(encoding="utf-8"), "ready\n")
+        self.assertFalse(Path(self.tmp.name, "palace").exists())
 
     def test_run_cli_uses_configured_palace_path(self):
         captured = {}
@@ -71,6 +73,25 @@ class MemPalaceBridgeTests(unittest.TestCase):
             ["mempalace", "--palace", str(Path(self.tmp.name, "palace")), "search", "auth"],
         )
         self.assertEqual(captured["env"]["HOME"], str(Path(self.tmp.name, "home")))
+
+    def test_initialized_health_does_not_wait_for_memory_write(self):
+        self.app.require_mempalace = lambda: None
+        Path(self.tmp.name, ".mempalace-ready").write_text("ready\n", encoding="utf-8")
+        self.app.source_dir().joinpath("mempalace.yaml").write_text("wing: source\n", encoding="utf-8")
+        finished = threading.Event()
+        results = []
+
+        def probe():
+            results.append(self.app.health())
+            finished.set()
+
+        with self.app.workspace_lock:
+            worker = threading.Thread(target=probe)
+            worker.start()
+            responsive = finished.wait(1)
+        worker.join(2)
+        self.assertTrue(responsive, "health blocked behind a normal memory operation")
+        self.assertEqual(results, [{"status": "ok"}])
 
     def test_recall_returns_bounded_history_from_cli(self):
         self.app.require_mempalace = lambda: None
@@ -109,6 +130,7 @@ class MemPalaceBridgeTests(unittest.TestCase):
         self.app.require_mempalace = lambda: None
         Path(self.tmp.name, ".mempalace-ready").write_text("ready\n", encoding="utf-8")
         Path(self.tmp.name, "palace").mkdir()
+        self.app.source_dir().joinpath("mempalace.yaml").write_text("wing: source\n", encoding="utf-8")
         Path(self.tmp.name, "testns.jsonl").write_text(
             "\n".join(
                 [

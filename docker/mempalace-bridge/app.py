@@ -81,10 +81,14 @@ def run_cli(args: list[str]) -> subprocess.CompletedProcess[str]:
         raise RuntimeError(f"mempalace command timed out after {timeout}s: {' '.join(command)}") from exc
 
 
+def workspace_initialized() -> bool:
+    # CLI init writes project configuration; storage is created only when mining.
+    return (data_dir() / ".mempalace-ready").exists() and (source_dir() / "mempalace.yaml").exists()
+
+
 def init_workspace() -> None:
     marker = data_dir() / ".mempalace-ready"
-    palace = data_dir() / "palace"
-    if marker.exists() and palace.exists():
+    if workspace_initialized():
         return
     result = run_cli(["init", str(source_dir()), "--yes", "--no-llm"])
     if result.returncode != 0:
@@ -157,8 +161,9 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 def health() -> dict[str, str]:
     try:
         require_mempalace()
-        with workspace_lock:
-            init_workspace()
+        if not workspace_initialized():
+            with workspace_lock:
+                init_workspace()
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {"status": "ok"}
