@@ -20,6 +20,35 @@ type canonicalSpy struct {
 	mutate    func(*review.IntakeReceipt)
 }
 
+func TestCanonicalServiceCannotEnterPipelineWithoutRequiredJob(t *testing.T) {
+	store := NewMemoryRunStore()
+	p, req, _, provider := canonicalPipeline(t, store)
+	p.Canonical.RequireJob = true
+	if err := p.Run(context.Background(), req); err == nil || !strings.Contains(err.Error(), "job") {
+		t.Fatalf("unowned service run accepted: %v", err)
+	}
+	runs, err := store.List(context.Background())
+	if err != nil || len(runs) != 0 || provider.calls != 0 {
+		t.Fatalf("unowned path created work or dispatched: runs=%d calls=%d err=%v", len(runs), provider.calls, err)
+	}
+}
+
+func TestCanonicalRequiredJobRerunCannotUseLegacyEntry(t *testing.T) {
+	store := NewMemoryRunStore()
+	p, req, _, provider := canonicalPipeline(t, store)
+	p.Canonical.RequireJob = true
+	if _, err := store.StartIdentified(context.Background(), req, "run-original"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.RerunReview(context.Background(), "run-original", "recheck"); err == nil || !strings.Contains(err.Error(), "job") {
+		t.Fatalf("legacy rerun bypassed durable ownership: %v", err)
+	}
+	runs, err := store.List(context.Background())
+	if err != nil || len(runs) != 1 || provider.calls != 0 {
+		t.Fatalf("legacy rerun created unowned work: runs=%d calls=%d err=%v", len(runs), provider.calls, err)
+	}
+}
+
 func (*canonicalSpy) ObserveGeneration(context.Context, review.ChangeKey) (uint64, error) {
 	return 7, nil
 }

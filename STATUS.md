@@ -49,7 +49,7 @@ recovery are now transactional. Full G01-G03 prepared-action recovery,
 validated continuation/currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-34.
+[Accounting](docs/accounting.md) and progress slices 20-35.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

@@ -148,7 +148,7 @@ func newServer(cfg *config.Config) (*Server, error) {
 			}
 			hosts[provider] = host
 		}
-		s.pipeline.Canonical = &pipeline.CanonicalIntake{Authority: runtime.Authority, ProviderHosts: hosts, Execution: review.ExecutionContext{Mode: review.ExecutionService, ProducerID: "7review-service", Persistence: review.PersistenceDurableService, TrustedBoundaryID: runtime.BoundaryID}}
+		s.pipeline.Canonical = &pipeline.CanonicalIntake{RequireJob: true, Authority: runtime.Authority, ProviderHosts: hosts, Execution: review.ExecutionContext{Mode: review.ExecutionService, ProducerID: "7review-service", Persistence: review.PersistenceDurableService, TrustedBoundaryID: runtime.BoundaryID}}
 		s.pipeline.DeliveryMode = pipeline.DeliveryArtifactOnly
 		s.pipeline.Memory = pipeline.NoopMemoryStore{}
 		s.pipeline.ContextReducer = pipeline.NoopContextReducer{}

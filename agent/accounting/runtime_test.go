@@ -28,6 +28,9 @@ func TestPostgresRuntimeChecksSchemaWithoutAuthorizingDefaultRoutes(t *testing.T
 		t.Fatalf("runtime not connected: %#v %v", runtime, err)
 	}
 	defer runtime.Close()
+	if !runtime.Authority.cfg.RequireServiceJobs {
+		t.Fatal("production runtime permits service intake outside durable jobs")
+	}
 	if _, err = runtime.Authority.cfg.Catalog.Quote(quoteIntent(), boundsTime); err == nil {
 		t.Fatal("enabling intake implicitly authorized an unqualified route")
 	}

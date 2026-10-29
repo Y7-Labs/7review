@@ -80,6 +80,11 @@ links the job to its immutable attempt/receipt atomically, under the original
 owner and deadline. The model sending transaction checks that owner and commits
 the job effect-started marker with the action and all holds. Duplicate-only jobs
 link to the original receipt but cannot authorize additional spending.
+The production authority requires owned jobs for service admission/dispatch;
+the low-level registration seam cannot bypass it. Explicit ephemeral CI retains
+its separate pipeline/job identity. Legacy service rerun/tool paths fail closed
+until they return a new durable intake receipt; use explicit review intake for
+a fresh service request instead of calling the old rerun execution path.
 Only unclaimed pending work is recoverable automatically. A crash, panic or
 shutdown after claim is not permission to execute again: the row remains running
 until its original deadline, then becomes `uncertain`. Expired pending work becomes

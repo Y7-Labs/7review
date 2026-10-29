@@ -9,6 +9,7 @@ import (
 )
 
 type CanonicalIntake struct {
+	RequireJob    bool
 	Authority     review.AttemptIntake
 	ProviderHosts map[string]string
 	Execution     review.ExecutionContext

@@ -75,7 +75,7 @@ func OpenRuntime(ctx context.Context, settings RuntimeSettings, limits *review.R
 		db.Close()
 		return nil, err
 	}
-	a, err := NewAuthority(db, Config{BoundaryID: settings.BoundaryID, ProjectID: settings.ProjectID, Limits: *limits, Catalog: catalog})
+	a, err := NewAuthority(db, Config{RequireServiceJobs: true, BoundaryID: settings.BoundaryID, ProjectID: settings.ProjectID, Limits: *limits, Catalog: catalog})
 	if err != nil {
 		db.Close()
 		return nil, err

@@ -68,6 +68,12 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string) error
 	if p == nil || p.Orchestrator == nil {
 		return fmt.Errorf("pipeline: orchestrator is not configured")
 	}
+	if p.Canonical != nil && p.Canonical.RequireJob {
+		claim := review.JobClaimFromContext(ctx)
+		if claim == nil || claim.RunID != id || claim.Token == "" {
+			return fmt.Errorf("canonical service requires owned durable job intake")
+		}
+	}
 	p.withDefaults()
 	if err := p.requireConfiguredAdapters(); err != nil {
 		return err

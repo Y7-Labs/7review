@@ -62,7 +62,7 @@ func TestCanonicalServiceRuntimePersistsIntakeButDeniesUnqualifiedModel(t *testi
 		s.Close()
 		close(s.work)
 	})
-	if s.pipeline.Canonical == nil {
+	if s.pipeline.Canonical == nil || !s.pipeline.Canonical.RequireJob {
 		t.Fatal("configured service did not wire canonical intake")
 	}
 	s.pipeline.SCM = canonicalServiceSCM{}

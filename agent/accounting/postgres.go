@@ -24,11 +24,12 @@ import (
 // Config is trusted host authority. Reconfiguration is deliberately refused in
 // v1 rather than creating a new allowance by changing currency/period/version.
 type Config struct {
-	ReceiptVerifier ReceiptVerifier
-	BoundaryID      string
-	ProjectID       string
-	Limits          review.ResourceLimits
-	Catalog         *Catalog
+	RequireServiceJobs bool
+	ReceiptVerifier    ReceiptVerifier
+	BoundaryID         string
+	ProjectID          string
+	Limits             review.ResourceLimits
+	Catalog            *Catalog
 }
 type Authority struct {
 	db  *sql.DB
@@ -278,6 +279,9 @@ func (a *Authority) binding(i orchestrator.DispatchIntent) ([]byte, error) {
 // RegisterAttempt must be invoked by trusted intake, never inferred from a
 // dispatch request. Registration cannot reopen or mutate a closed attempt.
 func (a *Authority) RegisterAttempt(ctx context.Context, i orchestrator.DispatchIntent) error {
+	if a.cfg.RequireServiceJobs && i.Execution.Mode == review.ExecutionService {
+		return errors.New("service attempts require owned durable inbox admission")
+	}
 	binding, err := a.binding(i)
 	if err != nil {
 		return err

@@ -597,6 +597,26 @@ This is an incremental behavior ledger, not a completion declaration.
   output bodies. This is local result-index recovery, not prepared-action reclaim
   or validated continuation of the full review state machine.
 
+### Slice 35: Close Alternate Service Entry-Point Bypasses
+
+- Red: the legacy rerun/tool path could call the canonical pipeline without an
+  inbox claim; the low-level authority API could also register/spend an unlinked
+  service attempt. Production runtime now requires owned service jobs at both
+  admission and dispatch, independently of route qualification.
+- Service pipeline wiring rejects unowned execution before creating a run.
+  Legacy rerun remains visibly denied until its command returns a fresh durable
+  intake receipt. Explicit job-local CI is not mislabeled as service ownership.
+- Tests exercise pre-existing unowned attempts with a qualified test catalog,
+  direct admission/registration, rerun entry, production constructor wiring and
+  successful ephemeral CI. This is execution enforcement, not config validation.
+- Full ceilings remain open: prepared reclaim, validated continuation, full
+  before-202 aggregate/state/result transactions, provider currentness, non-model
+  accounting, operator recovery and production provider qualification are not
+  replaced by these guarded slices. Scoped conflicts remain untouched.
+- Verification: full uncached suite with PostgreSQL enabled; real-DB race tests
+  across app, pipeline, CLI, accounting and orchestrator; vet, formatting, diff
+  and Compose configuration checks pass.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

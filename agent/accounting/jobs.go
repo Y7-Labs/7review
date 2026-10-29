@@ -33,6 +33,9 @@ func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestr
 		return err
 	}
 	if !linked {
+		if a.cfg.RequireServiceJobs && i.Execution.Mode == review.ExecutionService {
+			return errors.New("service dispatch requires a linked durable job")
+		}
 		if i.Job != nil {
 			return errors.New("dispatch job is not linked to attempt")
 		}
@@ -53,6 +56,9 @@ func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestr
 
 func (a *Authority) validateJobAdmission(ctx context.Context, tx *sql.Tx, input review.Admission) error {
 	if input.Job == nil {
+		if a.cfg.RequireServiceJobs && input.Execution.Mode == review.ExecutionService {
+			return errors.New("service admission requires a durable job claim")
+		}
 		return nil
 	}
 	req, deadline, err := a.lockJob(ctx, tx, input.Job)

@@ -193,3 +193,40 @@ func TestPostgresDuplicateJobCannotSpendExistingAttempt(t *testing.T) {
 		}
 	}
 }
+
+func TestPostgresProductionServiceCannotBypassInboxWithDirectAdmission(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	fixture := ledgerAuthority(t, db, l)
+	i := ledgerIntent(t, db, "legacy-unowned", "7", l)
+	if err := fixture.RegisterAttempt(context.Background(), i); err != nil {
+		t.Fatal(err)
+	}
+	cfg := fixture.cfg
+	cfg.RequireServiceJobs = true
+	strict, err := NewAuthority(db, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = strict.Admit(context.Background(), admissionFromIntent(i)); err == nil {
+		t.Fatal("service admission bypassed durable inbox ownership")
+	}
+	if err = strict.RegisterAttempt(context.Background(), i); err == nil {
+		t.Fatal("service registered attempt through unowned compatibility API")
+	}
+	if _, err = strict.ReserveAndBegin(context.Background(), i); err == nil {
+		t.Fatal("unowned pre-existing attempt could spend")
+	}
+	// Explicit job-local CI remains distinct from coordinated service ownership.
+	ci := ledgerIntent(t, db, "ci-job", "9", l)
+	ci.Execution.Mode = review.ExecutionEphemeral
+	ci.Execution.Persistence = review.PersistenceJobLocal
+	ci.Execution.PipelineID = "pipeline"
+	ci.Execution.JobID = "job"
+	if err = strict.RegisterAttempt(context.Background(), ci); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = strict.ReserveAndBegin(context.Background(), ci); err != nil {
+		t.Fatalf("service ownership guard broke explicit CI execution: %v", err)
+	}
+}
