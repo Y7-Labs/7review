@@ -74,6 +74,11 @@ not idempotent retries. Ignored/non-reviewable events do not claim durable work.
 
 Workers poll pending rows, so a crash between acceptance and queue notification
 cannot lose accepted work. A committed exclusive claim precedes pipeline entry.
+Acceptance creates its durable job in the same transaction. Attested admission
+links the job to its immutable attempt/receipt atomically, under the original
+owner and deadline. The model sending transaction checks that owner and commits
+the job effect-started marker with the action and all holds. Duplicate-only jobs
+link to the original receipt but cannot authorize additional spending.
 Only unclaimed pending work is recoverable automatically. A crash, panic or
 shutdown after claim is not permission to execute again: the row remains running
 until its original deadline, then becomes `uncertain`. Expired pending work becomes

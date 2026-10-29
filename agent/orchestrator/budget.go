@@ -24,6 +24,7 @@ type BudgetAuthority interface {
 }
 
 type DispatchIntent struct {
+	Job                                                      *review.JobClaim `json:",omitempty"`
 	ActionID                                                 string
 	Provider, Model, Role, Step, RequestDigest, PolicyDigest string
 	Payload                                                  []byte
@@ -134,6 +135,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec Mo
 	}
 	requestDigest := "sha256:" + hex.EncodeToString(digest[:])
 	intent := DispatchIntent{ActionID: hex.EncodeToString(actionBytes[:]), Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
+	intent.Job = review.JobClaimFromContext(ctx)
 	if rc != nil {
 		intent.Attempt = rc.Source.Attempt
 		intent.Execution = rc.Source.Execution

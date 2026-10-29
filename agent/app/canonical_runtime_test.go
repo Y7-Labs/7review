@@ -89,6 +89,10 @@ func TestCanonicalServiceRuntimePersistsIntakeButDeniesUnqualifiedModel(t *testi
 	if attempts != 1 || actions != 0 || calls.Load() != 0 {
 		t.Fatalf("unqualified intake spent or was not durable: attempts=%d actions=%d calls=%d", attempts, actions, calls.Load())
 	}
+	var linkedAttempt string
+	if err = db.QueryRow(`SELECT attempt_id FROM budget_jobs WHERE run_id=$1`, queued.RunID).Scan(&linkedAttempt); err != nil || linkedAttempt != run.Source.Attempt.AttemptID {
+		t.Fatalf("live worker did not link its job to canonical attempt: %s %v", linkedAttempt, err)
+	}
 	// Canonical delivery validation must not be bypassed by process-local dedup.
 	req.EventAction = "opened"
 	req.DeliveryID = "same-delivery"

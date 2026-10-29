@@ -565,6 +565,20 @@ This is an incremental behavior ledger, not a completion declaration.
   work. This storage contract does not yet assert live worker claim propagation.
 - Verification: PostgreSQL-enabled accounting, orchestrator, app and CLI suites.
 
+### Slice 33: Live Job Ownership at the Sending Boundary
+
+- Worker context now carries the host-issued job claim through canonical
+  admission and every model dispatch. Run identity must match the claim. Tokens
+  remain outside model input and Source artifacts.
+- Linked attempts cannot spend without their live job owner. Finished, expired,
+  stale-token and duplicate-only jobs are denied. Sending, job effect-started
+  state and all three holds commit together using job/head/attempt/scope ordering.
+- Deferred sending-commit failure tests prove no orphan action or permit escapes.
+  A real service-constructor test verifies the run-to-attempt FK, and orchestrator
+  tests verify claim propagation without leaking it to the provider payload.
+- Receipt recording remains permitted for late attributable responses: it is
+  observation, not authority to send again. Production route catalog stays empty.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

@@ -336,6 +336,9 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	}
 	defer tx.Rollback()
 	var tracking sql.NullString
+	if err = a.guardJobDispatch(ctx, tx, i); err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
 	if err = tx.QueryRowContext(ctx, `SELECT tracking_id FROM budget_attempts WHERE id=$1`, i.Attempt.AttemptID).Scan(&tracking); err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
@@ -432,6 +435,11 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	}
 	for _, ref := range refs {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_holds(action_id,scope_id,origin_period) VALUES($1,$2,$3)`, i.ActionID, ref.id, ref.origin); err != nil {
+			return orchestrator.DispatchPermit{}, err
+		}
+	}
+	if i.Job != nil {
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='effect_started',updated_at=clock_timestamp() WHERE run_id=$1`, i.Job.RunID); err != nil {
 			return orchestrator.DispatchPermit{}, err
 		}
 	}

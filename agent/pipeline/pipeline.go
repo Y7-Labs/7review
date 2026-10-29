@@ -58,6 +58,9 @@ func (p *Pipeline) RunIdentified(ctx context.Context, req review.Request, id str
 	if p == nil || p.Canonical == nil {
 		return fmt.Errorf("identified runs require canonical intake")
 	}
+	if claim := review.JobClaimFromContext(ctx); claim != nil && claim.RunID != id {
+		return fmt.Errorf("identified run does not match durable job claim")
+	}
 	return p.run(ctx, req, id)
 }
 

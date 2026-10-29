@@ -94,6 +94,7 @@ func (s *Server) startInboxWorkers() {
 					continue
 				}
 				runCtx, stop := context.WithDeadline(ctx, item.Deadline)
+				runCtx = review.WithJobClaim(runCtx, review.JobClaim{RunID: item.RunID, Token: item.ClaimToken})
 				err = s.runInboxItem(runCtx, item.Request, item.RunID)
 				stop()
 				// Cancellation/crashes do not turn an uncertain effect into retryable work.

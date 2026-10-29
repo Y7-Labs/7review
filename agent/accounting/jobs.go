@@ -7,6 +7,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
 )
 
@@ -24,6 +25,30 @@ func (a *Authority) lockJob(ctx context.Context, tx *sql.Tx, claim *review.JobCl
 	}
 	err = json.Unmarshal(raw, &req)
 	return req, deadline, err
+}
+
+func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestrator.DispatchIntent) error {
+	var linked bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_jobs WHERE attempt_id=$1)`, i.Attempt.AttemptID).Scan(&linked); err != nil {
+		return err
+	}
+	if !linked {
+		if i.Job != nil {
+			return errors.New("dispatch job is not linked to attempt")
+		}
+		return nil
+	}
+	if _, _, err := a.lockJob(ctx, tx, i.Job); err != nil {
+		return err
+	}
+	var allowed bool
+	if err := tx.QueryRowContext(ctx, `SELECT dispatch_allowed AND attempt_id=$2 FROM budget_jobs WHERE run_id=$1`, i.Job.RunID, i.Attempt.AttemptID).Scan(&allowed); err != nil {
+		return err
+	}
+	if !allowed {
+		return errors.New("job cannot dispatch this attempt")
+	}
+	return nil
 }
 
 func (a *Authority) validateJobAdmission(ctx context.Context, tx *sql.Tx, input review.Admission) error {

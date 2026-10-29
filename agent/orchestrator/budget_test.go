@@ -68,6 +68,23 @@ func fundedContext(limits review.ResourceLimits) *review.Context {
 	return rc
 }
 
+func TestDispatchRetainsHostJobClaimOutsideModelInput(t *testing.T) {
+	limits := budgetTestLimits()
+	authority := &recordingBudget{}
+	o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": budgetProvider{call: func(context.Context, LLMRequest) (string, error) { return "[]", nil }}}, WithOperatorCeilings(&limits), WithBudgetAuthority(authority))
+	claim := review.JobClaim{RunID: "run-test", Token: "private-owner"}
+	ctx := review.WithJobClaim(context.Background(), claim)
+	if _, err := o.Complete(ctx, fundedContext(limits), RoleReasoner, "test", "sys", "user"); err != nil {
+		t.Fatal(err)
+	}
+	if len(authority.intents) != 1 || authority.intents[0].Job == nil || *authority.intents[0].Job != claim {
+		t.Fatalf("host claim was lost: %#v", authority.intents)
+	}
+	if strings.Contains(string(authority.intents[0].Payload), claim.Token) {
+		t.Fatal("ownership token leaked into model payload")
+	}
+}
+
 func TestBudgetCeilingsDenyBeforeReservationAndIO(t *testing.T) {
 	for _, name := range []string{"zero attempt", "zero change", "zero project", "output request", "stale authority", "missing limits", "bad receipt", "legacy with host caps", "preview with host caps"} {
 		t.Run(name, func(t *testing.T) {

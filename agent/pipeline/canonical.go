@@ -49,6 +49,7 @@ func (c *CanonicalIntake) admit(ctx context.Context, rc *review.Context, generat
 		kind = review.IntentManual
 	}
 	input := review.Admission{Request: rc.Request, Change: change, Attestation: *rc.Source.Attestation, Policy: rc.Source.Policy, Execution: execution, IntentKind: kind, ExpectedGeneration: generation, DeliveryID: rc.Request.DeliveryID, PayloadDigest: rc.Request.PayloadDigest}
+	input.Job = review.JobClaimFromContext(ctx)
 	var receipt review.IntakeReceipt
 	if c.Authority != nil {
 		receipt, err = c.Authority.Admit(ctx, input)
