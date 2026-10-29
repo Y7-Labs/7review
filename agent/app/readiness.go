@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/Y4NN777/7review/agent/accounting"
 )
 
 func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
@@ -26,9 +28,10 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 }
 
 type readinessStatus struct {
-	Ready        bool              `json:"ready"`
-	Dependencies map[string]string `json:"dependencies"`
-	Queue        queueStatus       `json:"queue,omitempty"`
+	Inbox        *accounting.InboxHealth `json:"inbox,omitempty"`
+	Ready        bool                    `json:"ready"`
+	Dependencies map[string]string       `json:"dependencies"`
+	Queue        queueStatus             `json:"queue,omitempty"`
 }
 
 func (s *readinessStatus) markDown(name, message string) {
@@ -63,6 +66,16 @@ func (s *Server) readiness(ctx context.Context) readinessStatus {
 		status.markDown("run_store", err.Error())
 	} else {
 		status.Dependencies["run_store"] = "ok"
+	}
+	if s != nil && s.pipeline != nil && s.pipeline.Canonical != nil {
+		if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
+			status.markDown("durable_inbox", "durable inbox is not configured")
+		} else if inbox, err := s.accountingRuntime.Authority.CheckInbox(ctx); err != nil {
+			status.markDown("durable_inbox", "durable inbox unavailable")
+		} else {
+			status.Inbox = inbox
+			status.Dependencies["durable_inbox"] = "ok (storage only; not model-route qualification)"
+		}
 	}
 	if s == nil || s.pipeline == nil || s.pipeline.ContextReducer == nil {
 		status.markDown("headroom", "headroom reducer is not configured")
