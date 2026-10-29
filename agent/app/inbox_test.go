@@ -207,3 +207,24 @@ func TestCanonicalInboxPanicIsNotRecordedAsSafeFailure(t *testing.T) {
 		t.Fatalf("panic fabricated safe terminal outcome: %s %v", state, err)
 	}
 }
+
+func TestCanonicalReadinessChecksDurableInboxNotJustVolatileQueue(t *testing.T) {
+	s, db := inboxServer(t)
+	s.pipeline.Memory = pipeline.NoopMemoryStore{}
+	s.pipeline.ContextReducer = pipeline.NoopContextReducer{}
+	_, err := s.accountingRuntime.Authority.AcceptInbox(context.Background(), review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "ready"}, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	health := s.readiness(context.Background())
+	if !health.Ready || health.Inbox == nil || health.Inbox.Pending != 1 {
+		t.Fatalf("durable backlog missing: %#v", health)
+	}
+	if _, err = db.Exec(`ALTER TABLE budget_inbox RENAME TO unavailable_inbox`); err != nil {
+		t.Fatal(err)
+	}
+	health = s.readiness(context.Background())
+	if health.Ready || health.Dependencies["durable_inbox"] == "" {
+		t.Fatalf("volatile queue concealed durable storage outage: %#v", health)
+	}
+}

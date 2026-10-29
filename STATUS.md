@@ -47,7 +47,7 @@ and original deadlines; claimed crashes remain non-retryable/uncertain. Full
 G01-G03 action recovery/ownership/currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-30.
+[Accounting](docs/accounting.md) and progress slices 20-31.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

@@ -20,6 +20,34 @@ type InboxItem struct {
 	ClaimToken string
 }
 
+type InboxHealth struct {
+	Pending   int64 `json:"pending"`
+	Running   int64 `json:"running"`
+	Uncertain int64 `json:"uncertain"`
+}
+
+func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts"} {
+		if err = requireRelation(ctx, tx, table); err != nil {
+			return nil, err
+		}
+	}
+	status := &InboxHealth{}
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND deadline>now()),count(*) FILTER (WHERE state='running' AND deadline>now()),count(*) FILTER (WHERE state='uncertain' OR (state='running' AND deadline<=now())) FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&status.Pending, &status.Running, &status.Uncertain)
+	if err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return status, nil
+}
+
 func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout time.Duration) (*InboxItem, error) {
 	if req.Provider == "" || req.ProjectID == "" || (req.ChangeID == "" && req.MRIID <= 0) || timeout <= 0 || timeout > 24*time.Hour {
 		return nil, errors.New("invalid durable inbox request")

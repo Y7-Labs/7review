@@ -83,6 +83,9 @@ run ID, state and original deadline, including when no local run artifact exists
 Configure `API_TOKEN` to protect this operational endpoint. `completed` means the
 pipeline returned successfully, not provider settlement or publication approval.
 Database/claim/completion failures never fall back to the volatile queue.
+Readiness checks the canonical inbox schema/storage separately from the legacy
+closure queue and reports pending, running and uncertain counts for the trusted
+project. Storage readiness is not live-model qualification or review completion.
 
 This conservative recovery intentionally sacrifices automatic progress after a
 claimed crash. Action-level resume, authenticated operator recovery, durable

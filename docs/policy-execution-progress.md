@@ -540,6 +540,17 @@ This is an incremental behavior ledger, not a completion declaration.
   action recovery, operator intervention or production failover qualification.
 - Verification: PostgreSQL-enabled app/CLI/accounting/orchestrator race suite.
 
+### Slice 31: Durable Inbox Readiness
+
+- Red: readiness only inspected the legacy volatile queue and could conceal a
+  durable inbox outage. The canonical path now checks inbox storage/schema and
+  reports separate pending/running/uncertain backlog counts.
+- Missing storage or runtime marks readiness down; a healthy in-memory queue is
+  not a substitute. Storage readiness explicitly does not qualify model routes
+  or turn uncertain executions into successful reviews.
+- Verification: real-DB outage/backlog regression and app/accounting/orchestrator
+  race suites, followed by the full PostgreSQL-enabled suite and vet.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
