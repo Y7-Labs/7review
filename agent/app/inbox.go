@@ -36,10 +36,14 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		RunID    string    `json:"run_id"`
-		State    string    `json:"state"`
-		Deadline time.Time `json:"deadline"`
-	}{item.RunID, item.State, item.Deadline})
+		RunID               string    `json:"run_id"`
+		State               string    `json:"state"`
+		Deadline            time.Time `json:"deadline"`
+		AttemptID           string    `json:"attempt_id,omitempty"`
+		JobPhase            string    `json:"job_phase"`
+		RecordedUnvalidated int64     `json:"recorded_unvalidated"`
+		UnresolvedActions   int64     `json:"unresolved_actions"`
+	}{item.RunID, item.State, item.Deadline, item.AttemptID, item.JobPhase, item.RecordedUnvalidated, item.UnresolvedActions})
 }
 
 func (s *Server) acceptInbox(req review.Request) (requestReviewResult, error) {
@@ -80,6 +84,16 @@ func (s *Server) startInboxWorkers() {
 				}
 				if ctx.Err() != nil {
 					return
+				}
+				recoveryCtx, recoveryCancel := context.WithTimeout(ctx, 5*time.Second)
+				_, recoveryErr := s.accountingRuntime.Authority.RecoverActionResults(recoveryCtx, 32)
+				recoveryCancel()
+				if recoveryErr != nil {
+					if ctx.Err() == nil {
+						log.Printf("[inbox] local action recovery failed: %v", recoveryErr)
+					}
+					timer.Reset(time.Second)
+					continue
 				}
 				item, err := s.accountingRuntime.Authority.ClaimInbox(ctx)
 				if err != nil {

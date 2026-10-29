@@ -152,11 +152,11 @@ connects through opt-in runtime settings, with durable generation fencing and
 pre-dispatch identity checkpoints. Default production routes remain fail-closed.
 Durable HTTP acceptance and unclaimed pending-work recovery now have PostgreSQL
 fault/replay coverage. Claimed crashes are never automatically retried. Full
-action recovery/ownership/provider currentness,
+prepared-action recovery, validated response continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-31.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-34.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

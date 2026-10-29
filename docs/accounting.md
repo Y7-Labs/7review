@@ -39,7 +39,8 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v5 adds transactional acceptance jobs and owned attempt linkage to the
+Schema v6 adds locally recoverable action-result records to v5 transactional
+acceptance jobs and owned attempt linkage, following the
 v4 durable HTTP inbox and v3 intake receipts/generation fencing,
 without clearing holds. A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
@@ -85,7 +86,8 @@ until its original deadline, then becomes `uncertain`. Expired pending work beco
 `expired`. Neither state releases budget holds or authorizes redispatch.
 
 `GET /inbox?run_id=<id>` uses the existing API-token middleware and returns only
-run ID, state and original deadline, including when no local run artifact exists.
+run ID, state, original deadline, attempt/job linkage and action recovery counts,
+including when no local run artifact exists. It never returns response bodies.
 Configure `API_TOKEN` to protect this operational endpoint. `completed` means the
 pipeline returned successfully, not provider settlement or publication approval.
 Database/claim/completion failures never fall back to the volatile queue.
@@ -93,9 +95,18 @@ Readiness checks the canonical inbox schema/storage separately from the legacy
 closure queue and reports pending, running and uncertain counts for the trusted
 project. Storage readiness is not live-model qualification or review completion.
 
+Committed model responses can now be indexed locally, once logically, into
+`recorded_unvalidated` action results. Bounded recovery workers perform no model
+I/O, finding approval, job completion or financial settlement. Response hashes
+and originating action/job links are retained; unknown/corrupt outcomes are not
+promoted. Recovery storage failure blocks new inbox claims for that poll.
+
 This conservative recovery intentionally sacrifices automatic progress after a
-claimed crash. Action-level resume, authenticated operator recovery, durable
-result storage and full inbox-to-attempt/event atomicity remain unimplemented.
+claimed crash. Prepared-action reclaim, validated-result continuation,
+authenticated operator recovery, durable final run artifacts and full aggregate
+event atomicity remain unimplemented. Inbox/job acceptance and later attested
+attempt linkage are transactional, not a claim that the entire target aggregate
+already commits before HTTP acknowledgement.
 Do not requeue uncertain rows manually or delete them to obtain fresh allowance.
 Inbox fault tests include deferred commit failures and abrupt subprocess exit
 after acceptance/claim commit; replay preserves the same original receipt.

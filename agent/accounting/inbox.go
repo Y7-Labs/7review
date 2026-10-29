@@ -13,11 +13,15 @@ import (
 // InboxItem acknowledges durable acceptance, not permission to dispatch.
 // Claimed work is never automatically retried: its effects may be uncertain.
 type InboxItem struct {
-	RunID      string
-	Request    review.Request
-	State      string
-	Deadline   time.Time
-	ClaimToken string
+	AttemptID           string
+	JobPhase            string
+	RecordedUnvalidated int64
+	UnresolvedActions   int64
+	RunID               string
+	Request             review.Request
+	State               string
+	Deadline            time.Time
+	ClaimToken          string
 }
 
 type InboxHealth struct {
@@ -32,7 +36,7 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs"} {
+	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs", "budget_action_results"} {
 		if err = requireRelation(ctx, tx, table); err != nil {
 			return nil, err
 		}
@@ -118,7 +122,7 @@ func (a *Authority) LookupInbox(ctx context.Context, runID string) (*InboxItem, 
 	}
 	defer tx.Rollback()
 	item := &InboxItem{}
-	err = tx.QueryRowContext(ctx, `SELECT run_id,CASE WHEN deadline<=clock_timestamp() AND state='pending' THEN 'expired' WHEN deadline<=clock_timestamp() AND state='running' THEN 'uncertain' ELSE state END,deadline FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired' WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,i.deadline,coalesce(j.attempt_id,''),j.phase,(SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND j.dispatch_allowed AND a.state IN ('sending','uncertain')) FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions)
 	if err != nil {
 		return nil, err
 	}

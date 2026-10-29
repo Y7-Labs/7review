@@ -579,6 +579,24 @@ This is an incremental behavior ledger, not a completion declaration.
 - Receipt recording remains permitted for late attributable responses: it is
   observation, not authority to send again. Production route catalog stays empty.
 
+### Slice 34: Recover Committed Action Responses Without Resending
+
+- Red: recorded outcomes had no durable local reduction record. Schema v6 adds
+  unique action-result projection with request/response provenance and explicit
+  `recorded_unvalidated` status. A unique partial index enforces one spending
+  job per attempt, while duplicate receipt aliases remain non-spending.
+- Recovery locks one job and indexes bounded committed responses in one SQL
+  transaction. Failed commits replay only this local operation. Sending/unknown
+  outcomes retain their holds, corrupt hashes fail closed, and no result is
+  silently approved as evidence, settled or promoted to completed job status.
+- Subprocess exits after outcome and reduction commits verify crash recovery.
+  Concurrent reducers index once logically. Live worker adapter tests verify
+  local recovery without rerunning the pipeline, and refuse new inbox claims
+  when the recovery journal is unavailable.
+- `/inbox` exposes attempt/phase and unvalidated/unresolved counts without private
+  output bodies. This is local result-index recovery, not prepared-action reclaim
+  or validated continuation of the full review state machine.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

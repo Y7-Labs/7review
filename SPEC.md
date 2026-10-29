@@ -119,6 +119,11 @@ token policy, without payloads or execution credentials. Only unclaimed work is
 automatically recovered; claimed crashes remain non-retryable and become
 uncertain at expiry. This intermediate implementation does not satisfy the full
 atomic inbox/attempt/job contract or action-level recovery acceptance criteria.
+The next checkpoint atomically creates acceptance jobs, links attested admission
+under the job owner, and fences model sending with that ownership. Committed
+responses can be locally indexed as unvalidated without resending. Prepared
+reclaim, validated continuation and the complete before-202 aggregate remain
+separate open acceptance gates.
 
 Local/CI application calls return typed receipts or errors, not HTTP responses.
 They checkpoint before dispatch in the selected store. An ephemeral receipt is

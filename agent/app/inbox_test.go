@@ -228,3 +228,73 @@ func TestCanonicalReadinessChecksDurableInboxNotJustVolatileQueue(t *testing.T) 
 		t.Fatalf("volatile queue concealed durable storage outage: %#v", health)
 	}
 }
+
+func TestInboxWorkerDoesNotDispatchPastUnavailableRecoveryJournal(t *testing.T) {
+	s, db := inboxServer(t)
+	queued, err := s.enqueueReview(review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "recovery-outage"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`ALTER TABLE budget_action_results RENAME TO unavailable_results`); err != nil {
+		t.Fatal(err)
+	}
+	s.startInboxWorkers()
+	time.Sleep(600 * time.Millisecond)
+	var state string
+	if err = db.QueryRow(`SELECT state FROM budget_inbox WHERE run_id=$1`, queued.RunID).Scan(&state); err != nil || state != "pending" {
+		t.Fatalf("work passed unavailable recovery journal: %s %v", state, err)
+	}
+	if runs, err := s.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
+		t.Fatalf("pipeline ran past recovery outage: %#v %v", runs, err)
+	}
+}
+
+func TestInboxWorkersRecoverRecordedResultsWithoutRerunningPipeline(t *testing.T) {
+	s, db := inboxServer(t)
+	s.startInboxWorkers()
+	queued, err := s.enqueueReview(review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", SourceSHA: "head", TargetSHA: "base", DeliveryID: "local-result"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var run *pipeline.Run
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		run, err = s.pipeline.Jobs.Get(context.Background(), queued.RunID)
+		if err == nil && run.Status == pipeline.StatusFailed && run.Source != nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if run == nil || run.Source == nil || run.Source.Attempt.AttemptID == "" {
+		t.Fatalf("canonical run did not checkpoint: %#v %v", run, err)
+	}
+	s.inboxCancel()
+	s.inboxWorkers.Wait()
+	// Committed journal fixture for the service recovery adapter. Real sending,
+	// holds and response-commit crash windows are tested in accounting.
+	response := []byte("durable unvalidated response")
+	outcome, _ := json.Marshal(orchestrator.DispatchOutcome{Response: response, ResponseReceived: true, ResponseDigest: canonicalPayloadDigest(response), ElapsedMS: 1})
+	_, err = db.Exec(`INSERT INTO budget_actions(id,attempt_id,request_digest,intent_digest,request,quote,upper_amount,state,outcome) VALUES('recovery-fixture',$1,$2,$2,$3,$3,'{}','result_recorded',$4)`, run.Source.Attempt.AttemptID, canonicalPayloadDigest([]byte("request")), []byte("{}"), outcome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.pipeline.Jobs = pipeline.NewMemoryRunStore()
+	s.startInboxWorkers()
+	var count int
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		_ = db.QueryRow(`SELECT count(*) FROM budget_action_results`).Scan(&count)
+		if count == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if count != 1 {
+		t.Fatal("worker did not recover committed local result")
+	}
+	if runs, err := s.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
+		t.Fatalf("recovery reran the review pipeline: %#v %v", runs, err)
+	}
+	status, err := s.accountingRuntime.Authority.LookupInbox(context.Background(), queued.RunID)
+	if err != nil || status.RecordedUnvalidated != 1 || status.State == "completed" {
+		t.Fatalf("local result was promoted to successful review: %#v %v", status, err)
+	}
+}
