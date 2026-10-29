@@ -525,6 +525,21 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: full uncached `go test ./...` with PostgreSQL enabled, real-DB
   app/accounting/orchestrator race suites, `go vet ./...` and diff checks pass.
 
+### Slice 30: Ownership Commit Faults and Abrupt Process Death
+
+- Deferred PostgreSQL update-trigger failures exercise claim and completion
+  commit windows. Failed claim commit returns no executable item and preserves
+  pending work. Failed completion commit preserves the exclusive running claim;
+  another worker receives no item, even when it cannot know whether effects ran.
+- Subprocesses exit immediately after acceptance or claim commit, skipping all
+  deferred cleanup. A new authority recovers the pending receipt but cannot
+  redispatch claimed work. These supplement in-process restart simulations.
+- Namespace isolation prevents another host-owned project from inspecting or
+  claiming the row. Migration refuses to recreate a missing v4 inbox ledger and
+  leaves existing receipts intact. These are fault qualifications, not full
+  action recovery, operator intervention or production failover qualification.
+- Verification: PostgreSQL-enabled app/CLI/accounting/orchestrator race suite.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

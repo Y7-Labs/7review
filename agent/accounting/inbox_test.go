@@ -2,6 +2,9 @@ package accounting
 
 import (
 	"context"
+	"database/sql"
+	"os"
+	"os/exec"
 	"sync"
 	"testing"
 	"time"
@@ -139,5 +142,137 @@ func TestPostgresInboxFailedCommitCannotAcknowledgeOrLoseWork(t *testing.T) {
 	replay, err := a.AcceptInbox(ctx, req, time.Hour)
 	if err != nil || replay.State != "expired" {
 		t.Fatalf("expired acceptance revived: %#v %v", replay, err)
+	}
+}
+
+func TestPostgresInboxOwnershipCommitFailuresNeverGrantReplay(t *testing.T) {
+	db, _ := postgresFixture(t)
+	a := ledgerAuthority(t, db, ledgerLimits())
+	ctx := context.Background()
+	req := review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "commit-fault"}
+	accepted, err := a.AcceptInbox(ctx, req, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`CREATE FUNCTION fail_claim_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ownership commit failure'; END $$; CREATE CONSTRAINT TRIGGER fail_claim_commit AFTER UPDATE ON budget_inbox DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_claim_commit()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item, err := a.ClaimInbox(ctx); err == nil || item != nil {
+		t.Fatalf("uncommitted claim handed to worker: %#v %v", item, err)
+	}
+	if _, err = db.Exec(`DROP TRIGGER fail_claim_commit ON budget_inbox`); err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := a.ClaimInbox(ctx)
+	if err != nil || claimed == nil || claimed.RunID != accepted.RunID {
+		t.Fatalf("failed claim lost pending work: %#v %v", claimed, err)
+	}
+	if _, err = db.Exec(`CREATE CONSTRAINT TRIGGER fail_claim_commit AFTER UPDATE ON budget_inbox DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_claim_commit()`); err != nil {
+		t.Fatal(err)
+	}
+	if err = a.FinishInbox(ctx, claimed.RunID, claimed.ClaimToken, true); err == nil {
+		t.Fatal("uncommitted completion confirmed")
+	}
+	if _, err = db.Exec(`DROP TRIGGER fail_claim_commit ON budget_inbox`); err != nil {
+		t.Fatal(err)
+	}
+	if item, err := a.ClaimInbox(ctx); err != nil || item != nil {
+		t.Fatalf("completion fault caused redispatch: %#v %v", item, err)
+	}
+	status, err := a.LookupInbox(ctx, accepted.RunID)
+	if err != nil || status.State != "running" {
+		t.Fatalf("completion fault fabricated outcome: %#v %v", status, err)
+	}
+}
+
+func TestPostgresInboxCrashChild(t *testing.T) {
+	mode := os.Getenv("SEVENREVIEW_INBOX_CRASH_CHILD")
+	if mode == "" {
+		t.Skip("subprocess helper")
+	}
+	db, err := sql.Open("pgx", os.Getenv("SEVENREVIEW_INBOX_CRASH_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := ledgerAuthority(t, db, ledgerLimits())
+	req := review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "process-death"}
+	if _, err = a.AcceptInbox(context.Background(), req, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if mode == "claimed" {
+		if item, err := a.ClaimInbox(context.Background()); err != nil || item == nil {
+			t.Fatalf("claim: %#v %v", item, err)
+		}
+	}
+	// Exit immediately, skipping every deferred cleanup and application callback.
+	os.Exit(37)
+}
+
+func TestPostgresInboxProcessDeathBeforeAndAfterClaim(t *testing.T) {
+	for _, mode := range []string{"pending", "claimed"} {
+		t.Run(mode, func(t *testing.T) {
+			db, dsn := postgresFixture(t)
+			command := exec.Command(os.Args[0], "-test.run=^TestPostgresInboxCrashChild$")
+			command.Env = append(os.Environ(), "SEVENREVIEW_INBOX_CRASH_CHILD="+mode, "SEVENREVIEW_INBOX_CRASH_DSN="+dsn)
+			err := command.Run()
+			exit, ok := err.(*exec.ExitError)
+			if !ok || exit.ExitCode() != 37 {
+				t.Fatalf("child did not reach committed crash window: %v", err)
+			}
+			a := ledgerAuthority(t, db, ledgerLimits())
+			req := review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "process-death"}
+			receipt, err := a.AcceptInbox(context.Background(), req, time.Hour)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if receipt.State != map[string]string{"pending": "pending", "claimed": "running"}[mode] {
+				t.Fatalf("process death lost acceptance: %#v", receipt)
+			}
+			claim, err := a.ClaimInbox(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "pending" && (claim == nil || claim.RunID != receipt.RunID) {
+				t.Fatal("committed pending acceptance was lost")
+			}
+			if mode == "claimed" && claim != nil {
+				t.Fatal("process death granted a second execution")
+			}
+		})
+	}
+}
+
+func TestPostgresInboxNamespaceAndMissingLedgerRemainClosed(t *testing.T) {
+	db, _ := postgresFixture(t)
+	a := ledgerAuthority(t, db, ledgerLimits())
+	ctx := context.Background()
+	req := review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "scoped"}
+	item, err := a.AcceptInbox(ctx, req, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config := a.cfg
+	config.ProjectID = "another-project"
+	other, err := NewAuthority(db, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = other.LookupInbox(ctx, item.RunID); err != sql.ErrNoRows {
+		t.Fatalf("cross-project receipt disclosed: %v", err)
+	}
+	if claim, err := other.ClaimInbox(ctx); err != nil || claim != nil {
+		t.Fatalf("cross-project claim: %#v %v", claim, err)
+	}
+	if _, err = db.Exec(`DROP TABLE budget_inbox_conflicts`); err != nil {
+		t.Fatal(err)
+	}
+	if err = Migrate(ctx, db); err == nil {
+		t.Fatal("missing current inbox ledger recreated")
+	}
+	// Existing receipts remain intact even though explicit recovery is now needed.
+	var count int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_inbox`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("migration erased inbox: %d %v", count, err)
 	}
 }

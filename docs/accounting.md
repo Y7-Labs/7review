@@ -88,6 +88,8 @@ This conservative recovery intentionally sacrifices automatic progress after a
 claimed crash. Action-level resume, authenticated operator recovery, durable
 result storage and full inbox-to-attempt/event atomicity remain unimplemented.
 Do not requeue uncertain rows manually or delete them to obtain fresh allowance.
+Inbox fault tests include deferred commit failures and abrupt subprocess exit
+after acceptance/claim commit; replay preserves the same original receipt.
 
 Service workers observe the current generation before SCM acquisition. Admission
 compares that generation atomically; a late acquisition cannot move the pointer
