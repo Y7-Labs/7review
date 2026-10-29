@@ -488,6 +488,22 @@ This is an incremental behavior ledger, not a completion declaration.
   across app, CI, pipeline, review, CLI, accounting and orchestrator; formatting,
   `go vet ./...` and Compose configuration validation passed.
 
+### Slice 28: Durable Inbox Storage and Conservative Recovery
+
+- Red: no durable HTTP acceptance contract existed. Added PostgreSQL cases for
+  lost-response replay, reopen recovery, concurrent claims, payload conflicts,
+  unowned completion, expired pending work and crash-after-claim uncertainty.
+- Schema v4 stores normalized requests (including authenticated raw-body digest),
+  stable run IDs and original deadlines before acknowledgement. Replay cannot
+  extend deadlines or hide changed normalized fields behind an unchanged digest.
+- Pending work is claimable across processes using row locks. Claimed work is
+  never automatically reclaimed: expiry records `uncertain`, retaining all
+  accounting holds. This is not action-level resume or exactly-once effects.
+- A deferred SQL trigger tests commit failure after receipt selection: no receipt
+  is returned, and the provider can retry the rolled-back delivery safely.
+- Explicit migration extends v3; missing current ledger relations remain errors,
+  not an excuse to initialize empty tables. Production routes remain unqualified.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
