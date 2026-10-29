@@ -39,7 +39,8 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v4 adds the durable HTTP inbox to v3 intake receipts and generation fencing,
+Schema v5 adds transactional acceptance jobs and owned attempt linkage to the
+v4 durable HTTP inbox and v3 intake receipts/generation fencing,
 without clearing holds. A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
 

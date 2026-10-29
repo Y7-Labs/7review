@@ -69,9 +69,13 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 		return review.IntakeReceipt{}, err
 	}
 	if input.DeliveryID == "" {
-		input.DeliveryID, err = review.NewOpaqueID("manual-")
-		if err != nil {
-			return review.IntakeReceipt{}, err
+		if input.Job != nil {
+			input.DeliveryID = input.Job.RunID
+		} else {
+			input.DeliveryID, err = review.NewOpaqueID("manual-")
+			if err != nil {
+				return review.IntakeReceipt{}, err
+			}
 		}
 	}
 	if !validID(input.DeliveryID) {
@@ -103,6 +107,9 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 		return review.IntakeReceipt{}, err
 	}
 	defer tx.Rollback()
+	if err = a.validateJobAdmission(ctx, tx, input); err != nil {
+		return review.IntakeReceipt{}, err
+	}
 	tracking := input.Execution.Mode == review.ExecutionService && input.IntentKind != review.IntentHistorical
 	var generation int64
 	var predecessor sql.NullString
@@ -136,6 +143,12 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 			return review.IntakeReceipt{}, err
 		}
 		receipt.Duplicate = true
+		if err = linkJob(ctx, tx, input, receipt); err != nil {
+			return review.IntakeReceipt{}, err
+		}
+		if err = tx.Commit(); err != nil {
+			return review.IntakeReceipt{}, err
+		}
 		return receipt, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -179,6 +192,10 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 			if _, err = tx.ExecContext(ctx, `INSERT INTO budget_intakes(id,fingerprint,attempt_id,receipt) VALUES($1,$2,$3,$4)`, key, fingerprint, previous.Attempt.AttemptID, previousJSON); err != nil {
 				return review.IntakeReceipt{}, err
 			}
+			previous.Duplicate = true
+			if err = linkJob(ctx, tx, input, previous); err != nil {
+				return review.IntakeReceipt{}, err
+			}
 			if err = tx.Commit(); err != nil {
 				return review.IntakeReceipt{}, err
 			}
@@ -205,6 +222,9 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 		return review.IntakeReceipt{}, err
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_intakes(id,fingerprint,attempt_id,receipt) VALUES($1,$2,$3,$4)`, key, fingerprint, id, receiptJSON); err != nil {
+		return review.IntakeReceipt{}, err
+	}
+	if err = linkJob(ctx, tx, input, receipt); err != nil {
 		return review.IntakeReceipt{}, err
 	}
 	if err = tx.Commit(); err != nil {

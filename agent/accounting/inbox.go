@@ -32,7 +32,7 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts"} {
+	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs"} {
 		if err = requireRelation(ctx, tx, table); err != nil {
 			return nil, err
 		}
@@ -76,8 +76,14 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_inbox(id,boundary_id,project_id,run_id,fingerprint,request,state,deadline) VALUES($1,$2,$3,$4,$5,$6,'pending',clock_timestamp()+$7*interval '1 millisecond') ON CONFLICT(id) DO NOTHING`, key, a.cfg.BoundaryID, a.cfg.ProjectID, runID, fingerprint, raw, timeout.Milliseconds()); err != nil {
+	inserted, err := tx.ExecContext(ctx, `INSERT INTO budget_inbox(id,boundary_id,project_id,run_id,fingerprint,request,state,deadline) VALUES($1,$2,$3,$4,$5,$6,'pending',clock_timestamp()+$7*interval '1 millisecond') ON CONFLICT(id) DO NOTHING`, key, a.cfg.BoundaryID, a.cfg.ProjectID, runID, fingerprint, raw, timeout.Milliseconds())
+	if err != nil {
 		return nil, err
+	}
+	if n, _ := inserted.RowsAffected(); n == 1 {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_jobs(run_id,phase) VALUES($1,'accepted')`, runID); err != nil {
+			return nil, err
+		}
 	}
 	var stored string
 	item := &InboxItem{}
@@ -94,6 +100,10 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 		return nil, errors.New("durable inbox delivery payload conflict")
 	}
 	item.Request = req
+	var jobID string
+	if err = tx.QueryRowContext(ctx, `SELECT run_id FROM budget_jobs WHERE run_id=$1`, item.RunID).Scan(&jobID); err != nil {
+		return nil, errors.New("accepted inbox job missing; recovery required")
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}
@@ -147,6 +157,13 @@ func (a *Authority) ClaimInbox(ctx context.Context) (*InboxItem, error) {
 	if _, err = tx.ExecContext(ctx, `UPDATE budget_inbox SET state='running',claim_token=$2,updated_at=clock_timestamp() WHERE run_id=$1`, item.RunID, item.ClaimToken); err != nil {
 		return nil, err
 	}
+	result, err := tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='acquiring',updated_at=clock_timestamp() WHERE run_id=$1 AND phase='accepted'`, item.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := result.RowsAffected(); n != 1 {
+		return nil, errors.New("inbox job is not claimable")
+	}
 	item.State = "running"
 	if err = tx.Commit(); err != nil {
 		return nil, err
@@ -174,6 +191,9 @@ func (a *Authority) FinishInbox(ctx context.Context, runID, token string, succes
 	}
 	if n != 1 {
 		return errors.New("inbox completion is unowned, expired or already terminal")
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='finished',updated_at=clock_timestamp() WHERE run_id=$1`, runID); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

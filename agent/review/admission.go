@@ -12,6 +12,7 @@ import (
 
 // Admission is trusted application intake, not an HTTP or model-authored command.
 type Admission struct {
+	Job                       *JobClaim
 	Request                   Request
 	Change                    ChangeKey
 	Attestation               SnapshotAttestation

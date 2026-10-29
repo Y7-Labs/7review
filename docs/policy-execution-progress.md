@@ -551,6 +551,20 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: real-DB outage/backlog regression and app/accounting/orchestrator
   race suites, followed by the full PostgreSQL-enabled suite and vet.
 
+### Slice 32: Atomic Acceptance Jobs and Admission Linkage
+
+- Red: inbox acceptance had no durable job, and attempt registration could commit
+  independently of its execution owner. Schema v5 creates an acceptance job in
+  the inbox transaction, then supports atomically linking the attested admission
+  receipt and attempt under the current job claim.
+- Deferred commit failures prove job creation rolls back acceptance and failed
+  linkage rolls back attempt/head changes. Stale owners and request rebinding
+  are rejected before admission replay. Manual job retries use stable job identity.
+- Automatic duplicate jobs retain a receipt link but cannot gain fresh dispatch
+  authority. Existing claimed v4 rows migrate as legacy-unknown, not retryable
+  work. This storage contract does not yet assert live worker claim propagation.
+- Verification: PostgreSQL-enabled accounting, orchestrator, app and CLI suites.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
