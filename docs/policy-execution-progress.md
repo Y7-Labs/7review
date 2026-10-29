@@ -504,6 +504,27 @@ This is an incremental behavior ledger, not a completion declaration.
 - Explicit migration extends v3; missing current ledger relations remain errors,
   not an excuse to initialize empty tables. Production routes remain unqualified.
 
+### Slice 29: HTTP Acceptance and Restart Workers
+
+- Red: zero-capacity queues could not durably accept requests; webhook responses
+  discarded run IDs, conflicts waited for worker execution, and canonical intake
+  could fall back to the volatile queue without a runtime. Regression tests cover
+  each boundary and actual signed HTTP delivery.
+- Canonical enqueue now commits to the inbox first; no volatile fallback exists.
+  GitHub/GitLab durable responses carry JSON receipts. Pending recovery uses
+  bounded workers and the original database deadline; committed claims never
+  grant a second execution on restart. Shutdown cancels and joins inbox workers
+  before closing storage. Panic/shutdown does not fabricate safe completion.
+- `/inbox?run_id=...` exposes minimal status through existing API-token middleware,
+  even before local artifacts exist. Payloads and claim tokens are not exposed.
+- Real-DB tests verify replay, payload conflicts before dispatch, inbox outage,
+  pending restart recovery, already-claimed crash refusal, shutdown and deadlines.
+- Boundary: no exactly-once external effects, action-level resume, durable result
+  store or authenticated operator recovery. Model routes remain unqualified;
+  full ceilings and scoped conflicts are not declared complete.
+- Verification: full uncached `go test ./...` with PostgreSQL enabled, real-DB
+  app/accounting/orchestrator race suites, `go vet ./...` and diff checks pass.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

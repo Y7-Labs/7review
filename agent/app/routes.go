@@ -33,6 +33,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/approve", s.requireAuth(s.handleApprove))
 	s.mux.HandleFunc("/publish/final", s.requireAuth(s.handlePublishFinal))
 	s.mux.HandleFunc("/runs", s.requireAuth(s.handleRuns))
+	s.mux.HandleFunc("/inbox", s.requireAuth(s.handleInbox))
 	s.mux.HandleFunc("/run", s.requireAuth(s.handleRun))
 	s.mux.HandleFunc("/chat/stream", s.requireAuth(s.handleChatStream))
 	s.mux.HandleFunc("/tools", s.requireAuth(s.handleTools))
@@ -269,15 +270,17 @@ func inactiveWebhookHandler(provider string) http.HandlerFunc {
 }
 
 type reviewDispatchResult struct {
-	RunID  string `json:"run_id"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	Durable bool   `json:"durable,omitempty"`
+	RunID   string `json:"run_id"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 type requestReviewResult struct {
-	RunID  string `json:"run_id"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	Durable bool   `json:"durable,omitempty"`
+	RunID   string `json:"run_id"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 func (s *Server) handleWebhookReview(req review.Request) (reviewDispatchResult, error) {
@@ -288,7 +291,7 @@ func (s *Server) handleWebhookReview(req review.Request) (reviewDispatchResult, 
 		return reviewDispatchResult{RunID: runID, Status: "ignored", Reason: "ignored by review policy: " + decision.reason}, nil
 	}
 	result, err := s.enqueueReview(req, true)
-	return reviewDispatchResult{RunID: result.RunID, Status: result.Status, Reason: result.Reason}, err
+	return reviewDispatchResult{Durable: result.Durable, RunID: result.RunID, Status: result.Status, Reason: result.Reason}, err
 }
 
 func (s *Server) requestReview(ctx context.Context, req review.Request) (requestReviewResult, error) {
@@ -303,26 +306,25 @@ func (s *Server) enqueueReview(req review.Request, webhook bool) (requestReviewR
 	runID := requestRunID(req)
 	canonical := s.pipeline != nil && s.pipeline.Canonical != nil
 	if canonical {
-		var err error
-		runID, err = review.NewOpaqueID("run-")
-		if err != nil {
-			return requestReviewResult{}, err
+		if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
+			return requestReviewResult{Status: "rejected", Reason: "durable inbox unavailable"}, fmt.Errorf("canonical intake requires a durable inbox")
 		}
+		return s.acceptInbox(req)
 	}
 	if runID == "" {
 		return requestReviewResult{Status: "rejected", Reason: "review request is missing run identity"}, fmt.Errorf("review request is missing run identity")
 	}
-	if !canonical && s.isRunActive(runID) {
+	if s.isRunActive(runID) {
 		return requestReviewResult{RunID: runID, Status: "rejected", Reason: "review already running"}, fmt.Errorf("review already running for %s", runID)
 	}
-	if !canonical && s.pipeline != nil && s.pipeline.Jobs != nil {
+	if s.pipeline != nil && s.pipeline.Jobs != nil {
 		if run, err := s.pipeline.Jobs.Get(context.Background(), runID); err == nil && run.Status == pipeline.StatusRunning {
 			return requestReviewResult{RunID: runID, Status: "rejected", Reason: "review already running"}, fmt.Errorf("review already running for %s", runID)
 		}
 	}
 	name := fmt.Sprintf("%s/%s/%s", req.Provider, req.ProjectID, firstNonEmptyString(req.ChangeID, strconv.Itoa(req.MRIID)))
 	deliveryKey := req.Provider + ":" + req.DeliveryID
-	if !canonical && webhook && req.DeliveryID != "" && !s.claimDelivery(deliveryKey) {
+	if webhook && req.DeliveryID != "" && !s.claimDelivery(deliveryKey) {
 		log.Printf("[server] duplicate webhook delivery ignored: %s", deliveryKey)
 		return requestReviewResult{RunID: runID, Status: "ignored", Reason: "duplicate webhook delivery"}, nil
 	}
@@ -332,11 +334,7 @@ func (s *Server) enqueueReview(req review.Request, webhook bool) (requestReviewR
 		run: func(ctx context.Context) error {
 			defer s.clearRunActive(runID)
 			var err error
-			if canonical {
-				err = s.pipeline.RunIdentified(ctx, req, runID)
-			} else {
-				err = s.pipeline.Run(ctx, req)
-			}
+			err = s.pipeline.Run(ctx, req)
 			if err != nil && webhook && req.DeliveryID != "" {
 				s.releaseDelivery(deliveryKey)
 			}

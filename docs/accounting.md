@@ -39,7 +39,8 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v3 adds intake receipts and generation fencing without clearing holds. A missing or
+Schema v4 adds the durable HTTP inbox to v3 intake receipts and generation fencing,
+without clearing holds. A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
 
 ## Runtime Intake
@@ -60,6 +61,33 @@ host, not a webhook/report URL. It runs artifact-only, with legacy publication a
 optional ungoverned memory/context side effects disabled. The runtime factory has
 an empty qualified-route catalog and no receipt verifier: enabling intake alone
 cannot spend on any production model. Real-provider qualification remains required.
+
+### HTTP Acceptance and Recovery
+
+Canonical GitHub/GitLab review requests commit a PostgreSQL inbox row before HTTP
+202. Responses include `durable: true`, a stable `run_id` and acceptance status.
+Delivery replay returns that same ID and never extends its original deadline;
+changed raw or normalized payloads are rejected and durably audited. Requests
+without a delivery ID (including explicit manual requests) are fresh intents,
+not idempotent retries. Ignored/non-reviewable events do not claim durable work.
+
+Workers poll pending rows, so a crash between acceptance and queue notification
+cannot lose accepted work. A committed exclusive claim precedes pipeline entry.
+Only unclaimed pending work is recoverable automatically. A crash, panic or
+shutdown after claim is not permission to execute again: the row remains running
+until its original deadline, then becomes `uncertain`. Expired pending work becomes
+`expired`. Neither state releases budget holds or authorizes redispatch.
+
+`GET /inbox?run_id=<id>` uses the existing API-token middleware and returns only
+run ID, state and original deadline, including when no local run artifact exists.
+Configure `API_TOKEN` to protect this operational endpoint. `completed` means the
+pipeline returned successfully, not provider settlement or publication approval.
+Database/claim/completion failures never fall back to the volatile queue.
+
+This conservative recovery intentionally sacrifices automatic progress after a
+claimed crash. Action-level resume, authenticated operator recovery, durable
+result storage and full inbox-to-attempt/event atomicity remain unimplemented.
+Do not requeue uncertain rows manually or delete them to obtain fresh allowance.
 
 Service workers observe the current generation before SCM acquisition. Admission
 compares that generation atomically; a late acquisition cannot move the pointer
@@ -132,7 +160,7 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 - Production receipt-verifier adapters and authenticated operator settlement
   commands; library-level reconciliation tests use an explicit test verifier.
-- Durable HTTP inbox/recovery, full action ownership and provider currentness
+- Full action-level recovery/ownership and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
 - Complete stable-provider-ID/alias migration and rename qualification, including
   historical path-keyed records; new identity checks are not proof of that exit.

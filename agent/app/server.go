@@ -33,6 +33,8 @@ type Server struct {
 	stats             workerStats
 	channelCancel     context.CancelFunc
 	accountingRuntime *accounting.Runtime
+	inboxCancel       context.CancelFunc
+	inboxWorkers      sync.WaitGroup
 }
 
 const defaultWebhookJobTimeout = 15 * time.Minute
@@ -152,6 +154,7 @@ func newServer(cfg *config.Config) (*Server, error) {
 		s.pipeline.ContextReducer = pipeline.NoopContextReducer{}
 	}
 	s.startWorkers()
+	s.startInboxWorkers()
 	listenerCtx, cancel := context.WithCancel(context.Background())
 	s.channelCancel = cancel
 	s.startChannelListeners(listenerCtx)
@@ -245,6 +248,10 @@ func (s *Server) Close() error {
 	}
 	if s.channelCancel != nil {
 		s.channelCancel()
+	}
+	if s.inboxCancel != nil {
+		s.inboxCancel()
+		s.inboxWorkers.Wait()
 	}
 	return s.accountingRuntime.Close()
 }

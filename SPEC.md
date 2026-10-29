@@ -112,6 +112,14 @@ commit precede acknowledgement. Invalid credentials return 401/403, invalid inpu
 400/422, admission-limit rejection 429, and storage unavailability 503. Accepted
 work returns 202 with a durable receipt, including when workers are busy.
 
+Implementation checkpoint (2026-10-29): the opt-in canonical runtime commits
+normalized review inbox requests and stable run IDs before 202. Operational
+`GET /inbox?run_id=...` exposes acceptance state/deadline under the existing API
+token policy, without payloads or execution credentials. Only unclaimed work is
+automatically recovered; claimed crashes remain non-retryable and become
+uncertain at expiry. This intermediate implementation does not satisfy the full
+atomic inbox/attempt/job contract or action-level recovery acceptance criteria.
+
 Local/CI application calls return typed receipts or errors, not HTTP responses.
 They checkpoint before dispatch in the selected store. An ephemeral receipt is
 job-local and MUST declare that runner destruction removes recovery state;

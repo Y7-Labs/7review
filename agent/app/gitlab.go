@@ -88,6 +88,12 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}
+		if result.Durable {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
 		w.WriteHeader(http.StatusAccepted)
 		if result.Status == "ignored" && result.Reason != "" {
 			_, _ = w.Write([]byte(result.Reason))

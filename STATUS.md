@@ -42,10 +42,12 @@ or receipt-verifier defaults. Canonical service worker/CI intake is now wired
 through opt-in PostgreSQL configuration, with pre-dispatch checkpoints, immutable
 attempts, generation fencing and trusted provider hosts. Production inference
 intentionally remains fail-closed, and canonical service work is artifact-only.
-Durable HTTP inbox/recovery, full G01-G03 action ownership/currentness, non-model
+Durable HTTP acceptance and pending-work recovery now preserve stable receipts
+and original deadlines; claimed crashes remain non-retryable/uncertain. Full
+G01-G03 action recovery/ownership/currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-27.
+[Accounting](docs/accounting.md) and progress slices 20-29.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

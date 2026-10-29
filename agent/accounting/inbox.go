@@ -53,7 +53,7 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 	}
 	var stored string
 	item := &InboxItem{}
-	if err = tx.QueryRowContext(ctx, `SELECT run_id,fingerprint,state,deadline FROM budget_inbox WHERE id=$1 FOR UPDATE`, key).Scan(&item.RunID, &stored, &item.State, &item.Deadline); err != nil {
+	if err = tx.QueryRowContext(ctx, `SELECT run_id,fingerprint,CASE WHEN deadline<=clock_timestamp() AND state='pending' THEN 'expired' WHEN deadline<=clock_timestamp() AND state='running' THEN 'uncertain' ELSE state END,deadline FROM budget_inbox WHERE id=$1 FOR UPDATE`, key).Scan(&item.RunID, &stored, &item.State, &item.Deadline); err != nil {
 		return nil, err
 	}
 	if stored != fingerprint {
@@ -66,6 +66,24 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 		return nil, errors.New("durable inbox delivery payload conflict")
 	}
 	item.Request = req
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+// LookupInbox exposes acceptance status without disclosing stored payload or claim credentials.
+func (a *Authority) LookupInbox(ctx context.Context, runID string) (*InboxItem, error) {
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	item := &InboxItem{}
+	err = tx.QueryRowContext(ctx, `SELECT run_id,CASE WHEN deadline<=clock_timestamp() AND state='pending' THEN 'expired' WHEN deadline<=clock_timestamp() AND state='running' THEN 'uncertain' ELSE state END,deadline FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline)
+	if err != nil {
+		return nil, err
+	}
 	if err = tx.Commit(); err != nil {
 		return nil, err
 	}

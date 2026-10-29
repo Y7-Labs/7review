@@ -110,13 +110,12 @@ func TestCanonicalServiceRuntimePersistsIntakeButDeniesUnqualifiedModel(t *testi
 	}
 	waitStatus(first.RunID, pipeline.StatusIgnored)
 	req.PayloadDigest = canonicalPayloadDigest([]byte("body-two"))
-	conflict, err := s.enqueueReview(req, true)
-	if err != nil {
-		t.Fatal(err)
+	_, err = s.enqueueReview(req, true)
+	if err == nil {
+		t.Fatal("conflicting replay accepted before worker intake")
 	}
-	waitStatus(conflict.RunID, pipeline.StatusFailed)
 	var conflicts int
-	if err = db.QueryRow(`SELECT count(*) FROM budget_intake_conflicts`).Scan(&conflicts); err != nil || conflicts != 1 || calls.Load() != 0 {
+	if err = db.QueryRow(`SELECT count(*) FROM budget_inbox_conflicts`).Scan(&conflicts); err != nil || conflicts != 1 || calls.Load() != 0 {
 		t.Fatalf("process-local dedup hid payload conflict: conflicts=%d calls=%d err=%v", conflicts, calls.Load(), err)
 	}
 }
