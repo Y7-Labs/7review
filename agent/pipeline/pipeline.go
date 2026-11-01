@@ -51,7 +51,7 @@ const (
 
 // Run executes the automated review pipeline.
 func (p *Pipeline) Run(ctx context.Context, req review.Request) error {
-	return p.run(ctx, req, "")
+	return p.run(ctx, req, "", nil)
 }
 
 func (p *Pipeline) RunIdentified(ctx context.Context, req review.Request, id string) error {
@@ -61,10 +61,10 @@ func (p *Pipeline) RunIdentified(ctx context.Context, req review.Request, id str
 	if claim := review.JobClaimFromContext(ctx); claim != nil && claim.RunID != id {
 		return fmt.Errorf("identified run does not match durable job claim")
 	}
-	return p.run(ctx, req, id)
+	return p.run(ctx, req, id, nil)
 }
 
-func (p *Pipeline) run(ctx context.Context, req review.Request, id string) error {
+func (p *Pipeline) run(ctx context.Context, req review.Request, id string, accepted *acceptedExecution) error {
 	if p == nil || p.Orchestrator == nil {
 		return fmt.Errorf("pipeline: orchestrator is not configured")
 	}
@@ -105,106 +105,110 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string) error
 		"change":   firstNonEmpty(req.ChangeID, strconv.Itoa(req.MRIID)),
 	})
 
-	rc := review.NewContext(req)
-	rc.Source.Run.ID = run.ID
-	rc.Source.Run.AvailableTools = []string{"scm", "diff", "context", "review", "report", "memory"}
-	var generation uint64
-	if p.Canonical != nil {
-		if p.DeliveryMode != DeliveryArtifactOnly {
-			return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical publication requires governed outbox; artifact-only execution is required"))
-		}
-		change, err := p.Canonical.change(req)
-		if err != nil {
-			return p.failModelReview(ctx, run.ID, rc, err)
-		}
-		if p.Canonical.Execution.Mode == review.ExecutionService {
-			if p.Canonical.Authority == nil {
-				return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical service intake authority is unavailable"))
-			}
-			generation, err = p.Canonical.Authority.ObserveGeneration(ctx, change)
-			if err != nil {
-				return p.failModelReview(ctx, run.ID, rc, err)
-			}
-		}
-	}
-
-	scmContext, err := p.SCM.Enrich(ctx, req)
-	if err != nil {
-		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-		return err
-	}
-	applySCMContext(rc, scmContext)
-	p.trace(ctx, run.ID, "scm_enriched", StatusRunning, "SCM metadata and changed files loaded", map[string]string{
-		"files":       strconv.Itoa(len(scmContext.Files)),
-		"provider":    scmContext.Provider,
-		"project":     firstNonEmpty(scmContext.ProjectID, req.ProjectID),
-		"change":      firstNonEmpty(scmContext.ChangeID, req.ChangeID, strconv.Itoa(req.MRIID)),
-		"has_web_url": strconv.FormatBool(strings.TrimSpace(scmContext.WebURL) != ""),
-	})
-
-	rc.Diff = normalizeDiff(scmContext.Files)
-	rc.Request.ChangedPaths = rc.ChangedPaths()
-	var policyMethods []ResolvedPolicyMethod
+	var rc *review.Context
+	var scmContext *review.SCMContext
 	var policyRules []policy.ResolvedRule
-	if p.TrustedPolicy != nil {
-		admission, admissionErr := p.TrustedPolicy.Evaluate(ctx, rc.Request, scmContext)
-		if admissionErr != nil {
-			_ = p.Jobs.SaveContext(ctx, run.ID, rc)
-			_ = p.Jobs.Update(ctx, run.ID, StatusFailed, admissionErr)
-			return admissionErr
-		}
-		rc.Source.Policy = projectTrustedPolicy(admission)
-		if admission.Enforced {
-			policyMethods = admission.Methods
-			if admission.Effective != nil {
-				policyRules = admission.Effective.Rules
-			}
-		}
-		if admission.Attestation.Verified {
-			attestation := admission.Attestation
-			rc.Source.Attestation = &attestation
-		}
-		if admission.Warning != "" {
-			rc.AddWarning(admission.Warning)
-		}
-		p.trace(ctx, run.ID, "trusted_policy_evaluated", StatusRunning, "trusted repository policy evaluated", map[string]string{
-			"mode":             admission.Mode,
-			"trigger_accepted": strconv.FormatBool(admission.Trigger.Accepted),
-			"policy_digest":    rc.Source.Policy.Digest,
-			"source_revision":  rc.Source.Policy.SourceRevision,
-		})
-		if admission.Enforced && !admission.Trigger.Accepted {
-			if err := p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
-				_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-				return err
-			}
-			return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
-		}
-	}
-	if p.Canonical != nil {
-		duplicate, err := p.Canonical.admit(ctx, rc, generation)
-		if err != nil {
-			return p.failModelReview(ctx, run.ID, rc, err)
-		}
+	if accepted != nil {
+		rc = review.NewContext(accepted.aggregate.Source.Request)
+		rc.Source = accepted.aggregate.Source.Clone()
+		scmContext = rc.Source.SCM
+		policyRules = accepted.rules
 		if err = p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
 			return p.failModelReview(ctx, run.ID, rc, err)
 		}
-		if duplicate {
+		if accepted.aggregate.Receipt.Duplicate {
 			return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
 		}
+	} else {
+		rc = review.NewContext(req)
+		rc.Source.Run.ID = run.ID
+		rc.Source.Run.AvailableTools = []string{"scm", "diff", "context", "review", "report", "memory"}
+		var generation uint64
+		if p.Canonical != nil {
+			if p.DeliveryMode != DeliveryArtifactOnly {
+				return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical publication requires governed outbox; artifact-only execution is required"))
+			}
+			change, err := p.Canonical.change(req)
+			if err != nil {
+				return p.failModelReview(ctx, run.ID, rc, err)
+			}
+			if p.Canonical.Execution.Mode == review.ExecutionService {
+				if p.Canonical.Authority == nil {
+					return p.failModelReview(ctx, run.ID, rc, fmt.Errorf("canonical service intake authority is unavailable"))
+				}
+				generation, err = p.Canonical.Authority.ObserveGeneration(ctx, change)
+				if err != nil {
+					return p.failModelReview(ctx, run.ID, rc, err)
+				}
+			}
+		}
+
+		scmContext, err = p.SCM.Enrich(ctx, req)
+		if err != nil {
+			_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+			return err
+		}
+		applySCMContext(rc, scmContext)
+		p.trace(ctx, run.ID, "scm_enriched", StatusRunning, "SCM metadata and changed files loaded", map[string]string{
+			"files":       strconv.Itoa(len(scmContext.Files)),
+			"provider":    scmContext.Provider,
+			"project":     firstNonEmpty(scmContext.ProjectID, req.ProjectID),
+			"change":      firstNonEmpty(scmContext.ChangeID, req.ChangeID, strconv.Itoa(req.MRIID)),
+			"has_web_url": strconv.FormatBool(strings.TrimSpace(scmContext.WebURL) != ""),
+		})
+
+		rc.Diff = normalizeDiff(scmContext.Files)
+		rc.Request.ChangedPaths = rc.ChangedPaths()
+		var policyMethods []ResolvedPolicyMethod
+		if p.TrustedPolicy != nil {
+			admission, admissionErr := p.TrustedPolicy.Evaluate(ctx, rc.Request, scmContext)
+			if admissionErr != nil {
+				_ = p.Jobs.SaveContext(ctx, run.ID, rc)
+				_ = p.Jobs.Update(ctx, run.ID, StatusFailed, admissionErr)
+				return admissionErr
+			}
+			rc.Source.Policy = projectTrustedPolicy(admission)
+			if admission.Enforced {
+				policyMethods = admission.Methods
+				if admission.Effective != nil {
+					policyRules = admission.Effective.Rules
+				}
+			}
+			if admission.Attestation.Verified {
+				attestation := admission.Attestation
+				rc.Source.Attestation = &attestation
+			}
+			if admission.Warning != "" {
+				rc.AddWarning(admission.Warning)
+			}
+			p.trace(ctx, run.ID, "trusted_policy_evaluated", StatusRunning, "trusted repository policy evaluated", map[string]string{
+				"mode":             admission.Mode,
+				"trigger_accepted": strconv.FormatBool(admission.Trigger.Accepted),
+				"policy_digest":    rc.Source.Policy.Digest,
+				"source_revision":  rc.Source.Policy.SourceRevision,
+			})
+			if admission.Enforced && !admission.Trigger.Accepted {
+				if err := p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
+					_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+					return err
+				}
+				return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
+			}
+		}
+		if p.Canonical != nil {
+			duplicate, err := p.Canonical.admit(ctx, rc, generation)
+			if err != nil {
+				return p.failModelReview(ctx, run.ID, rc, err)
+			}
+			if err = p.Jobs.SaveContext(ctx, run.ID, rc); err != nil {
+				return p.failModelReview(ctx, run.ID, rc, err)
+			}
+			if duplicate {
+				return p.Jobs.Update(ctx, run.ID, StatusIgnored, nil)
+			}
+		}
+		p.selectPolicySkills(rc, policyMethods, policyRules)
 	}
-	if p.SkillLoader != nil && !rc.Source.Policy.Enforced {
-		rc.Source.SkillActivations = p.SkillLoader.SelectActivations(rc.Request)
-		rc.Source.SkillSections = p.SkillLoader.Select(rc.Request)
-	}
-	for _, method := range policyMethods {
-		rc.Source.SkillActivations = append(rc.Source.SkillActivations, method.Activation)
-		rc.Source.SkillSections = append(rc.Source.SkillSections, method.Section)
-	}
-	for _, rule := range policyRules {
-		rc.Source.SkillActivations = append(rc.Source.SkillActivations, review.SkillActivation{Name: "rule:" + rule.ID, Path: rule.Source.Path, Category: "policy", Required: true, RequiredChecks: append([]string(nil), rule.Checks...), Reason: "required by selected trusted rule"})
-	}
-	rc.Source.SkillActivations = mergeEffectivePolicyActivation(rc.Source.SkillActivations, rc.Source.Policy)
 	p.trace(ctx, run.ID, "skills_selected", StatusRunning, "repository review skills selected", map[string]string{
 		"count": strconv.Itoa(len(rc.SkillSections)),
 		"paths": joinSectionPaths(rc.SkillSections, 8),

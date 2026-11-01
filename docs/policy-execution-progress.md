@@ -644,6 +644,20 @@ This is an incremental behavior ledger, not a completion declaration.
 - This slice establishes storage atomicity; HTTP preparation and worker reuse of
   the persisted Source are separate wiring steps, not yet implied by this API.
 
+### Slice 38: Side-Effect-Free Preparation and Frozen Worker Continuation
+
+- R14/S15 preparation now reads trusted SCM/base policy, resolves skills/rules,
+  observes generation before acquisition and returns a serializable checkpoint
+  without creating runs, attempts, model calls or publications.
+- Accepted execution consumes that checkpoint without new SCM reads or
+  readmission. Required skills/rules use the same selection helper as existing
+  pipeline execution. Trigger rejection is ignored, never promoted to authority;
+  preview/unverified policy cannot become an accepted service aggregate.
+- A red continuation test caught a publication-mode bypass in the new branch;
+  accepted execution now requires artifact-only delivery before any model call.
+- Verification: focused red/green tests and the full pipeline package pass.
+  HTTP acceptance has not yet been switched to the new preparation path.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
