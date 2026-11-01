@@ -13,6 +13,7 @@ import (
 // InboxItem acknowledges durable acceptance, not permission to dispatch.
 // Claimed work is never automatically retried: its effects may be uncertain.
 type InboxItem struct {
+	created             bool
 	AttemptID           string
 	JobPhase            string
 	RecordedUnvalidated int64
@@ -23,6 +24,8 @@ type InboxItem struct {
 	Deadline            time.Time
 	ClaimToken          string
 }
+
+var ErrInboxConflict = errors.New("durable inbox delivery payload conflict")
 
 type InboxHealth struct {
 	Pending   int64 `json:"pending"`
@@ -53,6 +56,22 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 }
 
 func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout time.Duration) (*InboxItem, error) {
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	item, err := a.acceptInboxTx(ctx, tx, req, timeout)
+	if err != nil && !errors.Is(err, ErrInboxConflict) {
+		return nil, err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return nil, commitErr
+	}
+	return item, err
+}
+
+func (a *Authority) acceptInboxTx(ctx context.Context, tx *sql.Tx, req review.Request, timeout time.Duration) (*InboxItem, error) {
 	if req.Provider == "" || req.ProjectID == "" || (req.ChangeID == "" && req.MRIID <= 0) || timeout <= 0 || timeout > 24*time.Hour {
 		return nil, errors.New("invalid durable inbox request")
 	}
@@ -75,22 +94,21 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 	if err != nil {
 		return nil, err
 	}
-	tx, err := a.begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 	inserted, err := tx.ExecContext(ctx, `INSERT INTO budget_inbox(id,boundary_id,project_id,run_id,fingerprint,request,state,deadline) VALUES($1,$2,$3,$4,$5,$6,'pending',clock_timestamp()+$7*interval '1 millisecond') ON CONFLICT(id) DO NOTHING`, key, a.cfg.BoundaryID, a.cfg.ProjectID, runID, fingerprint, raw, timeout.Milliseconds())
 	if err != nil {
 		return nil, err
 	}
-	if n, _ := inserted.RowsAffected(); n == 1 {
+	n, err := inserted.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if n == 1 {
 		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_jobs(run_id,phase) VALUES($1,'accepted')`, runID); err != nil {
 			return nil, err
 		}
 	}
 	var stored string
-	item := &InboxItem{}
+	item := &InboxItem{created: n == 1}
 	if err = tx.QueryRowContext(ctx, `SELECT run_id,fingerprint,CASE WHEN deadline<=clock_timestamp() AND state='pending' THEN 'expired' WHEN deadline<=clock_timestamp() AND state='running' THEN 'uncertain' ELSE state END,deadline FROM budget_inbox WHERE id=$1 FOR UPDATE`, key).Scan(&item.RunID, &stored, &item.State, &item.Deadline); err != nil {
 		return nil, err
 	}
@@ -98,18 +116,12 @@ func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout
 		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_inbox_conflicts(id,inbox_id,fingerprint) VALUES($1,$2,$3)`, nonce, key, fingerprint); err != nil {
 			return nil, err
 		}
-		if err = tx.Commit(); err != nil {
-			return nil, err
-		}
-		return nil, errors.New("durable inbox delivery payload conflict")
+		return nil, ErrInboxConflict
 	}
 	item.Request = req
 	var jobID string
 	if err = tx.QueryRowContext(ctx, `SELECT run_id FROM budget_jobs WHERE run_id=$1`, item.RunID).Scan(&jobID); err != nil {
 		return nil, errors.New("accepted inbox job missing; recovery required")
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
 	}
 	return item, nil
 }

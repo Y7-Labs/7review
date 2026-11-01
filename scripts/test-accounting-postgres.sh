@@ -10,7 +10,7 @@ docker run --rm -d --name "$name" \
   -e POSTGRES_DB=budget_test -p 127.0.0.1::5432 postgres:16-alpine >/dev/null
 ready=false
 for ((i=0; i<120; i++)); do
-  if docker exec "$name" pg_isready -U budget_test -d budget_test >/dev/null 2>&1; then
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U budget_test -d budget_test >/dev/null 2>&1; then
     ready=true
     break
   fi

@@ -13,6 +13,7 @@ import (
 )
 
 var ErrStaleIntake = errors.New("canonical intake generation changed during acquisition")
+var ErrIntakeConflict = errors.New("delivery identity conflicts with canonical payload")
 
 func (a *Authority) trackingKey(change review.ChangeKey) string {
 	raw, _ := json.Marshal(struct {
@@ -46,6 +47,22 @@ func (a *Authority) ObserveGeneration(ctx context.Context, change review.ChangeK
 }
 
 func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.IntakeReceipt, error) {
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return review.IntakeReceipt{}, err
+	}
+	defer tx.Rollback()
+	receipt, err := a.admitTx(ctx, tx, input)
+	if err != nil && !errors.Is(err, ErrIntakeConflict) {
+		return review.IntakeReceipt{}, err
+	}
+	if commitErr := tx.Commit(); commitErr != nil {
+		return review.IntakeReceipt{}, commitErr
+	}
+	return receipt, err
+}
+
+func (a *Authority) admitTx(ctx context.Context, tx *sql.Tx, input review.Admission) (review.IntakeReceipt, error) {
 	input.Execution.DeadlineAt = input.Execution.DeadlineAt.UTC()
 	input.Attestation.VerifiedAt = input.Attestation.VerifiedAt.UTC()
 	if input.Policy.Limits == nil || input.Policy.OperatorCeilings == nil || !input.Policy.Enforced || input.Policy.Mode != "enforce" {
@@ -102,11 +119,6 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 	fingerprint := hash(fingerprintRaw)
 	keyRaw, _ := json.Marshal([]string{a.trackingKey(input.Change), string(input.Execution.Mode), input.Execution.ProducerID, input.DeliveryID})
 	key := hash(keyRaw)
-	tx, err := a.begin(ctx)
-	if err != nil {
-		return review.IntakeReceipt{}, err
-	}
-	defer tx.Rollback()
 	if err = a.validateJobAdmission(ctx, tx, input); err != nil {
 		return review.IntakeReceipt{}, err
 	}
@@ -133,10 +145,7 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 			if _, err = tx.ExecContext(ctx, `INSERT INTO budget_intake_conflicts(id,intake_id,fingerprint) VALUES($1,$2,$3) ON CONFLICT(id) DO NOTHING`, hash([]byte(key+fingerprint)), key, fingerprint); err != nil {
 				return review.IntakeReceipt{}, err
 			}
-			if err = tx.Commit(); err != nil {
-				return review.IntakeReceipt{}, err
-			}
-			return review.IntakeReceipt{}, errors.New("delivery identity conflicts with canonical payload")
+			return review.IntakeReceipt{}, ErrIntakeConflict
 		}
 		var receipt review.IntakeReceipt
 		if err = json.Unmarshal(receiptJSON, &receipt); err != nil {
@@ -144,9 +153,6 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 		}
 		receipt.Duplicate = true
 		if err = linkJob(ctx, tx, input, receipt); err != nil {
-			return review.IntakeReceipt{}, err
-		}
-		if err = tx.Commit(); err != nil {
 			return review.IntakeReceipt{}, err
 		}
 		return receipt, nil
@@ -196,10 +202,6 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 			if err = linkJob(ctx, tx, input, previous); err != nil {
 				return review.IntakeReceipt{}, err
 			}
-			if err = tx.Commit(); err != nil {
-				return review.IntakeReceipt{}, err
-			}
-			previous.Duplicate = true
 			return previous, nil
 		}
 	}
@@ -225,9 +227,6 @@ func (a *Authority) Admit(ctx context.Context, input review.Admission) (review.I
 		return review.IntakeReceipt{}, err
 	}
 	if err = linkJob(ctx, tx, input, receipt); err != nil {
-		return review.IntakeReceipt{}, err
-	}
-	if err = tx.Commit(); err != nil {
 		return review.IntakeReceipt{}, err
 	}
 	return receipt, nil

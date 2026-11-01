@@ -617,6 +617,17 @@ This is an incremental behavior ledger, not a completion declaration.
   across app, pipeline, CLI, accounting and orchestrator; vet, formatting, diff
   and Compose configuration checks pass.
 
+### Slice 36: Caller-Owned Acceptance Transactions
+
+- Red: admission and inbox helpers committed independently of their caller.
+  Added real-DB rollback cases for inbox/job creation and attempt/intake/head
+  identity. Both now have transaction-scoped implementations; public operations
+  still commit explicitly and retain conflict audits.
+- This enables, but does not itself claim, the complete before-202 aggregate.
+  Existing replay, commit-fault and accounting behavior remains covered.
+- The disposable PostgreSQL harness now waits for TCP readiness, not the
+  bootstrap-only Unix socket that could yield transient connection resets.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
