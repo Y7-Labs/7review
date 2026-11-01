@@ -628,6 +628,22 @@ This is an incremental behavior ledger, not a completion declaration.
 - The disposable PostgreSQL harness now waits for TCP readiness, not the
   bootstrap-only Unix socket that could yield transient connection resets.
 
+### Slice 37: Atomic Accepted Aggregate Storage
+
+- R14/S15 red cases now cover failure after the final aggregate INSERT: inbox,
+  job, attested attempt, intake receipt, generation pointer, prepared Source and
+  initial acceptance event all roll back together. Acceptance returns only after
+  the single transaction commits.
+- Schema v7 stores a bounded, checksummed, versioned prepared checkpoint. Replays
+  preserve original identity/deadline and verify state/receipt/event consistency;
+  conflicting payloads are durably audited and corrupt checkpoints fail closed.
+- Internal admission ownership is revoked before commit. The job becomes pending
+  with an admitted attempt, and a worker must obtain a separate execution claim.
+  Pre-v7 nonterminal jobs migrate as legacy-unknown rather than reconstructing
+  their missing state from newer SCM data. Holds are not deleted or reset.
+- This slice establishes storage atomicity; HTTP preparation and worker reuse of
+  the persisted Source are separate wiring steps, not yet implied by this API.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

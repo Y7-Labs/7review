@@ -54,6 +54,15 @@ type IntakeReceipt struct {
 	Duplicate   bool
 }
 
+// AcceptedAggregate is immutable pre-dispatch state, not a completed review.
+type AcceptedAggregate struct {
+	Version         int
+	OriginalRequest Request
+	Receipt         IntakeReceipt
+	Source          Source
+	Continuation    []byte
+}
+
 type AttemptIntake interface {
 	ObserveGeneration(context.Context, ChangeKey) (uint64, error)
 	Admit(context.Context, Admission) (IntakeReceipt, error)
