@@ -58,13 +58,16 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 	}
 	var request, quoteJSON, upperJSON []byte
 	var settled, incident bool
-	var digest string
-	err = tx.QueryRowContext(ctx, `SELECT request_digest,request,quote,upper_amount,settled,integrity_incident FROM budget_actions WHERE id=$1 FOR UPDATE`, r.ActionID).Scan(&digest, &request, &quoteJSON, &upperJSON, &settled, &incident)
+	var digest, state string
+	err = tx.QueryRowContext(ctx, `SELECT request_digest,request,quote,upper_amount,settled,integrity_incident,state FROM budget_actions WHERE id=$1 FOR UPDATE`, r.ActionID).Scan(&digest, &request, &quoteJSON, &upperJSON, &settled, &incident, &state)
 	if errors.Is(err, sql.ErrNoRows) {
 		return quarantine(ctx, tx, r, raw, "receipt has no matching action")
 	}
 	if err != nil {
 		return err
+	}
+	if state == "prepared" {
+		return quarantine(ctx, tx, r, raw, "receipt precedes sending marker")
 	}
 	var intent orchestrator.DispatchIntent
 	var quote Quote

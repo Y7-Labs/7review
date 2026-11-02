@@ -68,6 +68,9 @@ var migration006 string
 //go:embed migration007.sql
 var migration007 string
 
+//go:embed migration008.sql
+var migration008 string
+
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, setting := range []string{"fsync", "full_page_writes"} {
@@ -185,7 +188,19 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 7
 	}
-	if version != 7 {
+	if version == 7 {
+		if err = requireRelation(ctx, tx, "budget_aggregates"); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, migration008); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_schema SET version=8 WHERE singleton=true`); err != nil {
+			return err
+		}
+		version = 8
+	}
+	if version != 8 {
 		return errors.New("incompatible accounting schema")
 	}
 	for _, table := range []string{"budget_receipts", "budget_quarantine"} {
@@ -198,7 +213,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
-	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs", "budget_action_results", "budget_aggregates"} {
+	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs", "budget_action_results", "budget_aggregates", "budget_action_leases"} {
 		if err = requireRelation(ctx, tx, table); err != nil {
 			return err
 		}
@@ -355,6 +370,15 @@ func (a *Authority) scopeRefs(i orchestrator.DispatchIntent, binding []byte) []s
 }
 
 func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.DispatchIntent) (orchestrator.DispatchPermit, error) {
+	return a.reserveAction(ctx, i, false)
+}
+
+func (a *Authority) PrepareAction(ctx context.Context, i orchestrator.DispatchIntent) (orchestrator.PreparedAction, error) {
+	p, err := a.reserveAction(ctx, i, true)
+	return orchestrator.PreparedAction{ID: p.ID, RequestDigest: p.RequestDigest, Fence: p.Fence, AlreadyStarted: p.AlreadyStarted}, err
+}
+
+func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIntent, prepared bool) (orchestrator.DispatchPermit, error) {
 	if !validID(i.ActionID) || !validID(i.Provider) || !validID(i.Model) || !validID(i.Role) || !validID(i.Step) {
 		return orchestrator.DispatchPermit{}, errors.New("action and route identity required")
 	}
@@ -395,11 +419,18 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	if stored != hash(binding) {
 		return orchestrator.DispatchPermit{}, errors.New("dispatch does not match registered attempt")
 	}
-	var actionDigest string
-	err = tx.QueryRowContext(ctx, `SELECT intent_digest FROM budget_actions WHERE id=$1`, i.ActionID).Scan(&actionDigest)
+	var actionDigest, state string
+	err = tx.QueryRowContext(ctx, `SELECT intent_digest,state FROM budget_actions WHERE id=$1`, i.ActionID).Scan(&actionDigest, &state)
 	if err == nil {
 		if actionDigest != hash(request) {
 			return orchestrator.DispatchPermit{}, errors.New("action identity conflicts with immutable request")
+		}
+		if prepared && state == "prepared" {
+			var fence int64
+			if err = tx.QueryRowContext(ctx, `SELECT fence FROM budget_action_leases WHERE action_id=$1`, i.ActionID).Scan(&fence); err != nil {
+				return orchestrator.DispatchPermit{}, err
+			}
+			return orchestrator.DispatchPermit{ID: i.ActionID, RequestDigest: i.RequestDigest, Fence: uint64(fence)}, nil
 		}
 		return orchestrator.DispatchPermit{ID: i.ActionID, RequestDigest: i.RequestDigest, AlreadyStarted: true}, nil
 	}
@@ -466,7 +497,11 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 	}
 	upperJSON, _ := json.Marshal(upper)
 	quoteJSON, _ := json.Marshal(quote)
-	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_actions(id,attempt_id,request_digest,intent_digest,request,quote,upper_amount,state) VALUES($1,$2,$3,$4,$5,$6,$7,'sending')`, i.ActionID, i.Attempt.AttemptID, i.RequestDigest, hash(request), request, quoteJSON, upperJSON); err != nil {
+	state = "sending"
+	if prepared {
+		state = "prepared"
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_actions(id,attempt_id,request_digest,intent_digest,request,quote,upper_amount,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`, i.ActionID, i.Attempt.AttemptID, i.RequestDigest, hash(request), request, quoteJSON, upperJSON, state); err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
 	for _, ref := range refs {
@@ -474,7 +509,12 @@ func (a *Authority) ReserveAndBegin(ctx context.Context, i orchestrator.Dispatch
 			return orchestrator.DispatchPermit{}, err
 		}
 	}
-	if i.Job != nil {
+	if prepared {
+		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_action_leases(action_id) VALUES($1)`, i.ActionID); err != nil {
+			return orchestrator.DispatchPermit{}, err
+		}
+	}
+	if i.Job != nil && !prepared {
 		if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='effect_started',updated_at=clock_timestamp() WHERE run_id=$1`, i.Job.RunID); err != nil {
 			return orchestrator.DispatchPermit{}, err
 		}
@@ -547,8 +587,12 @@ func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPe
 	}
 	var upperJSON []byte
 	var incident bool
-	if err = tx.QueryRowContext(ctx, `SELECT request_digest,outcome,upper_amount,integrity_incident FROM budget_actions WHERE id=$1 FOR UPDATE`, p.ID).Scan(&digest, &previous, &upperJSON, &incident); err != nil {
+	var state string
+	if err = tx.QueryRowContext(ctx, `SELECT request_digest,outcome,upper_amount,integrity_incident,state FROM budget_actions WHERE id=$1 FOR UPDATE`, p.ID).Scan(&digest, &previous, &upperJSON, &incident, &state); err != nil {
 		return err
+	}
+	if state == "prepared" {
+		return errors.New("prepared action has no sending authority")
 	}
 	if digest != p.RequestDigest {
 		return errors.New("outcome request identity mismatch")
@@ -562,7 +606,7 @@ func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPe
 		}
 		return nil
 	}
-	state := "uncertain"
+	state = "uncertain"
 	if o.ResponseReceived {
 		state = "result_recorded"
 	}
@@ -628,7 +672,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 7 {
+	if version != 8 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

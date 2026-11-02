@@ -691,6 +691,20 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification (2026-11-02): full PostgreSQL-enabled suite, broad real-DB race tests, focused
   before-202 crash/replay/corruption races, vet, gofmt, diff and Compose checks.
 
+### Slice 40: Durable Non-Sending Preparation
+
+- REC-01 red tests establish `prepared` as a distinct execution state. Immutable
+  request/quote and three holds commit once with an initially unowned lease row.
+  Preparation replay preserves identity and never authorizes provider I/O.
+- The immediate-send compatibility API cannot promote an existing prepared action.
+  REC-02 negative tests reject outcome and final-usage receipts before sending;
+  impossible final receipts are quarantined without releasing the reservation.
+- Schema v8 adds lease/fence storage without inventing leases for historical
+  sending actions. Claims, sending transitions and runtime wiring follow as
+  separate verified steps. Production route qualification remains unchanged.
+- Verification: PostgreSQL accounting/orchestrator suite, including migration and
+  existing receipt/hold behavior, passed.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

@@ -36,10 +36,25 @@ type DispatchIntent struct {
 }
 
 type DispatchPermit struct {
+	Fence             uint64
+	WorkerID          string
 	ID, RequestDigest string
 	AlreadyStarted    bool
 	ActiveMS          int64
 	NotAfter          time.Time
+}
+
+type PreparedAction struct {
+	ID, RequestDigest string
+	Fence             uint64
+	AlreadyStarted    bool
+}
+
+type ActionClaim struct {
+	ID, RequestDigest, WorkerID string
+	Fence                       uint64
+	LeaseUntil                  time.Time
+	Job                         *review.JobClaim
 }
 
 type DispatchOutcome struct {
