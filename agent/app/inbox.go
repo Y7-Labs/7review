@@ -128,6 +128,9 @@ func (s *Server) startInboxWorkers() {
 				if recoveryErr == nil {
 					_, recoveryErr = s.accountingRuntime.Authority.AdvancePendingModelContinuations(recoveryCtx, 8, pipeline.ModelContinuationV1{})
 				}
+				if recoveryErr == nil {
+					_, recoveryErr = s.accountingRuntime.Authority.CompletePendingModelJobs(recoveryCtx, 8)
+				}
 				recoveryCancel()
 				if recoveryErr != nil {
 					if ctx.Err() == nil {

@@ -42,7 +42,8 @@ qualification before coordinated release.
 Schemas v8/v9 add prepared-action leases, fenced outcome provenance and confined
 recovery ownership. Schema v10 adds immutable local reduction artifacts and exact
 input links. Schema v11 adds parent-to-child links and a deferred child-grant FK.
-Worker runtime now requires v11; run explicit migration before restart.
+Schema v12 adds the terminal reduction reference on owned jobs.
+Worker runtime now requires v12; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -58,6 +59,8 @@ rewriting its request, quote, outcome or holds. No deployed store was upgraded.
 The v10-to-v11 rehearsal proves atomic DDL/constraint rollback and retry, and that
 a dangling child restriction cannot commit. No temporary unrestricted grant is
 needed to create a child and reserve its three scope holds in one transaction.
+The v11-to-v12 rehearsal injects deferred commit failure, verifies column/version
+rollback, retries idempotently and completes a pre-existing reduction afterward.
 
 ## Runtime Intake
 
@@ -318,13 +321,38 @@ child, two total calls and the original holds are retained. Invalid references,
 parent phase/digests/run/deadline or missing authority fail closed without legacy
 reservation fallback. Ephemeral/legacy execution retains its separate path.
 
+### Terminal Model Projection
+
+Bounded inbox workers can now commit a terminal job reference for validated or
+blocked model reductions. The transaction locks job/inbox authority, checks the
+current active attempt and original deadline, current sending fences/job epoch,
+and the exact terminal input group. A bounded lineage walk rechecks every parent
+artifact, original response and frozen formatter edge. Every job action must
+belong to that proof; even an unrelated already-reduced sibling blocks completion.
+The same commit finishes the inbox/job and disables dispatch. A validated draft
+is reported as drafted, a blocked result as failed. Neither grants approval,
+publishes a final report, settles unknown usage nor releases existing holds.
+
+Competing finishers converge on the same committed reference; failed commits
+return no projection. Process interruption before commit with backend rollback,
+and process exit immediately after commit, both recover through local completion
+without a new action or provider replay. A dead client alone does not prove that
+PostgreSQL rolled back its pending COMMIT. Already-finished legacy jobs may acquire
+a matching terminal reference as read-only attribution, not renewed authority.
+
+HTTP `/run` and `/runs` prefer verified PostgreSQL terminal projections over stale
+in-memory frames. Listing is bounded to 128 durable results and 64 MiB of source
+artifacts. Storage or proof errors return 503, not a stale memory substitute.
+These are read projections, not run-store rehydration or authenticated operator
+mutation controls. Historical reads verify lineage without reopening an attempt.
+
 This does not complete general continuation. Unlinked prepared work after
 external progress still fails closed. Prepared batch backlogs need the same
-cursor/manifest ownership rather than broad job replay. Tool observations/continuations and durable
-terminal run projection also remain open, alongside authenticated controls and
-safe cancellation/refund. Durable terminal projection must replace handed-off
-frames with the authoritative result, not resume the old frame. No formatter transition finishes, approves or publishes
-the review, and existing usage holds are not refunded.
+cursor/manifest ownership rather than broad job replay. Tool observations and
+continuations remain open, alongside authenticated controls and safe
+cancellation/refund. The terminal projection replaces handed-off HTTP views with
+the authoritative stored result, never resumes the old frame. A formatter
+advancement itself still does not finish, approve or publish the review.
 
 ## Token And Price Qualification
 

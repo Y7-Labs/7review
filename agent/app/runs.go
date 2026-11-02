@@ -1,10 +1,14 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"sort"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/accounting"
 	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/review"
 )
@@ -18,6 +22,31 @@ func (s *Server) handleRuns(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if s.accountingRuntime != nil {
+		projections, err := s.accountingRuntime.Authority.ListModelJobs(r.Context(), 128)
+		if err != nil {
+			http.Error(w, "durable runs unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		byID := make(map[string]pipeline.Run, len(runs)+len(projections))
+		for _, run := range runs {
+			byID[run.ID] = run
+		}
+		for index := range projections {
+			run := projectedModelRun(&projections[index])
+			byID[run.ID] = *run
+		}
+		runs = make([]pipeline.Run, 0, len(byID))
+		for _, run := range byID {
+			runs = append(runs, run)
+		}
+		sort.Slice(runs, func(i, j int) bool {
+			if runs[i].UpdatedAt.Equal(runs[j].UpdatedAt) {
+				return runs[i].ID < runs[j].ID
+			}
+			return runs[i].UpdatedAt.After(runs[j].UpdatedAt)
+		})
 	}
 	out := make([]runDTO, 0, len(runs))
 	for _, run := range runs {
@@ -37,13 +66,41 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing id", http.StatusBadRequest)
 		return
 	}
-	run, err := s.pipeline.Jobs.Get(r.Context(), id)
+	run, err := s.lookupRun(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, errDurableRunUnavailable) {
+			http.Error(w, "durable run unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(toRunDTO(*run, true))
+}
+
+var errDurableRunUnavailable = errors.New("durable run unavailable")
+
+func (s *Server) lookupRun(ctx context.Context, id string) (*pipeline.Run, error) {
+	if s.accountingRuntime != nil {
+		projection, err := s.accountingRuntime.Authority.LookupModelJob(ctx, id)
+		if err == nil {
+			return projectedModelRun(projection), nil
+		}
+		if !errors.Is(err, accounting.ErrModelJobNotFound) {
+			return nil, errors.Join(errDurableRunUnavailable, err)
+		}
+	}
+	return s.pipeline.Jobs.Get(ctx, id)
+}
+
+func projectedModelRun(p *review.ModelJobProjection) *pipeline.Run {
+	source := p.Source.Clone()
+	status := pipeline.StatusFailed
+	if p.Succeeded {
+		status = pipeline.StatusDrafted
+	}
+	return &pipeline.Run{ID: p.RunID, Request: source.Request, Status: status, Error: p.Reason, Source: &source, Context: &review.Context{Source: source.Clone()}, DraftReport: source.Report.Draft, Findings: source.Findings, WebURL: source.Request.WebURL, UpdatedAt: p.CompletedAt}
 }
 
 type runDTO struct {

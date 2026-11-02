@@ -203,11 +203,12 @@ func exerciseModelContinuation(t *testing.T, repair, crash, race bool) {
 	if repair {
 		want = 2
 	}
-	var indexed, reduced int
+	var indexed, reduced, terminal int
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
 		_ = db.QueryRow(`SELECT count(*) FROM budget_action_results WHERE status='recorded_unvalidated'`).Scan(&indexed)
 		_ = db.QueryRow(`SELECT count(*) FROM budget_model_reductions WHERE state='validated'`).Scan(&reduced)
-		if indexed == want && reduced == 1 {
+		_ = db.QueryRow(`SELECT count(*) FROM budget_jobs WHERE terminal_reduction_id IS NOT NULL`).Scan(&terminal)
+		if indexed == want && reduced == 1 && terminal == 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -231,7 +232,7 @@ func exerciseModelContinuation(t *testing.T, repair, crash, race bool) {
 			t.Fatalf("handed-off frame falsely failed, completed or approved: %#v %v", live, err)
 		}
 	}
-	if indexed != want || reduced != 1 || p.calls.Load() != int32(want) {
+	if indexed != want || reduced != 1 || terminal != 1 || p.calls.Load() != int32(want) {
 		t.Fatalf("automatic recovery/reduction missing: results=%d reductions=%d calls=%d", indexed, reduced, p.calls.Load())
 	}
 	if runs, err := restarted.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
@@ -242,13 +243,43 @@ func exerciseModelContinuation(t *testing.T, repair, crash, race bool) {
 	_ = db.QueryRow(`SELECT i.state,j.phase FROM budget_inbox i JOIN budget_jobs j USING(run_id)`).Scan(&state, &phase)
 	_ = db.QueryRow(`SELECT count(*) FROM budget_actions`).Scan(&actions)
 	_ = db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds)
-	if state != "running" || phase != "effect_started" || actions != want || holds != 3*want {
+	if state != "completed" || phase != "finished" || actions != want || holds != 3*want {
 		t.Fatalf("recovery invented continuation/settlement: state=%s phase=%s actions=%d holds=%d", state, phase, actions, holds)
 	}
 	status := httptest.NewRecorder()
 	restarted.handleInbox(status, httptest.NewRequest(http.MethodGet, "/inbox?run_id="+receipt.RunID, nil))
 	if status.Code != 200 || !strings.Contains(status.Body.String(), `"validated_reductions":1`) || !strings.Contains(status.Body.String(), `"pending_continuations":0`) || strings.Contains(status.Body.String(), "RawResponses") {
 		t.Fatalf("reduction status hidden or response leaked: %d %s", status.Code, status.Body.String())
+	}
+	for _, viewer := range []*Server{restarted, s} {
+		view := httptest.NewRecorder()
+		viewer.handleRun(view, httptest.NewRequest(http.MethodGet, "/run?id="+receipt.RunID, nil))
+		if view.Code != 200 || !strings.Contains(view.Body.String(), `"status":"drafted"`) || !strings.Contains(view.Body.String(), "7review Draft") || strings.Contains(view.Body.String(), `"hil_approved":true`) {
+			t.Fatalf("restart lost or approved terminal run: %d %s", view.Code, view.Body.String())
+		}
+		listing := httptest.NewRecorder()
+		viewer.handleRuns(listing, httptest.NewRequest(http.MethodGet, "/runs", nil))
+		if listing.Code != 200 || strings.Count(listing.Body.String(), receipt.RunID) != 1 || !strings.Contains(listing.Body.String(), `"status":"drafted"`) {
+			t.Fatalf("terminal listing missing or duplicated: %d %s", listing.Code, listing.Body.String())
+		}
+	}
+	if repair {
+		if _, err = db.Exec(`DELETE FROM budget_model_continuations WHERE child_action_id IN (SELECT x.action_id FROM budget_model_reduction_inputs x JOIN budget_jobs j ON j.terminal_reduction_id=x.reduction_id WHERE j.run_id=$1)`, receipt.RunID); err != nil {
+			t.Fatal(err)
+		}
+		missing := httptest.NewRecorder()
+		s.handleRun(missing, httptest.NewRequest(http.MethodGet, "/run?id="+receipt.RunID, nil))
+		if missing.Code != http.StatusServiceUnavailable {
+			t.Fatalf("missing terminal proof fell back to memory: %d %s", missing.Code, missing.Body.String())
+		}
+	}
+	if _, err = db.Exec(`UPDATE budget_model_reductions SET artifact_digest='corrupt-terminal' WHERE id=(SELECT terminal_reduction_id FROM budget_jobs WHERE run_id=$1)`, receipt.RunID); err != nil {
+		t.Fatal(err)
+	}
+	view := httptest.NewRecorder()
+	s.handleRun(view, httptest.NewRequest(http.MethodGet, "/run?id="+receipt.RunID, nil))
+	if view.Code != http.StatusServiceUnavailable {
+		t.Fatalf("corrupt durable result fell back to stale memory: %d %s", view.Code, view.Body.String())
 	}
 }
 

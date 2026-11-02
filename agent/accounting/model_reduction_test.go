@@ -30,6 +30,10 @@ func recordedReductionFixture(t *testing.T) (*Authority, orchestrator.DispatchIn
 }
 
 func recordedReductionFixtureDSN(t *testing.T) (*Authority, orchestrator.DispatchIntent, *review.JobClaim, string) {
+	return recordedReductionFixtureResponse(t, []byte("[]"))
+}
+
+func recordedReductionFixtureResponse(t *testing.T, response []byte) (*Authority, orchestrator.DispatchIntent, *review.JobClaim, string) {
 	t.Helper()
 	a, i, dsn := preparedActionFixture(t)
 	ctx := context.Background()
@@ -57,7 +61,6 @@ func recordedReductionFixtureDSN(t *testing.T) (*Authority, orchestrator.Dispatc
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := []byte("[]")
 	if err = a.RecordOutcome(ctx, permit, orchestrator.DispatchOutcome{Response: response, ResponseReceived: true, ResponseDigest: hash(response), ElapsedMS: 1}); err != nil {
 		t.Fatal(err)
 	}

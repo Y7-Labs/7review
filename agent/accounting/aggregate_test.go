@@ -144,7 +144,7 @@ func TestPostgresConcurrentBefore202ReplaysShareOneAggregate(t *testing.T) {
 func TestPostgresV6UpgradeRetainsHoldsAndLateResultsWithoutReauthorizing(t *testing.T) {
 	a, i, permit, runID, _ := linkedAction(t)
 	// Rehearse a v6 accepted job: no complete immutable aggregate existed.
-	if _, err := a.db.Exec(`DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions,budget_action_leases,budget_aggregates; ALTER TABLE budget_jobs DROP COLUMN recovery_action_id; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_actions DROP CONSTRAINT budget_actions_state_check; ALTER TABLE budget_actions ADD CHECK(state IN ('sending','uncertain','result_recorded')); UPDATE budget_schema SET version=6`); err != nil {
+	if _, err := a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions,budget_action_leases,budget_aggregates; ALTER TABLE budget_jobs DROP COLUMN recovery_action_id; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_actions DROP CONSTRAINT budget_actions_state_check; ALTER TABLE budget_actions ADD CHECK(state IN ('sending','uncertain','result_recorded')); UPDATE budget_schema SET version=6`); err != nil {
 		t.Fatal(err)
 	}
 	if err := Migrate(context.Background(), a.db); err != nil {

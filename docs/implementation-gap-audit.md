@@ -172,12 +172,15 @@ or job completion. Qualified formatter parents now advance to one atomically
 reserved, epoch-fenced child with frozen routing and checked parent provenance.
 Canonical live formatter paths now share that transition and abandon the old
 frame; an overlap test verifies no duplicate child or stale-owner completion.
-Tool/batch cursor unification and terminal projection remain incomplete. Live
+Terminal model projection now atomically finishes checked jobs, disables dispatch
+and serves durable HTTP results across restart without approval or refund. Parent
+proofs and all job actions must belong to the same checked lineage. Tool/batch
+cursor unification remains incomplete. Live
 recovery qualification, complete validated continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-59.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-60.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

@@ -966,6 +966,36 @@ This is an incremental behavior ledger, not a completion declaration.
   safe cancellation/refund. Handed-off frames must be replaced by authoritative
   stored results, never replayed. Ceilings and alpha remain incomplete.
 
+### 60. Durable Terminal Model Projection
+
+- Schema v12 adds a terminal reduction reference. Completion atomically finishes
+  the owned inbox/job and disables dispatch, only for validated or blocked results
+  with current attempt, deadline, job epoch and sending fences. Repeated finishers
+  converge on one result; deferred commit failure exposes no projection.
+- Red regressions caught two real omissions: changed formatter-parent evidence
+  after dispatch, and an unrelated already-reduced sibling. Completion and reads
+  now recheck bounded ancestry, exact frozen child plans, original outcomes and
+  coverage of every action. Historical reads do not reopen dispatch authority.
+- Worker recovery performs local finalization; HTTP run/list views override stale
+  memory with checked durable results. Restarted successful/formatter jobs become
+  visible without pipeline replay. Corrupted storage returns 503 rather than a
+  stale live frame. A separate red test caught missing ancestry rows returning
+  SQL not-found and accidentally selecting stale memory; only an absent terminal
+  reference now permits fallback. Blocked results become failed, never approved
+  or published.
+- Real PostgreSQL tests interrupt a process at a deferred COMMIT barrier and
+  terminate its waiting backend to establish rollback; another process exits
+  immediately after successful commit. Local retry preserves actions and holds.
+  Client death alone is not proof of rollback. The populated v11-to-v12 rehearsal
+  verifies DDL/version rollback, explicit retry and prior evidence preservation.
+- Verification: full PostgreSQL-backed suite, broad accounting/app/pipeline/
+  orchestrator/review race suite, latest focused race regressions, vet, formatting,
+  bridge tests and Compose configuration validation pass.
+- Unknown usage remains held, not refunded or settled. Batch manifests/backlog
+  ownership, durable tool observations/continuation, authenticated operator
+  controls and safe cancellation/refund remain open. Ceilings and alpha are not
+  complete. No deployed database has been migrated.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

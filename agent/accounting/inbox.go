@@ -49,6 +49,9 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 		}
 	}
 	status := &InboxHealth{}
+	if err = checkModelCompletionStorage(ctx, tx); err != nil {
+		return nil, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND deadline>now()),count(*) FILTER (WHERE state='running' AND deadline>now()),count(*) FILTER (WHERE state='uncertain' OR (state='running' AND deadline<=now())) FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&status.Pending, &status.Running, &status.Uncertain)
 	if err != nil {
 		return nil, err
