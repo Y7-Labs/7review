@@ -21,6 +21,7 @@ func dropUnusedSchemaForMigration(t *testing.T, db *sql.DB) {
 
 func dropSupersessionSchemaForMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	dropPublicationAuthorizationSchemaForMigration(t, db)
 	var columns int
 	if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='budget_unused_releases' AND column_name='cause'`).Scan(&columns); err != nil {
 		t.Fatal(err)
@@ -33,6 +34,24 @@ func dropSupersessionSchemaForMigration(t *testing.T, db *sql.DB) {
 		t.Fatalf("cannot erase supersession proofs for historical fixture: %d %v", superseded, err)
 	}
 	if _, err := db.Exec(`ALTER TABLE budget_unused_releases DROP CONSTRAINT budget_unused_release_authority; ALTER TABLE budget_unused_releases DROP COLUMN cause,DROP COLUMN superseding_attempt_id,DROP COLUMN supersession_intake_id; ALTER TABLE budget_unused_releases ALTER COLUMN cancel_command_id SET NOT NULL; ALTER TABLE budget_attempts DROP CONSTRAINT budget_attempts_supersession; ALTER TABLE budget_attempts DROP COLUMN superseded_by_attempt_id,DROP COLUMN supersession_intake_id; ALTER TABLE budget_inbox DROP CONSTRAINT budget_inbox_state_check; ALTER TABLE budget_inbox ADD CONSTRAINT budget_inbox_state_check CHECK(state IN ('pending','running','completed','failed','expired','uncertain','cancelled'))`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func dropPublicationAuthorizationSchemaForMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var columns int
+	if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='budget_jobs' AND column_name='publication_authorization_id'`).Scan(&columns); err != nil {
+		t.Fatal(err)
+	}
+	if columns == 0 {
+		return
+	}
+	var linked int
+	if err := db.QueryRow(`SELECT count(*) FROM budget_jobs WHERE publication_authorization_id IS NOT NULL`).Scan(&linked); err != nil || linked != 0 {
+		t.Fatalf("cannot erase publication authorizations for historical fixture: %d %v", linked, err)
+	}
+	if _, err := db.Exec(`ALTER TABLE budget_jobs DROP CONSTRAINT budget_jobs_publication_authorization; ALTER TABLE budget_jobs DROP COLUMN publication_authorization_id`); err != nil {
 		t.Fatal(err)
 	}
 }

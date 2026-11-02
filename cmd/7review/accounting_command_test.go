@@ -25,7 +25,7 @@ func TestAccountingMigrationCommandUsesExplicitDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	var version int
-	if err := db.QueryRow(`SELECT version FROM budget_schema`).Scan(&version); err != nil || version != 18 {
+	if err := db.QueryRow(`SELECT version FROM budget_schema`).Scan(&version); err != nil || version != 19 {
 		t.Fatalf("migration command did not initialize current schema: %d %v", version, err)
 	}
 	if err := accounting.Migrate(context.Background(), db); err != nil {

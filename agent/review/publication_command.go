@@ -18,10 +18,22 @@ type PublicationDestination struct {
 }
 
 func (d PublicationDestination) Validate() error {
-	for _, value := range []string{d.Provider, d.Host, d.RepositoryID, d.ChangeNumber} {
+	for _, value := range []string{d.Provider, d.RepositoryID, d.ChangeNumber} {
 		if value != strings.TrimSpace(value) || !validOperatorCommandText(value, 256) {
 			return errors.New("invalid publication destination")
 		}
+	}
+	switch d.Provider {
+	case "github", "gitlab":
+		if d.Host != strings.TrimSpace(d.Host) || !validOperatorCommandText(d.Host, 256) {
+			return errors.New("invalid publication destination")
+		}
+	case "local":
+		if d.Host != "" {
+			return errors.New("invalid publication destination")
+		}
+	default:
+		return errors.New("invalid publication provider")
 	}
 	switch d.ArtifactClass {
 	case "assessment", "comment", "check", "annotation", "code_quality":

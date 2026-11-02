@@ -72,6 +72,10 @@ func (a *Authority) OperatorAttempt(ctx context.Context, actor review.OperatorAc
 }
 
 func (a *Authority) operatorAttemptTx(ctx context.Context, tx *sql.Tx, actor review.OperatorActor, attemptID string, lock bool) (operatorAttemptRecord, error) {
+	return a.operatorAttemptForRolesTx(ctx, tx, actor, attemptID, lock, review.OperatorRoleOperator, review.OperatorRoleReviewer)
+}
+
+func (a *Authority) operatorAttemptForRolesTx(ctx context.Context, tx *sql.Tx, actor review.OperatorActor, attemptID string, lock bool, roles ...review.OperatorRole) (operatorAttemptRecord, error) {
 	var record operatorAttemptRecord
 	v := &record.view
 	var bindingRaw []byte
@@ -101,7 +105,7 @@ AND convert_from(j.receipt,'UTF8')::jsonb->>'Duplicate'='false'`
 	if len(bindingRaw) > 1<<20 || hash(bindingRaw) != digest || json.Unmarshal(bindingRaw, &b) != nil || b.Attempt.AttemptID != attemptID || b.ProjectID != a.cfg.ProjectID {
 		return operatorAttemptRecord{}, ErrIntegrity
 	}
-	if err = a.cfg.Operators.Authorize(actor, a.cfg.BoundaryID, a.cfg.ProjectID, b.Attempt.Change, review.OperatorRoleOperator, review.OperatorRoleReviewer); err != nil {
+	if err = a.cfg.Operators.Authorize(actor, a.cfg.BoundaryID, a.cfg.ProjectID, b.Attempt.Change, roles...); err != nil {
 		return operatorAttemptRecord{}, err
 	}
 	aggregate, err := a.readAggregateTx(ctx, tx, v.RunID)

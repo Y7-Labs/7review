@@ -53,8 +53,9 @@ and a cancellation disposition reference. Schema v17 adds verified-unused local
 release proofs, their scope audit links and the `not_executed` action disposition.
 Schema v18 adds an immutable predecessor-to-successor intake link, distinguishes
 cancelled and superseded release authority, and adds the terminal `superseded`
-inbox disposition. Worker runtime now requires v18; run explicit migration before
-restart.
+inbox disposition. Schema v19 adds the current exact publication-authorization
+pointer on a terminal validated job; it grants no delivery, merge or memory
+effect. Worker runtime now requires v19; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -93,6 +94,9 @@ The v17-to-v18 rehearsal preserves immutable v17 cancellation proof bytes across
 deferred DDL failure and idempotent retry. It does not infer successor links or
 supersession credit from historical inactive attempts. Runtime refuses an
 unmigrated v17 store.
+The v18-to-v19 rehearsal preserves terminal reduction, lineage, inbox and job
+bytes across deferred DDL failure and idempotent retry. It creates no operator
+command or publication authority. Runtime refuses an unmigrated v18 store.
 
 ## Runtime Intake
 

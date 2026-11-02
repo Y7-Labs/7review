@@ -140,6 +140,14 @@ func (a *Authority) CancelAttempt(ctx context.Context, actor review.OperatorActo
 }
 
 func checkOperatorStorage(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT j.control_version,j.cancel_command_id,j.publication_authorization_id,c.id,c.boundary_id,c.project_id,c.command_id,c.actor_id,c.attempt_id,c.run_id,c.command,c.command_digest,c.receipt,c.receipt_digest FROM budget_jobs j LEFT JOIN budget_operator_commands c ON c.id=j.cancel_command_id OR c.id=j.publication_authorization_id LIMIT 0`)
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func checkOperatorStorageV16(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT j.control_version,j.cancel_command_id,c.id,c.boundary_id,c.project_id,c.command_id,c.actor_id,c.attempt_id,c.run_id,c.command,c.command_digest,c.receipt,c.receipt_digest FROM budget_jobs j LEFT JOIN budget_operator_commands c ON c.id=j.cancel_command_id LIMIT 0`)
 	if err != nil {
 		return err

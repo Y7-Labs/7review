@@ -125,9 +125,9 @@ and late model events do not assert rollback or overwrite operator receipts.
 Compose now forwards the mapping and dedicated credential explicitly. Other
 canonical commands and qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v17-to-v18 migrations
+The v8-to-v9 through v18-to-v19 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v18 before restart. No deployed database was changed.
+explicit migration to schema v19 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

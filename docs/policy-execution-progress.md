@@ -1464,6 +1464,33 @@ This is an incremental behavior ledger, not a completion declaration.
   live operational/provider qualification remain open. Ceilings and alpha remain
   unfinished.
 
+### 76. Exact Durable Publication Authorization
+
+- Red/green domain tests define a closed `authorize_publication` envelope and
+  receipt bound to command ID, exact attempt, control version, revision, terminal
+  assessment digest, draft artifact digest, structured destination and reason.
+  Actor identity remains transport-supplied and absent from the command body.
+- PostgreSQL enforcement accepts only mapped reviewer/publisher roles for the
+  exact repository. Cancellation retains its separate reviewer/operator role
+  boundary. Wrong role, destination, revision, version, assessment or artifact
+  persists no command and produces no side effect.
+- Authorization re-verifies the immutable terminal reduction, all lineage, the
+  validated state and exact draft bytes before committing an actor-bound receipt
+  and advancing the separate control version. It does not publish, merge, notify,
+  activate memory or mutate assessment bytes.
+- Same command ID and payload replays its original receipt after restart and even
+  after a later authorization advances the current pointer. Same ID with changed
+  actor or payload conflicts. Deferred commit failure leaves no pointer, command
+  or version increment.
+- Schema v19 adds only the terminal job's current authorization pointer. Its
+  v18 upgrade rehearsal rolls back DDL/version atomically, retries idempotently,
+  preserves terminal evidence and infers no authorization. No deployed database
+  was migrated.
+- HTTP/client/CLI/TUI exposure and a governed publication outbox remain open;
+  legacy `/approve` still is not canonical authority. Other operator commands,
+  incident adjustments and live provider qualification remain open. Ceilings and
+  alpha remain unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
