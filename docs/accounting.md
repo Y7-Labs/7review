@@ -55,7 +55,9 @@ Schema v18 adds an immutable predecessor-to-successor intake link, distinguishes
 cancelled and superseded release authority, and adds the terminal `superseded`
 inbox disposition. Schema v19 adds the current exact publication-authorization
 pointer on a terminal validated job; it grants no delivery, merge or memory
-effect. Worker runtime now requires v19; run explicit migration before restart.
+effect. Schema v20 adds immutable publication-operation payloads and lifecycle
+state; migration does not infer operations from existing authorizations. Worker
+runtime now requires v20; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -97,6 +99,10 @@ unmigrated v17 store.
 The v18-to-v19 rehearsal preserves terminal reduction, lineage, inbox and job
 bytes across deferred DDL failure and idempotent retry. It creates no operator
 command or publication authority. Runtime refuses an unmigrated v18 store.
+The v19-to-v20 rehearsal preserves existing authorization and terminal evidence
+across deferred DDL failure and idempotent retry. It creates no publication
+operation; the materializer re-verifies the exact receipt and terminal lineage
+after migration. Runtime refuses an unmigrated v19 store.
 
 ## Runtime Intake
 

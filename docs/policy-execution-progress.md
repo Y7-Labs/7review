@@ -1486,10 +1486,14 @@ This is an incremental behavior ledger, not a completion declaration.
   v18 upgrade rehearsal rolls back DDL/version atomically, retries idempotently,
   preserves terminal evidence and infers no authorization. No deployed database
   was migrated.
+- Schema v20 adds the publication-operation outbox. Its explicit rollback/retry
+  rehearsal preserves existing authorization and terminal evidence and infers no
+  operation; duplicate post-restart materializers commit one exact pending row.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
-  A governed publication outbox and delivery remain open; legacy `/approve`
-  still is not canonical authority. Other operator commands,
+  Exact outbox materialization and stale-pending obsolescence are implemented;
+  fenced claim, provider delivery and uncertain-result reconciliation remain
+  open. Legacy `/approve` still is not canonical authority. Other operator commands,
   incident adjustments and live provider qualification remain open. Ceilings and
   alpha remain unfinished.
 

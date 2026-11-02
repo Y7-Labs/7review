@@ -121,25 +121,33 @@ func (a *Authority) AuthorizePublication(ctx context.Context, actor review.Opera
 }
 
 func (a *Authority) verifyPublicationTargetTx(ctx context.Context, tx *sql.Tx, record operatorAttemptRecord, c review.AuthorizePublicationCommand) error {
+	_, err := a.publicationTargetTx(ctx, tx, record, c)
+	return err
+}
+
+func (a *Authority) publicationTargetTx(ctx context.Context, tx *sql.Tx, record operatorAttemptRecord, c review.AuthorizePublicationCommand) (review.ModelReduction, error) {
 	change := record.binding.Attempt.Change
 	want := review.PublicationDestination{Provider: change.Provider, Host: change.Host, RepositoryID: change.RepositoryID, ChangeNumber: change.ChangeNumber, ArtifactClass: "assessment"}
 	if c.Payload.Destination != want {
-		return errors.New("publication destination does not match the exact attempt")
+		return review.ModelReduction{}, errors.New("publication destination does not match the exact attempt")
 	}
 	var reductionID, actionID, assessmentDigest string
 	err := tx.QueryRowContext(ctx, `SELECT j.terminal_reduction_id,min(x.action_id),m.artifact_digest FROM budget_jobs j JOIN budget_model_reductions m ON m.id=j.terminal_reduction_id JOIN budget_model_reduction_inputs x ON x.reduction_id=m.id WHERE j.run_id=$1 AND j.attempt_id=$2 GROUP BY j.terminal_reduction_id,m.artifact_digest`, record.view.RunID, c.AttemptID).Scan(&reductionID, &actionID, &assessmentDigest)
 	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("validated terminal assessment unavailable")
+		return review.ModelReduction{}, errors.New("validated terminal assessment unavailable")
 	}
 	if err != nil {
-		return err
+		return review.ModelReduction{}, err
 	}
 	artifact, err := a.readModelReductionTx(ctx, tx, actionID)
 	if err != nil {
-		return err
+		return review.ModelReduction{}, err
 	}
 	if artifact.State != review.ModelReductionValidated || reductionKey(record.view.RunID, artifact.GroupDigest) != reductionID || artifact.Source.Attempt.AttemptID != c.AttemptID || artifact.Source.Run.ID != record.view.RunID || artifact.Source.Report.Draft == "" || artifact.Source.Report.Final != "" || assessmentDigest != c.Payload.AssessmentDigest || hash([]byte(artifact.Source.Report.Draft)) != c.Payload.ArtifactDigest || !reflect.DeepEqual(artifact.Source.Attempt, record.binding.Attempt) {
-		return errors.New("publication target does not match the validated terminal assessment")
+		return review.ModelReduction{}, errors.New("publication target does not match the validated terminal assessment")
 	}
-	return a.checkTerminalLineageTx(ctx, tx, reductionID, artifact)
+	if err = a.checkTerminalLineageTx(ctx, tx, reductionID, artifact); err != nil {
+		return review.ModelReduction{}, err
+	}
+	return artifact, nil
 }

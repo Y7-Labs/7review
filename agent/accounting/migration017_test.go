@@ -40,6 +40,7 @@ func dropSupersessionSchemaForMigration(t *testing.T, db *sql.DB) {
 
 func dropPublicationAuthorizationSchemaForMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	dropPublicationOperationSchemaForMigration(t, db)
 	var columns int
 	if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='budget_jobs' AND column_name='publication_authorization_id'`).Scan(&columns); err != nil {
 		t.Fatal(err)
@@ -52,6 +53,24 @@ func dropPublicationAuthorizationSchemaForMigration(t *testing.T, db *sql.DB) {
 		t.Fatalf("cannot erase publication authorizations for historical fixture: %d %v", linked, err)
 	}
 	if _, err := db.Exec(`ALTER TABLE budget_jobs DROP CONSTRAINT budget_jobs_publication_authorization; ALTER TABLE budget_jobs DROP COLUMN publication_authorization_id`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func dropPublicationOperationSchemaForMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var tables int
+	if err := db.QueryRow(`SELECT count(*) FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname='budget_publication_operations'`).Scan(&tables); err != nil {
+		t.Fatal(err)
+	}
+	if tables == 0 {
+		return
+	}
+	var operations int
+	if err := db.QueryRow(`SELECT count(*) FROM budget_publication_operations`).Scan(&operations); err != nil || operations != 0 {
+		t.Fatalf("cannot erase publication operations for historical fixture: %d %v", operations, err)
+	}
+	if _, err := db.Exec(`DROP TABLE budget_publication_operations`); err != nil {
 		t.Fatal(err)
 	}
 }
