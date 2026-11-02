@@ -13,3 +13,13 @@ type RecordedModelResult struct {
 type ModelResultReducer interface {
 	ReduceModelResults(context.Context, []RecordedModelResult) (review.ModelReduction, error)
 }
+
+type ModelContinuationPlan struct {
+	Version                              int
+	ParentGroupDigest, ParentInputDigest string
+	Intent                               DispatchIntent
+}
+
+type ModelContinuationBuilder interface {
+	BuildModelContinuation(review.ModelReduction) (ModelContinuationPlan, error)
+}
