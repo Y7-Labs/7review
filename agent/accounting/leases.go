@@ -51,7 +51,12 @@ func (a *Authority) lockPreparedAuthority(ctx context.Context, tx *sql.Tx, i orc
 	if err = a.guardJobDispatch(ctx, tx, i); err != nil {
 		return err
 	}
+	return a.lockAttemptAuthority(ctx, tx, i, binding)
+}
+
+func (a *Authority) lockAttemptAuthority(ctx context.Context, tx *sql.Tx, i orchestrator.DispatchIntent, binding []byte) error {
 	var track sql.NullString
+	var err error
 	if err = tx.QueryRowContext(ctx, `SELECT tracking_id FROM budget_attempts WHERE id=$1`, i.Attempt.AttemptID).Scan(&track); err != nil {
 		return err
 	}
@@ -170,7 +175,7 @@ func (a *Authority) claimPrepared(ctx context.Context, p orchestrator.PreparedAc
 			batchRecovery = true
 		} else {
 			var token string
-			err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND ((j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5)) OR (j.phase='effect_started' AND j.recovery_action_id=$5 AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=$5))) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
+			err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND ((j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5)) OR (j.phase='effect_started' AND j.recovery_action_id=$5 AND (EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=$5) OR EXISTS(SELECT 1 FROM budget_model_tool_children c WHERE c.child_action_id=$5)))) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
 			if err != nil {
 				return empty, errors.New("recovery job authority unavailable")
 			}
@@ -396,7 +401,7 @@ AND (l.lease_until IS NULL OR l.lease_until<=clock_timestamp())
 AND (t.tracking_id IS NULL OR EXISTS(SELECT 1 FROM budget_heads h WHERE h.id=t.tracking_id AND h.current_attempt_id=t.id))
 AND ((j.phase='admitted' AND j.model_batch_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state<>'prepared'))
 OR (j.phase='effect_started' AND j.recovery_action_id=a.id
-AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=a.id)
+AND (EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=a.id) OR EXISTS(SELECT 1 FROM budget_model_tool_children c WHERE c.child_action_id=a.id))
 AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.id<>a.id
 AND (e.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=e.id))))
 OR (j.model_batch_id IS NOT NULL AND j.phase IN ('admitted','effect_started')

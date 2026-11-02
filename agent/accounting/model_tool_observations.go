@@ -83,9 +83,6 @@ func (a *Authority) CommitModelToolObservations(ctx context.Context, actionID st
 		}
 		return result, nil
 	}
-	if previous.Valid {
-		return nil, errors.New("snapshot observation cursor already changed")
-	}
 	parent, err = a.readModelReductionTx(ctx, tx, actionID)
 	if err != nil {
 		return nil, err
@@ -96,6 +93,15 @@ func (a *Authority) CommitModelToolObservations(ctx context.Context, actionID st
 	}
 	if err = a.checkTerminalLineageTx(ctx, tx, parentID, parent); err != nil {
 		return nil, err
+	}
+	if previous.Valid {
+		var linked bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_tool_children c JOIN budget_model_reduction_inputs x ON x.action_id=c.child_action_id WHERE x.reduction_id=$1 AND c.observation_id=$2 AND x.action_id=$3)`, parentID, previous.String, grant).Scan(&linked); err != nil {
+			return nil, err
+		}
+		if !linked {
+			return nil, errors.New("snapshot observation cursor has no checked predecessor")
+		}
 	}
 	if !grant.Valid {
 		origin, err := a.batchOriginEpochTx(ctx, tx, parent)
@@ -297,6 +303,17 @@ func (a *Authority) LookupModelToolObservations(ctx context.Context, actionID st
 }
 
 func (a *Authority) readToolObservationsTx(ctx context.Context, tx *sql.Tx, parentID string, parent review.ModelReduction) (*review.ModelToolObservations, error) {
+	record, err := a.readToolEvidenceTx(ctx, tx, parentID, parent)
+	if err != nil {
+		return nil, err
+	}
+	if err = a.checkModelLineageTx(ctx, tx, parentID, parent, false); err != nil {
+		return nil, err
+	}
+	return &record.Artifact, nil
+}
+
+func (a *Authority) readToolEvidenceTx(ctx context.Context, tx *sql.Tx, parentID string, parent review.ModelReduction) (*toolObservationRecord, error) {
 	record, err := readToolObservationRecordTx(ctx, tx, toolObservationKey(parentID))
 	if err != nil {
 		return nil, err
@@ -314,9 +331,6 @@ func (a *Authority) readToolObservationsTx(ctx context.Context, tx *sql.Tx, pare
 	}
 	if !sameModelJSON(usage, record.Amount) {
 		return nil, errors.New("snapshot observation charge changed")
-	}
-	if err = a.checkModelLineageTx(ctx, tx, parentID, parent, false); err != nil {
-		return nil, err
 	}
 	if err = a.checkToolParentEpochTx(ctx, tx, parentID, parent, record.ParentToken, record.ParentActionID); err != nil {
 		return nil, err
@@ -352,7 +366,7 @@ func (a *Authority) readToolObservationsTx(ctx context.Context, tx *sql.Tx, pare
 			return nil, errors.New("snapshot scope attribution changed")
 		}
 	}
-	return &record.Artifact, nil
+	return record, nil
 }
 
 // This storage-level proof is also used by every capacity check. Keeping scope

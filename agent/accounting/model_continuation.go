@@ -74,7 +74,7 @@ func (a *Authority) AdvanceModelContinuation(ctx context.Context, parentActionID
 	if err = tx.QueryRowContext(ctx, `SELECT artifact_digest FROM budget_model_reductions WHERE id=$1 AND run_id=$2 AND attempt_id=$3 FOR SHARE`, parentID, parent.Source.Run.ID, parent.Source.Attempt.AttemptID).Scan(&parentDigest); err != nil {
 		return empty, err
 	}
-	if err = a.checkReductionProofTx(ctx, tx, parentID, parent); err != nil {
+	if err = a.checkTerminalLineageTx(ctx, tx, parentID, parent); err != nil {
 		return empty, err
 	}
 	var epochMatches bool
@@ -92,21 +92,6 @@ func (a *Authority) AdvanceModelContinuation(ctx context.Context, parentActionID
 	}
 	if !allowed {
 		return empty, errors.New("continuation cursor was already superseded")
-	}
-	var unresolved bool
-	query := `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=$1 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$2 AND (a.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=a.id)))`
-	if !grant.Valid {
-		query = `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=$1 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$2 AND NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=a.id AND x.reduction_id=$3))`
-	}
-	args := []any{parent.Source.Attempt.AttemptID, parent.Source.Run.ID}
-	if !grant.Valid {
-		args = append(args, parentID)
-	}
-	if err = tx.QueryRowContext(ctx, query, args...).Scan(&unresolved); err != nil {
-		return empty, err
-	}
-	if unresolved {
-		return empty, errors.New("unreduced or unresolved sibling effects block continuation")
 	}
 	plan, err := invokeContinuationBuilder(builder, parent)
 	if err != nil {
@@ -282,6 +267,13 @@ func (a *Authority) confinedContinuationTx(ctx context.Context, tx *sql.Tx, i or
 	if i.Job == nil {
 		return false, nil
 	}
+	var toolChild bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_tool_children WHERE child_action_id=$1)`, i.ActionID).Scan(&toolChild); err != nil {
+		return false, err
+	}
+	if toolChild {
+		return a.confinedToolChildTx(ctx, tx, i)
+	}
 	var parentID, parentDigest, currentDigest, parentAction string
 	err := tx.QueryRowContext(ctx, `SELECT c.parent_reduction_id,c.parent_digest,m.artifact_digest,(SELECT min(x.action_id) FROM budget_model_reduction_inputs x WHERE x.reduction_id=m.id) FROM budget_model_continuations c JOIN budget_model_reductions m ON m.id=c.parent_reduction_id JOIN budget_jobs j ON j.run_id=m.run_id WHERE c.child_action_id=$1 AND m.run_id=$2 AND m.attempt_id=$3 AND j.recovery_action_id=$1 AND j.phase='effect_started'`, i.ActionID, i.Job.RunID, i.Attempt.AttemptID).Scan(&parentID, &parentDigest, &currentDigest, &parentAction)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -306,13 +298,8 @@ func (a *Authority) confinedContinuationTx(ctx context.Context, tx *sql.Tx, i or
 	if err = validateContinuationPlan(orchestrator.ModelContinuationPlan{Version: 1, ParentGroupDigest: parent.GroupDigest, ParentInputDigest: parent.InputDigest, Intent: proposal}, parent); err != nil {
 		return false, err
 	}
-	var unresolved bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=$1 AND a.id<>$2 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$3 AND (a.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=a.id)))`, i.Attempt.AttemptID, i.ActionID, i.Job.RunID).Scan(&unresolved)
-	if err != nil {
+	if err = a.checkModelLineageTx(ctx, tx, parentID, parent, true, i.ActionID); err != nil {
 		return false, err
-	}
-	if unresolved {
-		return false, errors.New("continuation has unresolved sibling effects")
 	}
 	return true, nil
 }

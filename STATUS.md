@@ -55,7 +55,7 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-68. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-69. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
@@ -77,7 +77,7 @@ Known original live results retain sealed provenance through terminal completion
 Canonical multi-batch execution now freezes all requests and atomically stages
 the sealed set, then hands off without live provider I/O. Restart and paused-live/
 recovery overlap tests retain one execution per slot and authoritative draft views.
-Automatic tool plans still wait for guarded reasoner-child continuation.
+Automatic tool plans still wait for worker creation/live handoff wiring.
 A versioned snapshot-only renderer now binds ordered observations to parent/input
 and request digests, preserving denials, missing data and explicit truncation.
 Malformed/over-bound proposals cannot silently lose requests. This renderer does
@@ -88,12 +88,15 @@ truncation without exposing partial usage. This is not a durable receipt or
 capacity admission. Durable snapshot acceptance now separately commits one
 immutable receipt and three scope charges while rotating/confining the job epoch.
 It preserves unknown model holds and includes local charges in model admission,
-prepared-claim and sending checks. The canonical worker still waits for guarded
-reasoner-child creation and recovery before using this API automatically; tool
+prepared-claim and sending checks. Guarded reasoner-child creation now consumes
+the exact observation epoch, atomically reserves a child and supports fenced
+prepared recovery through all three rounds. Cross-role lineage checks also stop
+a formatter from preparing/sending on corrupt earlier tool/model evidence.
+Automatic creation and canonical live handoff are not wired yet; end-to-end tool
 continuation, controls and cancellation/refund remain open.
-The v8-to-v9 through v13-to-v14 migrations
+The v8-to-v9 through v14-to-v15 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v14 before restart. No deployed database was changed.
+explicit migration to schema v15 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

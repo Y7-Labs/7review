@@ -46,7 +46,9 @@ Schema v12 adds the terminal reduction reference on owned jobs.
 Schema v13 adds immutable batch membership seals and their job references.
 Schema v14 adds immutable snapshot observation receipts, three scope links and
 the current observation reference on owned jobs.
-Worker runtime now requires v14; run explicit migration before restart.
+Schema v15 adds typed tool-child links binding each child to its exact parent
+reduction and committed observation receipt/digest.
+Worker runtime now requires v15; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -71,6 +73,9 @@ The v13-to-v14 rehearsal rolls back both observation tables, their index and the
 job reference on deferred commit failure, then retries idempotently. Existing
 requests, outcomes, reductions, holds and ownership remain unchanged. Migration
 does not infer observations, charges or continuation rights from old tool plans.
+The v14-to-v15 rehearsal preserves accepted observation bytes, ownership, model
+holds and observation scope links across deferred migration failure and retry.
+Migration creates no child and grants no new sending or continuation rights.
 
 ## Runtime Intake
 
@@ -440,11 +445,44 @@ origin periods; unknown model holds continue across renewals. Snapshot accountin
 time is read inside the locked transaction after rendering, rather than retaining
 a pre-render period.
 
-The canonical worker does not yet invoke this operation: it still leaves
-`needs_tools` pending until guarded reasoner-child creation and lineage/recovery
-are implemented together. This is not complete tool continuation, external tool
+Automatic observation/child creation and the canonical live tool handoff remain
+unwired. This is not complete end-to-end tool continuation, external tool
 accounting, authenticated operator control, cancellation/refund or operational
-qualification. Explicit schema v14 is required; ceilings and alpha remain unfinished.
+qualification. Explicit schema v15 is required; ceilings and alpha remain unfinished.
+
+### Guarded Tool Children
+
+`ModelToolContinuationV1` builds a reasoner proposal only from a checked parent
+and its exact observation set. It retains the ordered raw responses, validation,
+next cursor, prior tool history and frozen reasoner route/output ceiling. It
+appends the current requests and observations once. Native definitions come from
+one closed compiled snapshot registry, intersected with frozen policy and skills;
+the authority checks those exact definitions rather than trusting proposed tools.
+The builder returns neither action identity, job ownership nor a sending permit.
+
+`AdvanceModelToolContinuation` checks the current committed observation epoch,
+parent lineage, job/head/attempt and operator binding. One transaction creates
+the deterministic child, reserves its model upper bounds at all three scopes,
+records the parent/observation proof and rotates the job into a child-only epoch.
+Budget or commit failure leaves the accepted observations and their charges
+intact, without a partial child or ownership change. Duplicate creators and
+lost commit acknowledgements return the same preparation receipt without
+reacquiring ownership or reserving again. Historical receipts grant no I/O.
+
+Prepared tool children use the same bounded recovery scanner, fenced claim and
+Begin protocol as formatter children. Every claim and Begin rechecks the exact
+current observation cursor and complete model ancestry, including unrelated
+already-reduced siblings. Sending actions remain non-retryable. A corrupt older
+model outcome also blocks a later formatter repair at both preparation and
+Begin; checking only its immediate model parent was insufficient.
+
+Lineage verification understands both typed edge kinds without recursively
+replaying the pipeline. All three qualified tool rounds preserve their ordered
+history and can reach checked terminal completion. Sealed batch membership stays
+immutable; a checked tool child is an explicit nonmember continuation, not a new
+batch slot. Local terminal completion still grants no approval/publication or
+refund and retains every unknown model hold. Worker creation/live handoff wiring
+remains the next step; this API/recovery boundary alone is not alpha readiness.
 
 ### Terminal Model Projection
 

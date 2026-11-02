@@ -29,3 +29,7 @@ type ModelContinuationPlan struct {
 type ModelContinuationBuilder interface {
 	BuildModelContinuation(review.ModelReduction) (ModelContinuationPlan, error)
 }
+
+type ModelToolContinuationBuilder interface {
+	BuildModelToolContinuation(review.ModelReduction, review.ModelToolObservations) (ModelContinuationPlan, error)
+}

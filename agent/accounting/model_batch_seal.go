@@ -131,8 +131,8 @@ func (a *Authority) guardModelBatchTx(ctx context.Context, tx *sql.Tx, i orchest
 	return a.guardBatchContinuationTx(ctx, tx, i)
 }
 
-// The only nonmember currently supported is the exact formatter child of a
-// checked reduction. This also covers its atomic creation before link insertion.
+// Only exact typed children of checked reductions may be nonmembers. This also
+// covers their atomic creation before link insertion.
 func (a *Authority) guardBatchContinuationTx(ctx context.Context, tx *sql.Tx, i orchestrator.DispatchIntent) error {
 	var confined bool
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(recovery_action_id=$2,false) FROM budget_jobs WHERE run_id=$1`, i.Job.RunID, i.ActionID).Scan(&confined); err != nil {
@@ -174,5 +174,19 @@ func (a *Authority) guardBatchContinuationTx(ctx context.Context, tx *sql.Tx, i 
 		return err
 	}
 	i.ActionID, i.Job = "", nil
+	if parent.State == review.ModelReductionNeedsTools {
+		record, err := a.readToolEvidenceTx(ctx, tx, parentID, parent)
+		if err != nil {
+			return err
+		}
+		var current bool
+		if err = tx.QueryRowContext(ctx, `SELECT tool_observation_id=$2 FROM budget_jobs WHERE run_id=$1`, parent.Source.Run.ID, toolObservationKey(parentID)).Scan(&current); err != nil {
+			return err
+		}
+		if !current {
+			return errors.New("sealed tool child lost its observation cursor")
+		}
+		return validateToolContinuationPlan(orchestrator.ModelContinuationPlan{Version: 1, ParentGroupDigest: parent.GroupDigest, ParentInputDigest: parent.InputDigest, Intent: i}, parent, record.Artifact)
+	}
 	return validateContinuationPlan(orchestrator.ModelContinuationPlan{Version: 1, ParentGroupDigest: parent.GroupDigest, ParentInputDigest: parent.InputDigest, Intent: i}, parent)
 }

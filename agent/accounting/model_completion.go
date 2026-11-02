@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
 )
 
@@ -190,12 +189,12 @@ func (a *Authority) lookupModelJobTx(ctx context.Context, tx *sql.Tx, runID stri
 }
 
 // Historical projection verifies evidence, not current dispatch authority. Each
-// formatter edge must still bind the exact parent proof and frozen child plan.
+// typed edge must still bind the exact parent proof and frozen child plan.
 func (a *Authority) checkTerminalLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction) error {
 	return a.checkModelLineageTx(ctx, tx, id, artifact, true)
 }
 
-func (a *Authority) checkModelLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction, requireAllActions bool) error {
+func (a *Authority) checkModelLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction, requireAllActions bool, preparedChild ...string) error {
 	if _, err := a.readModelBatchSealTx(ctx, tx, artifact.Source.Run.ID); err != nil {
 		return err
 	}
@@ -238,31 +237,38 @@ func (a *Authority) checkModelLineageTx(ctx context.Context, tx *sql.Tx, id stri
 			if err != nil {
 				return err
 			}
-			var parentID, linkedDigest, digest, actionID, runID, attemptID string
-			var version int
-			err = tx.QueryRowContext(ctx, `SELECT c.parent_reduction_id,c.parent_digest,m.artifact_digest,(SELECT min(x.action_id) FROM budget_model_reduction_inputs x WHERE x.reduction_id=m.id),m.run_id,m.attempt_id,c.builder_version FROM budget_model_continuations c JOIN budget_model_reductions m ON m.id=c.parent_reduction_id WHERE c.child_action_id=$1`, input.ActionID).Scan(&parentID, &linkedDigest, &digest, &actionID, &runID, &attemptID, &version)
-			if errors.Is(err, sql.ErrNoRows) && cp.Cursor.Phase == review.ModelReviewBatches {
+			parentID, parent, found, err := a.readContinuationParentTx(ctx, tx, i)
+			if err != nil {
+				return err
+			}
+			if !found && cp.Cursor.Phase == review.ModelReviewBatches {
 				continue
 			}
-			if err != nil {
-				return err
-			}
-			if version != 1 || linkedDigest != digest || input.ActionID != continuationKey(parentID) || runID != artifact.Source.Run.ID || attemptID != artifact.Source.Attempt.AttemptID {
-				return errors.New("terminal ancestry link changed")
-			}
-			parent, err := a.readModelReductionTx(ctx, tx, actionID)
-			if err != nil {
-				return err
-			}
-			i.ActionID, i.Job = "", nil
-			if err = validateContinuationPlan(orchestrator.ModelContinuationPlan{Version: version, ParentGroupDigest: parent.GroupDigest, ParentInputDigest: parent.InputDigest, Intent: i}, parent); err != nil {
-				return err
+			if !found {
+				return errors.New("model ancestor has no continuation link")
 			}
 			pending = append(pending, group{parentID, parent})
 		}
 	}
 	if !requireAllActions {
 		return nil
+	}
+	if len(preparedChild) > 1 {
+		return errors.New("ambiguous prepared child lineage")
+	}
+	if len(preparedChild) == 1 {
+		i, _, err := a.storedAction(ctx, tx, preparedChild[0])
+		if err != nil {
+			return err
+		}
+		parent, _, found, err := a.readContinuationParentTx(ctx, tx, i)
+		if err != nil {
+			return err
+		}
+		if !found || parent != id {
+			return errors.New("prepared exclusion is not an exact linked child")
+		}
+		actions = append(actions, preparedChild[0])
 	}
 	var unlinked bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=$1 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$2 AND NOT (a.id=ANY($3::text[])))`, artifact.Source.Attempt.AttemptID, artifact.Source.Run.ID, actions).Scan(&unlinked); err != nil {

@@ -1217,6 +1217,44 @@ This is an incremental behavior ledger, not a completion declaration.
   and remaining provider/operational qualification remain open. Ceilings and alpha
   are unfinished.
 
+### 69. Guarded Reasoner Children And Cross-Role Lineage
+
+- A pure versioned builder consumes the exact parent/observation set, appends
+  current tool history once and freezes the reasoner route, output bound,
+  validation, cursor and raw-response history. Pipeline and authority now share
+  the compiled native snapshot definitions, intersected with policy and skills.
+  A builder proposal has no action identity, job token or sending authority.
+- `AdvanceModelToolContinuation` checks the committed observation epoch and
+  complete parent proof before atomically preparing one child, three model holds,
+  its typed parent/observation link and a new child-only job epoch. Denials and
+  deferred commit failure preserve accepted observation charges and ownership.
+  Competing creators and real post-commit process exits cannot reserve twice.
+- Red integration tests caught the old formatter-only reclaim gate. Prepared
+  tool children now enter the existing fenced scanner/claim/Begin protocol.
+  Crash tests at prepared, claimed and sending states preserve exact stored
+  requests; sending children never resend. Post-claim receipt/cursor/model-proof
+  changes block sending. No whole-job replay or current-profile route fallback.
+- All three rounds retain ordered requests, observations and raw responses and
+  reach checked local terminal completion without settling unknown model holds.
+  Sealed initial groups admit explicit checked nonmember children, not extra
+  batch slots. Mixed tool-to-formatter repair retains its full ancestry.
+- Further red tests caught formatter preparation/Begin trusting only the
+  immediate model parent after a tool round. Complete bounded ancestry and exact
+  membership are now required there too; a corrupted older model outcome cannot
+  authorize the later repair. Checking only receipt digests was insufficient.
+- Explicit schema v15 migration has populated deferred-commit rollback and
+  idempotent retry coverage. It preserves accepted observations/charges/holds/
+  ownership and invents no child. Earlier upgrade fixtures include the new table.
+  No deployed database was changed.
+- Verification: full PostgreSQL-backed tests, cross-role/sealed focused tests,
+  the complete PostgreSQL-backed race suite, vet, formatting, bridge tests and
+  Compose validation pass. Final builder-panic and unchanged-owner failure checks
+  also pass under the race detector. PostgreSQL durability settings remained enabled.
+- Automatic worker creation and canonical live tool handoff remain next. No
+  end-to-end continuation, authenticated operator control, safe cancellation/
+  refund, provider/CPU accounting or release qualification completion is claimed.
+  Ceilings and alpha remain unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

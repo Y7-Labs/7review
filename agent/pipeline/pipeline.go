@@ -2143,58 +2143,20 @@ func reviewToolSchemasJSON(rc *review.Context) string {
 }
 
 func reasonerToolDefinitions(rc *review.Context) []orchestrator.ToolDefinition {
-	schemas := availableReasonerToolSchemas(rc)
-	out := make([]orchestrator.ToolDefinition, 0, len(schemas))
-	for _, schema := range schemas {
-		out = append(out, orchestrator.ToolDefinition{
-			Name:        schema.Name,
-			Description: schema.Description,
-			InputSchema: schema.InputSchema,
-		})
+	if rc == nil {
+		return []orchestrator.ToolDefinition{}
 	}
-	return out
+	return orchestrator.SnapshotToolDefinitions(rc.Source)
 }
 
 func availableReasonerToolSchemas(rc *review.Context) []reasonerToolSchema {
-	out := make([]reasonerToolSchema, 0)
-	if rc == nil || !rc.Source.Policy.AllowsCapability("repo.read") {
-		return out
+	if rc == nil {
+		return []orchestrator.SnapshotToolSchema{}
 	}
-	for _, schema := range reasonerToolSchemas() {
-		if activeSkillsAllowSurface(rc.Source.SkillActivations, schema.Surface) {
-			out = append(out, schema)
-		}
-	}
-	return out
+	return orchestrator.AvailableSnapshotToolSchemas(rc.Source)
 }
 
-type reasonerToolSchema struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Surface     string         `json:"surface"`
-	InputSchema map[string]any `json:"input_schema"`
-}
-
-func reasonerToolSchemas() []reasonerToolSchema {
-	return []reasonerToolSchema{
-		{Name: "get_merge_request", Description: "Fetch normalized merge/pull request metadata for the active run.", Surface: "scm-api", InputSchema: runOnlySchema()},
-		{Name: "get_changed_files", Description: "Fetch changed file metadata and patch availability for the active run.", Surface: "scm-api", InputSchema: runOnlySchema()},
-		{Name: "list_discussions", Description: "Fetch normalized SCM discussions already known for the active run.", Surface: "scm-api", InputSchema: runOnlySchema()},
-		{Name: "get_diff_summary", Description: "Fetch normalized diff file summaries, token estimates, and patch line counts.", Surface: "diff-analyzer", InputSchema: runOnlySchema()},
-		{Name: "get_selected_context", Description: "Fetch selected skills, repository knowledge, evidence reasons, and memory availability.", Surface: "corpus-selector", InputSchema: runOnlySchema()},
-		{Name: "get_inline_positions", Description: "Fetch provider inline-comment path, side, line, and diff-ref metadata for changed new-side lines.", Surface: "scm-api", InputSchema: runOnlySchema()},
-	}
-}
-
-func runOnlySchema() map[string]any {
-	return map[string]any{
-		"type":                 "object",
-		"additionalProperties": false,
-		"properties": map[string]any{
-			"run": map[string]any{"type": "string", "description": "Optional active run ID; omitted inside the review loop."},
-		},
-	}
-}
+type reasonerToolSchema = orchestrator.SnapshotToolSchema
 
 func activeSkillsAllowSurface(activations []review.SkillActivation, surface string) bool {
 	if surface == "" {

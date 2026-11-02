@@ -12,7 +12,7 @@ import (
 )
 
 func TestReviewToolsDeniedByEffectivePolicyReturnNoData(t *testing.T) {
-	for _, tool := range reasonerToolSchemas() {
+	for _, tool := range orchestrator.SnapshotToolSchemas() {
 		t.Run(tool.Name, func(t *testing.T) {
 			rc := review.NewContext(review.Request{})
 			rc.Source.Policy = projectTrustedPolicy(TrustedPolicyResult{
@@ -84,7 +84,7 @@ func TestReviewToolRequiresBothPolicyAndSkillPermission(t *testing.T) {
 func TestDeniedToolsAreNotAdvertisedToModel(t *testing.T) {
 	rc := review.NewContext(review.Request{})
 	rc.Source.Policy = projectTrustedPolicy(TrustedPolicyResult{Enforced: true, Effective: &policy.EffectivePolicy{AllowedTools: []string{"model.review"}}})
-	for _, tool := range reasonerToolSchemas() {
+	for _, tool := range orchestrator.SnapshotToolSchemas() {
 		if strings.Contains(reviewSystemPrompt(rc), `"name":"`+tool.Name+`"`) {
 			t.Fatalf("denied native tool %s was advertised in system prompt", tool.Name)
 		}

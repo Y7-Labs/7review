@@ -59,7 +59,7 @@ func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestr
 		return err
 	}
 	var child bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_continuations WHERE child_action_id=$1)`, i.ActionID).Scan(&child); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_continuations WHERE child_action_id=$1 UNION ALL SELECT 1 FROM budget_model_tool_children WHERE child_action_id=$1)`, i.ActionID).Scan(&child); err != nil {
 		return err
 	}
 	if child {
