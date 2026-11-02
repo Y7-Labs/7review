@@ -1361,6 +1361,48 @@ This is an incremental behavior ledger, not a completion declaration.
   other human commands, broader tool/CPU and live operational/provider
   qualification remain open. Ceilings and alpha remain unfinished.
 
+### 73. Proof-Backed Unused Release And Automatic Cancelled Cleanup
+
+- Red: tests first required a durable local non-execution proof, exact three-scope
+  attribution, once-only capacity release, crash/restart reconciliation and
+  rejection of active/sending/uncertain/recorded/settled or contradictory work.
+  The absent operation/contracts failed compilation. The initial restart service
+  test then failed because workers did not invoke release maintenance.
+- Green: a cancelled preparation can now produce one checksummed proof, three
+  audit scope links and a `not_executed` disposition in one transaction. It uses
+  the already-authenticated cancellation, original immutable request/checkpoint,
+  binding, frozen qualification and coherent unsent lease, not current provider
+  credentials, a fresh deadline or lease expiry as evidence of zero usage.
+- Red/green: original scope rows are retained, not erased. A corruption test
+  demonstrated that losing a release proof must block spending, and another
+  caught a deleted original project link silently bypassing proof verification.
+  Budget reads now discover both original/audit links and validate proof,
+  attribution, cancellation and unsent evidence before excluding the exact upper
+  amount. An ownerless epoch is rejected rather than accepted as a valid proof.
+- Green: bounded maintenance runs before prepared recovery/fresh claiming and
+  survives restart with an empty live route catalog, without provider I/O or
+  whole-job replay. Journal failure blocks fallthrough. Scoped attempt reads
+  expose released/retained counts only after proof verification. Cancellation
+  receipts remain unchanged; a release advances only the later control version.
+- Behavior tests cover all scopes, duplicate workers, lost acknowledgment,
+  deferred commit failure, real process/backend interruption and unknown COMMIT
+  outcome, expired work/current config changes, damaged evidence, and preserved
+  other model holds/snapshot charges. Qualified usage contradicting a released
+  action is quarantined and blocks all original scopes, never silently settled.
+- Explicit schema v17 has a populated rollback/retry rehearsal preserving
+  cancellation receipts, sending/prepared states, ownership and original holds.
+  Migration never infers release or credits old reservations. Historical upgrade
+  fixtures, including v8-to-v9, remove later objects before rehearsal. No deployed
+  database was changed.
+- Verification: complete PostgreSQL-backed tests and the final complete
+  PostgreSQL-backed race suite pass, along with vet, formatting and diff checks.
+  The final race run includes the damaged-attribution and ownerless-epoch fixes,
+  automatic restart cleanup and unavailable-journal dispatch regression tests.
+- Superseded-only unused release, arbitrary/incident adjustments, remaining
+  canonical human controls and CLI/TUI mutations, broader tool/CPU and live
+  operational/provider qualification remain open. Ceilings and alpha remain
+  unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

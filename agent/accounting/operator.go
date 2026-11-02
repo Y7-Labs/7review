@@ -18,15 +18,17 @@ var ErrOperatorAttemptInvalid = errors.New("exact attempt ID required")
 // validated assessment. ControlVersion is distinct from immutable admission
 // identity and advances on terminal/control dispositions, not worker stages.
 type OperatorAttemptView struct {
-	AttemptID      string    `json:"attempt_id"`
-	RunID          string    `json:"run_id"`
-	Revision       string    `json:"revision"`
-	InboxState     string    `json:"inbox_state"`
-	JobPhase       string    `json:"job_phase"`
-	Current        bool      `json:"current"`
-	Active         bool      `json:"active"`
-	Deadline       time.Time `json:"deadline"`
-	ControlVersion uint64    `json:"control_version"`
+	AttemptID                 string    `json:"attempt_id"`
+	RunID                     string    `json:"run_id"`
+	Revision                  string    `json:"revision"`
+	InboxState                string    `json:"inbox_state"`
+	JobPhase                  string    `json:"job_phase"`
+	Current                   bool      `json:"current"`
+	Active                    bool      `json:"active"`
+	Deadline                  time.Time `json:"deadline"`
+	ControlVersion            uint64    `json:"control_version"`
+	ReleasedUnusedActions     int64     `json:"released_unused_actions"`
+	RetainedModelReservations int64     `json:"retained_model_reservations"`
 }
 
 type operatorAttemptRecord struct {
@@ -54,6 +56,31 @@ func (a *Authority) OperatorAttempt(ctx context.Context, actor review.OperatorAc
 	if err != nil {
 		return v, err
 	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM budget_actions WHERE attempt_id=$1 AND state='not_executed'`, attemptID)
+	if err != nil {
+		return v, err
+	}
+	var released []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return v, err
+		}
+		released = append(released, id)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return v, err
+	}
+	if err = rows.Close(); err != nil {
+		return v, err
+	}
+	for _, id := range released {
+		if _, err = verifyUnusedReleaseTx(ctx, tx, id); err != nil {
+			return v, err
+		}
+	}
 	if err = tx.Commit(); err != nil {
 		return v, err
 	}
@@ -69,7 +96,9 @@ func (a *Authority) operatorAttemptTx(ctx context.Context, tx *sql.Tx, actor rev
 coalesce(h.current_attempt_id=a.id,false),j.phase,i.deadline,
 CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired'
 WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,
-j.control_version,a.tracking_id,j.cancel_command_id
+j.control_version,a.tracking_id,j.cancel_command_id,
+(SELECT count(*) FROM budget_actions x WHERE x.attempt_id=j.attempt_id AND x.state='not_executed'),
+(SELECT count(*) FROM budget_actions x WHERE x.attempt_id=j.attempt_id AND NOT x.settled AND x.state<>'not_executed')
 FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id
 JOIN budget_attempts a ON a.id=j.attempt_id LEFT JOIN budget_heads h ON h.id=a.tracking_id
 WHERE j.attempt_id=$1 AND i.boundary_id=$2 AND i.project_id=$3
@@ -77,7 +106,7 @@ AND convert_from(j.receipt,'UTF8')::jsonb->>'Duplicate'='false'`
 	if lock {
 		query += ` FOR UPDATE OF i,j`
 	}
-	err := tx.QueryRowContext(ctx, query, attemptID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&v.AttemptID, &v.RunID, &bindingRaw, &digest, &v.Active, &v.Current, &v.JobPhase, &v.Deadline, &v.InboxState, &v.ControlVersion, &record.tracking, &record.cancelID)
+	err := tx.QueryRowContext(ctx, query, attemptID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&v.AttemptID, &v.RunID, &bindingRaw, &digest, &v.Active, &v.Current, &v.JobPhase, &v.Deadline, &v.InboxState, &v.ControlVersion, &record.tracking, &record.cancelID, &v.ReleasedUnusedActions, &v.RetainedModelReservations)
 	if errors.Is(err, sql.ErrNoRows) {
 		return operatorAttemptRecord{}, ErrOperatorAttemptNotFound
 	}

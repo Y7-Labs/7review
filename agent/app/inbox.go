@@ -111,6 +111,16 @@ func (s *Server) startInboxWorkers() {
 				if ctx.Err() != nil {
 					return
 				}
+				unusedCtx, unusedCancel := context.WithTimeout(ctx, 5*time.Second)
+				_, unusedErr := s.accountingRuntime.Authority.RecoverCancelledPrepared(unusedCtx, 8)
+				unusedCancel()
+				if unusedErr != nil {
+					if ctx.Err() == nil {
+						log.Printf("[inbox] unused reservation recovery failed: %v", unusedErr)
+					}
+					timer.Reset(time.Second)
+					continue
+				}
 				// Recovery owns only one immutable prepared action. It never calls
 				// RunAccepted or grants a replacement pipeline claim.
 				if _, err := s.pipeline.Orchestrator.RecoverPreparedActions(ctx, 8); err != nil {

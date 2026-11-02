@@ -104,6 +104,9 @@ var migration015 string
 //go:embed migration016.sql
 var migration016 string
 
+//go:embed migration017.sql
+var migration017 string
+
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, setting := range []string{"fsync", "full_page_writes"} {
@@ -329,7 +332,19 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 16
 	}
-	if version != 16 {
+	if version == 16 {
+		if err = checkOperatorStorage(ctx, tx); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, migration017); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_schema SET version=17 WHERE singleton=true`); err != nil {
+			return err
+		}
+		version = 17
+	}
+	if version != 17 {
 		return errors.New("incompatible accounting schema")
 	}
 	if err = checkModelCompletionStorage(ctx, tx); err != nil {
@@ -345,6 +360,9 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if err = checkOperatorStorage(ctx, tx); err != nil {
+		return err
+	}
+	if err = checkUnusedReleaseStorage(ctx, tx); err != nil {
 		return err
 	}
 	for _, table := range []string{"budget_receipts", "budget_quarantine"} {
@@ -693,7 +711,7 @@ func (a *Authority) reserveActionTx(ctx context.Context, tx *sql.Tx, i orchestra
 
 func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested review.ResourceLimitScope) error {
 	var incident bool
-	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a JOIN budget_holds h ON h.action_id=a.id WHERE h.scope_id=$1 AND a.integrity_incident)`, ref.id).Scan(&incident); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.integrity_incident AND (EXISTS(SELECT 1 FROM budget_holds h WHERE h.action_id=a.id AND h.scope_id=$1) OR EXISTS(SELECT 1 FROM budget_unused_release_scopes s WHERE s.action_id=a.id AND s.scope_id=$1)))`, ref.id).Scan(&incident); err != nil {
 		return err
 	}
 	if incident {
@@ -703,18 +721,49 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 	if exceeds(used, ref.limit) {
 		return scopeBudgetError{ref.kind}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT CASE WHEN a.settled THEN a.actual_amount ELSE a.upper_amount END FROM budget_actions a JOIN budget_holds h ON h.action_id=a.id WHERE h.scope_id=$1 AND (NOT a.settled OR h.origin_period=$2)`, ref.id, ref.origin)
+	rows, err := tx.QueryContext(ctx, `SELECT a.id,a.state,CASE WHEN a.settled THEN a.actual_amount ELSE a.upper_amount END FROM budget_actions a JOIN (SELECT action_id,origin_period FROM budget_holds WHERE scope_id=$1 UNION SELECT action_id,origin_period FROM budget_unused_release_scopes WHERE scope_id=$1) h ON h.action_id=a.id WHERE NOT a.settled OR h.origin_period=$2`, ref.id, ref.origin)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	type heldAmount struct {
+		id, state string
+		raw       []byte
+	}
+	var held []heldAmount
 	for rows.Next() {
-		var raw []byte
-		var amount review.ResourceLimitScope
-		if err = rows.Scan(&raw); err != nil {
+		var entry heldAmount
+		if err = rows.Scan(&entry.id, &entry.state, &entry.raw); err != nil {
+			rows.Close()
 			return err
 		}
-		if err = json.Unmarshal(raw, &amount); err != nil {
+		held = append(held, entry)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	for _, entry := range held {
+		if entry.state == "not_executed" {
+			proof, err := verifyUnusedReleaseTx(ctx, tx, entry.id)
+			if err != nil {
+				return err
+			}
+			matched := false
+			for _, scope := range proof.Scopes {
+				if scope.ID == ref.id && scope.Kind == ref.kind && scope.Authority == ref.authority {
+					matched = true
+				}
+			}
+			if !matched {
+				return ErrIntegrity
+			}
+			continue
+		}
+		var amount review.ResourceLimitScope
+		if err = json.Unmarshal(entry.raw, &amount); err != nil {
 			return err
 		}
 		current, additional, cap := amounts(used), amounts(amount), amounts(ref.limit)
@@ -728,12 +777,6 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 			current[n] += additional[n]
 		}
 		used = fromAmounts(current)
-	}
-	if err = rows.Err(); err != nil {
-		return err
-	}
-	if err = rows.Close(); err != nil {
-		return err
 	}
 	charges, err := snapshotChargesTx(ctx, tx, ref)
 	if err != nil {
@@ -779,7 +822,7 @@ func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPe
 	if err = tx.QueryRowContext(ctx, `SELECT request_digest,outcome,upper_amount,integrity_incident,state FROM budget_actions WHERE id=$1 FOR UPDATE`, p.ID).Scan(&digest, &previous, &upperJSON, &incident, &state); err != nil {
 		return err
 	}
-	if state == "prepared" {
+	if state == "prepared" || state == "not_executed" {
 		return errors.New("prepared action has no sending authority")
 	}
 	if err = validateOutcomeFence(ctx, tx, p); err != nil {
@@ -863,7 +906,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 16 {
+	if version != 17 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

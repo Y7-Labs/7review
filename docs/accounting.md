@@ -49,8 +49,9 @@ the current observation reference on owned jobs.
 Schema v15 adds typed tool-child links binding each child to its exact parent
 reduction and committed observation receipt/digest.
 Schema v16 adds authenticated command receipts, a separate job control version,
-and a cancellation disposition reference. Worker runtime now requires v16; run
-explicit migration before restart.
+and a cancellation disposition reference. Schema v17 adds verified-unused local
+release proofs, their scope audit links and the `not_executed` action disposition.
+Worker runtime now requires v17; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -81,6 +82,10 @@ Migration creates no child and grants no new sending or continuation rights.
 The v15-to-v16 rehearsal preserves populated sending evidence, fencing leases,
 ownership, attempts and scope holds through deferred DDL failure and retry.
 Migration creates no command receipt, cancellation, refund or publication consent.
+The v16-to-v17 rehearsal preserves populated cancellation receipts, prepared and
+sending actions, leases, original scope rows and job versions through deferred
+DDL failure and retry. Migration creates no release proof or credit, even for an
+already-cancelled prepared action. Runtime refuses an unmigrated v16 store.
 
 ## Runtime Intake
 
@@ -144,6 +149,10 @@ worker stages and ownership rotations do not. Duplicate delivery aliases do not
 become the attempt's control target; reads and commands select the original job.
 After cancellation, aliases project that same cancelled state, disappear from
 active queue counts and cannot be freshly claimed or completed by stale owners.
+`released_unused_actions` and `retained_model_reservations` distinguish verified
+unused actions from still-unsettled model reservations. These are counts, not
+spending totals; known actual model usage and snapshot charges are separate.
+The read fails closed if a reported release proof cannot be verified.
 
 Leave the mapping unset to disable this canonical endpoint. The immutable
 directory is shared by the HTTP and accounting boundaries; an actor issued by
@@ -185,15 +194,50 @@ Different payload or actor conflicts. Every retry must still authenticate and
 pass repository authorization. Client death during COMMIT is not proof of
 rollback; exact-command replay reconciles either outcome.
 
-The receipt explicitly reports `reservation_disposition: retained`. **This step
-does not refund any reservation**, including a still-prepared action. Lease and
-positive sending evidence are preserved. Sending may already have won the race;
+The cancellation receipt reports `reservation_disposition: retained` for that
+transaction. It remains immutable if maintenance later proves unused capacity.
+Lease and positive sending evidence are preserved. Sending may have won the race;
 cancellation cannot retract that provider request or infer zero usage. Late
 attributable responses and qualified final usage settlement remain recordable,
-but cannot revive dispatch, continuation or terminal model publication. A future
-verified-unused release requires a separate audited proof and scope accounting
-transaction. CLI/TUI mutation wiring, other canonical human commands and safe
-refunds remain open; this is not a completed control lifecycle or alpha gate.
+but cannot revive dispatch, continuation or terminal model publication.
+
+### Verified Unused Release
+
+Before prepared-action recovery or fresh inbox claiming, bounded maintenance
+examines cancelled prepared actions. It does not replay jobs or invoke providers.
+Each release requires the original actor-bound cancellation audit, closed attempt
+and revoked job claim, exact immutable action/checkpoint/binding and frozen route
+qualification, coherent lease epoch with no sending marker, complete three-scope
+reservation provenance, and no outcome, settlement, integrity incident,
+quarantined usage claim or indexed external result.
+
+A transaction commits one checksummed local proof and three scope audit links,
+marks that action `not_executed`, and advances its job control version. Original
+reservation rows, periods, request/quote bytes and lease evidence remain intact.
+Budget reads treat the exact reserved upper amount as unused only after verifying
+the proof and its attribution; there is no forged zero-usage provider receipt or
+worker `UsageKnown` assertion. Missing/damaged proof, scope provenance or lease
+evidence blocks spending rather than silently removing a charge. Both original
+and release-audit scope links participate in discovery and incident fencing.
+
+Duplicate workers, restart and exact-action replay cannot credit twice. A failed
+commit exposes no proof or effective release. Unknown commit acknowledgment is
+reconciled by the same immutable action ID. Cleanup uses frozen evidence, not a
+new live provider catalog, current operator credentials or a renewed deadline;
+the cancellation already authorized stopping that work. Historical cleanup may
+outlive currentness. It grants no dispatch, continuation or publication rights.
+
+Sending, uncertain, recorded and settled work is not released by this path.
+Other model reservations and committed snapshot charges are unchanged. A later
+qualified usage receipt contradicting a not-executed proof is quarantined and
+records an integrity incident that blocks all three scopes across periods; it
+does not overwrite the proof or become an ordinary model settlement. If the
+release journal is unavailable, the worker does not fall through to new dispatch.
+
+This covers authenticated cancellation's proven-unused preparations, not arbitrary
+refunds or incident corrections. Superseded-only work, CLI/TUI mutation wiring,
+other canonical human commands and broader operational/provider qualification
+remain open. It is not a completed control lifecycle or alpha gate.
 
 ### HTTP Acceptance and Recovery
 

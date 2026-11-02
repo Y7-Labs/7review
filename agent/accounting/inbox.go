@@ -64,6 +64,9 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 	if err = checkOperatorStorage(ctx, tx); err != nil {
 		return nil, err
 	}
+	if err = checkUnusedReleaseStorage(ctx, tx); err != nil {
+		return nil, err
+	}
 	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND deadline>now()),count(*) FILTER (WHERE state='running' AND deadline>now()),count(*) FILTER (WHERE state='uncertain' OR (state='running' AND deadline<=now())) FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2
 AND NOT EXISTS(SELECT 1 FROM budget_jobs alias JOIN budget_jobs root ON root.attempt_id=alias.attempt_id WHERE alias.run_id=budget_inbox.run_id AND root.cancel_command_id IS NOT NULL)`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&status.Pending, &status.Running, &status.Uncertain)
 	if err != nil {

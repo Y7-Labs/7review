@@ -11,6 +11,7 @@ import (
 // objects behind while pretending to be an older installation.
 func dropOperatorSchemaForMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	dropUnusedSchemaForMigration(t, db)
 	var commands int
 	if err := db.QueryRow(`SELECT count(*) FROM budget_operator_commands`).Scan(&commands); err != nil || commands != 0 {
 		t.Fatalf("cannot construct historical schema with command receipts: %d %v", commands, err)

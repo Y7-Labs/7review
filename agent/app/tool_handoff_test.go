@@ -126,7 +126,7 @@ func qualifiedToolService(t *testing.T, s *Server, db *sql.DB) (*accounting.Auth
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := accounting.NewAuthority(db, accounting.Config{RequireServiceJobs: true, BoundaryID: "inbox-test", ProjectID: "team", Limits: limits, Catalog: catalog})
+	a, err := accounting.NewAuthority(db, accounting.Config{RequireServiceJobs: true, BoundaryID: "inbox-test", ProjectID: "team", Limits: limits, Catalog: catalog, Operators: s.cfg.Operators})
 	if err != nil {
 		t.Fatal(err)
 	}

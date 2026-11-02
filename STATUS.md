@@ -107,11 +107,18 @@ durable aggregate integrity. Authenticated cancellation now commits an actor-bou
 versioned receipt, revokes the claim, disables dispatch and closes the attempt
 atomically. Sending/completion races, duplicate workers, interrupted reclaim,
 restart replay and process death/unknown commit acknowledgments are tested.
-It deliberately retains every reservation: verified-unused refunds, remaining
-command/CLI/TUI controls and qualification remain open; this is not alpha readiness.
-The v8-to-v9 through v15-to-v16 migrations
+Bounded automatic maintenance now releases the effective reservation only for
+cancelled preparations with a verified local non-execution proof. It preserves
+original scope rows and lease evidence; every budget read verifies the proof
+before treating that exact amount as unused. Damaged attribution/proof and
+contradictory qualified usage fail closed across all three scopes. Sending and
+unknown usage, other reservations and snapshot charges remain accounted. Restart,
+duplicate workers, commit failure/death/unknown acknowledgment and empty live
+catalog cleanup are tested. Superseded-only release, remaining command/CLI/TUI
+controls and qualification remain open; this is not alpha readiness.
+The v8-to-v9 through v16-to-v17 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v16 before restart. No deployed database was changed.
+explicit migration to schema v17 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

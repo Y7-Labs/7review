@@ -84,6 +84,18 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 	if r.RequestDigest != digest || r.Provider != intent.Provider || r.Model != intent.Model || r.Currency != quote.Currency {
 		return quarantine(ctx, tx, r, raw, "receipt action/request/route/currency mismatch")
 	}
+	if state == "not_executed" {
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_actions SET integrity_incident=true WHERE id=$1`, r.ActionID); err != nil {
+			return err
+		}
+		if err = recordQuarantine(ctx, tx, r, raw, "qualified usage contradicts a not-executed proof"); err != nil {
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+		return ErrIntegrity
+	}
 	var priorDigest string
 	err = tx.QueryRowContext(ctx, `SELECT payload_digest FROM budget_receipts WHERE id=$1`, r.ReceiptID).Scan(&priorDigest)
 	if err == nil {
@@ -119,7 +131,7 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 }
 
 func quarantine(ctx context.Context, tx *sql.Tx, r FinalReceipt, raw []byte, reason string) error {
-	if _, err := tx.ExecContext(ctx, `INSERT INTO budget_quarantine(id,receipt_id,payload,reason) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING`, hash(append(append([]byte(nil), raw...), []byte(reason)...)), r.ReceiptID, raw, reason); err != nil {
+	if err := recordQuarantine(ctx, tx, r, raw, reason); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -128,8 +140,13 @@ func quarantine(ctx context.Context, tx *sql.Tx, r FinalReceipt, raw []byte, rea
 	return errors.New(reason)
 }
 
+func recordQuarantine(ctx context.Context, tx *sql.Tx, r FinalReceipt, raw []byte, reason string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO budget_quarantine(id,receipt_id,payload,reason) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING`, hash(append(append([]byte(nil), raw...), []byte(reason)...)), r.ReceiptID, raw, reason)
+	return err
+}
+
 func lockActionScopes(ctx context.Context, tx *sql.Tx, actionID string) error {
-	rows, err := tx.QueryContext(ctx, `SELECT s.id FROM budget_scopes s JOIN budget_holds h ON h.scope_id=s.id WHERE h.action_id=$1 ORDER BY CASE s.kind WHEN 'attempt' THEN 1 WHEN 'change' THEN 2 ELSE 3 END,s.id`, actionID)
+	rows, err := tx.QueryContext(ctx, `SELECT s.id FROM budget_scopes s JOIN (SELECT scope_id FROM budget_holds WHERE action_id=$1 UNION SELECT scope_id FROM budget_unused_release_scopes WHERE action_id=$1) refs ON refs.scope_id=s.id ORDER BY CASE s.kind WHEN 'attempt' THEN 1 WHEN 'change' THEN 2 ELSE 3 END,s.id`, actionID)
 	if err != nil {
 		return err
 	}
