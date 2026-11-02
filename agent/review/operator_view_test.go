@@ -21,6 +21,23 @@ func TestOperatorViewRejectsAmbiguousIncompleteAndWrongIdentityResponses(t *test
 	}
 }
 
+func TestOperatorViewAcceptsOnlyTerminalSupersededState(t *testing.T) {
+	raw := strings.Replace(operatorViewFixture, `"inbox_state":"cancelled"`, `"inbox_state":"superseded"`, 1)
+	raw = strings.Replace(raw, `"current":true`, `"current":false`, 1)
+	if v, err := DecodeOperatorAttemptView([]byte(raw), "attempt-1"); err != nil || v.InboxState != "superseded" {
+		t.Fatalf("superseded view: %+v %v", v, err)
+	}
+	for _, bad := range []string{
+		strings.Replace(raw, `"active":false`, `"active":true`, 1),
+		strings.Replace(raw, `"job_phase":"finished"`, `"job_phase":"admitted"`, 1),
+		strings.Replace(raw, `"current":false`, `"current":true`, 1),
+	} {
+		if _, err := DecodeOperatorAttemptView([]byte(bad), "attempt-1"); err == nil {
+			t.Fatal("nonterminal superseded view accepted")
+		}
+	}
+}
+
 func TestCancellationReceiptMustAcknowledgeTheExactSubmittedCommand(t *testing.T) {
 	c, err := DecodeCancelAttemptCommand([]byte(cancelCommandFixture))
 	if err != nil {

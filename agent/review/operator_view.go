@@ -40,7 +40,7 @@ func DecodeOperatorAttemptView(data []byte, expected string) (OperatorAttemptVie
 		return OperatorAttemptView{}, invalid
 	}
 	switch v.InboxState {
-	case "pending", "running", "completed", "failed", "expired", "uncertain", "cancelled":
+	case "pending", "running", "completed", "failed", "expired", "uncertain", "cancelled", "superseded":
 	default:
 		return OperatorAttemptView{}, invalid
 	}
@@ -50,6 +50,9 @@ func DecodeOperatorAttemptView(data []byte, expected string) (OperatorAttemptVie
 		return OperatorAttemptView{}, invalid
 	}
 	if v.InboxState == "cancelled" && (v.Active || v.JobPhase != "finished") {
+		return OperatorAttemptView{}, invalid
+	}
+	if v.InboxState == "superseded" && (v.Active || v.Current || v.JobPhase != "finished") {
 		return OperatorAttemptView{}, invalid
 	}
 	return v, nil
