@@ -274,6 +274,13 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string, accep
 		"parse":       parseStatus,
 		"providers":   formatProviderTrace(rc.Source.Run.StepProviders),
 	})
+	if isFatalModelParseStatus(parseStatus) {
+		rc.Source.Report.Draft = renderReport(rc)
+		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
+		err := fmt.Errorf("model review output was %s: %s", parseStatus, parseWarning)
+		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
+		return err
+	}
 	coverageWarnings := validateSkillCoverage(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	coverageErrors := coreSkillCoverageErrors(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	if len(coverageErrors) > 0 {
@@ -319,13 +326,6 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string, accep
 		rc.AddWarning(warning)
 	}
 	p.trace(ctx, run.ID, "skill_coverage_validated", StatusRunning, "model skill coverage validated", skillCoverageMeta(rc.Source.SkillActivations, rc.Source.SkillCoverage, coverageWarnings, coverageErrors))
-	if isFatalModelParseStatus(parseStatus) {
-		rc.Source.Report.Draft = renderReport(rc)
-		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
-		err := fmt.Errorf("model review output was %s: %s", parseStatus, parseWarning)
-		_ = p.Jobs.Update(ctx, run.ID, StatusFailed, err)
-		return err
-	}
 	if len(coverageErrors) > 0 {
 		rc.Source.Report.Draft = renderReport(rc)
 		_ = p.Jobs.SaveContext(ctx, run.ID, rc)
@@ -727,7 +727,7 @@ func firstNonEmptyPipeline(values ...string) string {
 
 func isFatalModelParseStatus(status string) bool {
 	switch status {
-	case "empty_response", "unparseable":
+	case "empty_response", "unparseable", "tool_loop_incomplete":
 		return true
 	default:
 		return false
