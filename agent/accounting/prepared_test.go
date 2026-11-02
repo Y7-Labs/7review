@@ -33,6 +33,30 @@ func preparedActionFixture(t *testing.T) (*Authority, orchestrator.DispatchInten
 	return a, i, dsn
 }
 
+func TestRecoveredActionClaimCannotFinishWholeInbox(t *testing.T) {
+	for _, success := range []bool{false, true} {
+		t.Run(map[bool]string{false: "failure", true: "success"}[success], func(t *testing.T) {
+			a, i, _ := preparedActionFixture(t)
+			ctx := context.Background()
+			prepared, err := a.PrepareAction(ctx, i)
+			if err != nil {
+				t.Fatal(err)
+			}
+			claim, err := a.ReclaimPrepared(ctx, prepared, "action-only-owner", time.Minute)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = a.FinishInbox(ctx, claim.Job.RunID, claim.Job.Token, success); err == nil {
+				t.Fatal("action-only recovery token finished whole job")
+			}
+			var state, phase string
+			if err = a.db.QueryRow(`SELECT i.state,j.phase FROM budget_inbox i JOIN budget_jobs j USING(run_id)`).Scan(&state, &phase); err != nil || state != "running" || phase != "admitted" {
+				t.Fatalf("rejected completion changed authority: %s %s %v", state, phase, err)
+			}
+		})
+	}
+}
+
 func TestPostgresPreparedLeaseConcurrencyAndCommitFaults(t *testing.T) {
 	a, i, _ := preparedActionFixture(t)
 	ctx := context.Background()
