@@ -12,6 +12,7 @@ import (
 )
 
 type operatorCommandContext struct {
+	Context   context.Context
 	ServerURL string
 	RunID     string
 	Client    *http.Client
@@ -23,25 +24,27 @@ type operatorCommandContext struct {
 type operatorCommandHandler func(operatorCommandContext) error
 
 var operatorCommandHandlers = map[string]operatorCommandHandler{
-	"/help":          handleHelpCommand,
-	"/status":        handleStatusCommand,
-	"/tools":         handleToolsCommand,
-	"/providers":     handleProvidersCommand,
-	"/config":        handleConfigCommand,
-	"/skills":        handleSkillsCommand,
-	"/sessions":      handleSessionsCommand,
-	"/diff":          handleDiffCommand,
-	"/context":       handleContextCommand,
-	"/history":       handleHistoryCommand,
-	"/memory":        handleMemoryCommand,
-	"/run":           handleRunCommand,
-	"/draft":         handleDraftCommand,
-	"/approve":       handleApproveCommand,
-	"/publish-final": handlePublishFinalCommand,
+	"/attempt":        handleOperatorAttemptCommand,
+	"/cancel-attempt": handleCancelAttemptCommand,
+	"/help":           handleHelpCommand,
+	"/status":         handleStatusCommand,
+	"/tools":          handleToolsCommand,
+	"/providers":      handleProvidersCommand,
+	"/config":         handleConfigCommand,
+	"/skills":         handleSkillsCommand,
+	"/sessions":       handleSessionsCommand,
+	"/diff":           handleDiffCommand,
+	"/context":        handleContextCommand,
+	"/history":        handleHistoryCommand,
+	"/memory":         handleMemoryCommand,
+	"/run":            handleRunCommand,
+	"/draft":          handleDraftCommand,
+	"/approve":        handleApproveCommand,
+	"/publish-final":  handlePublishFinalCommand,
 }
 
 func chatCommandHandlerWithClient(serverURL, runID string, client *http.Client) ui.ChatCommandFunc {
-	return func(_ context.Context, text string, out io.Writer, _ ui.ChatContext, opts ui.ChatOptions) (bool, error) {
+	return func(ctx context.Context, text string, out io.Writer, _ ui.ChatContext, opts ui.ChatOptions) (bool, error) {
 		fields, err := parseChatCommandFields(text)
 		if err != nil {
 			return true, err
@@ -55,6 +58,7 @@ func chatCommandHandlerWithClient(serverURL, runID string, client *http.Client) 
 			return true, fmt.Errorf("unknown chat command %q; use /help", fields[0])
 		}
 		err = handler(operatorCommandContext{
+			Context:   ctx,
 			ServerURL: serverURL,
 			RunID:     runID,
 			Client:    client,
@@ -64,6 +68,26 @@ func chatCommandHandlerWithClient(serverURL, runID string, client *http.Client) 
 		})
 		return true, err
 	}
+}
+
+func handleOperatorAttemptCommand(ctx operatorCommandContext) error {
+	var out strings.Builder
+	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
+	if err := runOperatorAttemptContext(ctx.Context, args, &out, ctx.Client); err != nil {
+		return err
+	}
+	writeAgentMessage(ctx, strings.TrimSpace(out.String()))
+	return nil
+}
+
+func handleCancelAttemptCommand(ctx operatorCommandContext) error {
+	var out strings.Builder
+	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
+	if err := runCancelAttemptContext(ctx.Context, args, &out, ctx.Client); err != nil {
+		return err
+	}
+	writeAgentMessage(ctx, strings.TrimSpace(out.String()))
+	return nil
 }
 
 func handleHelpCommand(ctx operatorCommandContext) error {

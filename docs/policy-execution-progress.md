@@ -1403,6 +1403,42 @@ This is an incremental behavior ledger, not a completion declaration.
   operational/provider qualification remain open. Ceilings and alpha remain
   unfinished.
 
+### 74. Canonical Operator CLI And Terminal Controls
+
+- Red/green: shared closed projection/receipt contracts and an operator client
+  are committed as `727ecb9`. Tests require a separate mapped credential, bounded
+  authenticated responses, exact acknowledgment matching, no redirects or shared
+  client mutation, no raw error/credential reflection and no conflict retargeting.
+  Plain-text HTTP rejection classification was corrected by a failing test.
+- Red/green: `attempt` and `cancel-attempt` CLI commands and matching terminal
+  slash commands now require exact IDs. Cancellation requires explicit command
+  ID, control version, analysis revision and reason; duplicate/unknown flags,
+  extra positionals, ambiguous numbers and missing values fail before I/O.
+  A red case caught `--json` being consumed as a missing reason value. Durable
+  review admission now exposes the exact attempt ID separately from a run alias.
+- Red/green: existing palette ordering remains stable. The real console now
+  propagates cancellation contexts and does not equate request interruption with
+  rollback. Late model stream events are channel-bound so they cannot complete
+  a newer operator request or overwrite its receipt. Chat/TUI cannot silently
+  substitute a selected run or override its configured server through these flags.
+- Evidence includes a real CLI subprocess, context/redirect/malformed-response
+  tests and the actual HTTP handler backed by PostgreSQL. The latter drops a
+  committed cancellation's HTTP acknowledgment, checks that the client does not
+  retry automatically, then verifies one receipt/version after an explicit exact
+  retry. Wrong-repository credentials and stale currentness remain rejected.
+- A Compose contract test caught missing mapping forwarding. The explicit service
+  environment now forwards the mapping and dedicated credential, never the full
+  host environment. HTTPS is required for remote canonical clients; local HTTP
+  remains loopback-only. No schema change: explicit schema v17 is still required,
+  and no deployed database/container was changed.
+- Verification: the full PostgreSQL-backed suite, final focused PostgreSQL-backed
+  canonical/handler/client race tests, complete CLI/client/domain race tests,
+  vet, formatting, diff checks and both base/local Compose validation pass.
+  No live provider qualification or deployed-container upgrade is implied.
+- Other canonical human commands, superseded-only release, incident adjustments
+  and broader tool/CPU/live operational/provider qualification remain open.
+  Ceilings and alpha remain unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

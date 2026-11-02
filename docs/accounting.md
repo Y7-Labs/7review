@@ -162,6 +162,46 @@ plain HTTP. This does not upgrade legacy approval routes into canonical authorit
 
 ### Cancellation Commands
 
+The CLI and terminal chat use the same canonical endpoints and validated receipts:
+
+```sh
+export REVIEW_OPERATOR_TOKEN="$ALICE_OPERATOR_TOKEN"
+7review attempt <exact-attempt-id> --server http://localhost:8080 --json
+7review cancel-attempt <exact-attempt-id> --command-id <stable-command-id> --expected-version <observed-version> --revision <exact-analysis-revision> --reason "operator requested stop" --server http://localhost:8080 --json
+```
+
+Use the exact `attempt_id` returned by canonical intake. `7review review` now
+prints it separately from the run ID when the service returns durable admission.
+Legacy run aliases are not resolved by these controls. Inspect the attempt first;
+cancellation requires all command/version/revision/reason fields and never fetches
+or silently substitutes a newer target. Duplicate/unknown flags, missing values,
+extra positionals and ambiguous numeric versions are rejected before network I/O.
+Use assignment syntax for a value beginning with a hyphen.
+
+The credential must already be mapped by the server. There is no fallback to
+`REVIEW_API_TOKEN`, token flag, request-body actor or implicit role. The client
+requires HTTPS for remote hosts; HTTP is accepted only for literal loopback
+addresses or `localhost`. Redirects are never followed. Responses are bounded,
+closed-contract validated and checked against the submitted command before
+success is printed. Arbitrary server error bodies and transport details are not
+echoed, so credential reflection cannot become terminal output.
+
+A 409 exposes only a validated current-attempt reference; the client does not
+follow that reference, retry or retarget. A transport failure, unsupported success
+response or 5xx may follow a committed cancellation. Retry the identical command
+ID and payload with the same mapped principal after inspection, not a newly
+generated command. A cancellation receipt reports the original disposition;
+query the attempt again for current release/retained counters.
+
+In chat/TUI the commands are `/attempt <exact-attempt-id>` and
+`/cancel-attempt <exact-attempt-id> --command-id ... --expected-version ... --revision ... --reason "..."`.
+They do not use the selected legacy run, and cannot override the terminal's server
+using command flags. Interrupting a console HTTP request does not assert backend
+rollback: the console waits for the request outcome and preserves the unconfirmed
+result. Late events from older model streams cannot overwrite the operator
+request or its receipt. Existing dashboard/legacy commands still use their
+separate `REVIEW_API_TOKEN` where configured.
+
 Send `POST /operator/commands` with the mapped credential and
 `Content-Type: application/json`. The only implemented command kind is currently
 `cancel_attempt`; the closed envelope is bounded to 8 KiB:
@@ -235,8 +275,8 @@ does not overwrite the proof or become an ordinary model settlement. If the
 release journal is unavailable, the worker does not fall through to new dispatch.
 
 This covers authenticated cancellation's proven-unused preparations, not arbitrary
-refunds or incident corrections. Superseded-only work, CLI/TUI mutation wiring,
-other canonical human commands and broader operational/provider qualification
+refunds or incident corrections. Superseded-only work, other canonical human
+commands and broader operational/provider qualification
 remain open. It is not a completed control lifecycle or alpha gate.
 
 ### HTTP Acceptance and Recovery

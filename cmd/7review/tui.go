@@ -81,9 +81,10 @@ type consoleCommandMsg struct {
 }
 
 type consoleStreamMsg struct {
-	delta string
-	err   error
-	done  bool
+	source <-chan consoleStreamMsg
+	delta  string
+	err    error
+	done   bool
 }
 
 func newConsoleTUIModel(client *http.Client, opts tuiCommandOptions) consoleTUIModel {
@@ -115,6 +116,10 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.commandRunning && m.cancel != nil {
 				m.cancel()
+				if m.stream == nil {
+					m.message = "operator request interrupted; awaiting its outcome"
+					return m, nil
+				}
 				m.cancel = nil
 				m.commandRunning = false
 				m.stream = nil
@@ -135,6 +140,10 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.commandRunning && m.cancel != nil {
 				m.cancel()
+				if m.stream == nil {
+					m.message = "operator request interrupted; awaiting its outcome"
+					return m, nil
+				}
 				m.cancel = nil
 				m.commandRunning = false
 				m.stream = nil
@@ -163,7 +172,14 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.transcript = append(m.transcript, ui.ConsoleTranscriptItem{Role: "agent"})
 				return m, waitConsoleStream(ch)
 			}
-			return m, executeConsoleCommandCmd(m.client, m.opts, m.effectiveRunID(), command)
+			ctx := context.Background()
+			name := operator.CanonicalCommand(strings.Fields(command)[0])
+			if name == "/attempt" || name == "/cancel-attempt" {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithCancel(ctx)
+				m.cancel = cancel
+			}
+			return m, executeConsoleCommandCmd(ctx, m.client, m.opts, m.effectiveRunID(), command)
 		case "backspace":
 			m.input = dropLastRune(m.input)
 			m.syncPaletteState()
@@ -277,6 +293,9 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, fetchConsoleViewCmd(m.client, m.opts)
 	case consoleCommandMsg:
 		m.commandRunning = false
+		if m.cancel != nil {
+			m.cancel()
+		}
 		m.cancel = nil
 		m.stream = nil
 		m.transcriptScroll = 0
@@ -287,6 +306,14 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, fetchConsoleViewCmd(m.client, m.opts)
 	case consoleStreamMsg:
+		if msg.source != nil && msg.source != m.stream {
+			return m, nil
+		}
+		// A cancelled older model stream cannot finish or overwrite an active
+		// non-streaming operator request and erase its cancellation context.
+		if m.commandRunning && m.stream == nil && m.cancel != nil {
+			return m, nil
+		}
 		if msg.delta != "" {
 			m.transcript = updateLastAgentTranscript(m.transcript, msg.delta)
 		}
@@ -504,10 +531,16 @@ func startConsoleChatStream(opts tuiCommandOptions, runID string, input string) 
 			}
 		})
 		if err != nil && !errors.Is(err, context.Canceled) {
-			ch <- consoleStreamMsg{err: err}
+			select {
+			case ch <- consoleStreamMsg{err: err}:
+			case <-ctx.Done():
+			}
 			return
 		}
-		ch <- consoleStreamMsg{done: true}
+		select {
+		case ch <- consoleStreamMsg{done: true}:
+		case <-ctx.Done():
+		}
 	}()
 	return ch, cancel
 }
@@ -524,20 +557,25 @@ func waitConsoleStream(ch <-chan consoleStreamMsg) tea.Cmd {
 	return func() tea.Msg {
 		msg, ok := <-ch
 		if !ok {
-			return consoleStreamMsg{done: true}
+			return consoleStreamMsg{done: true, source: ch}
 		}
+		msg.source = ch
 		return msg
 	}
 }
 
-func executeConsoleCommandCmd(client *http.Client, opts tuiCommandOptions, runID string, input string) tea.Cmd {
+func executeConsoleCommandCmd(ctx context.Context, client *http.Client, opts tuiCommandOptions, runID string, input string) tea.Cmd {
 	return func() tea.Msg {
-		out, err := executeConsoleCommand(client, opts, runID, input)
+		out, err := executeConsoleCommandContext(ctx, client, opts, runID, input)
 		return consoleCommandMsg{input: input, out: out, err: err}
 	}
 }
 
 func executeConsoleCommand(client *http.Client, opts tuiCommandOptions, runID string, input string) (string, error) {
+	return executeConsoleCommandContext(context.Background(), client, opts, runID, input)
+}
+
+func executeConsoleCommandContext(ctx context.Context, client *http.Client, opts tuiCommandOptions, runID string, input string) (string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
 		return "", nil
@@ -545,7 +583,7 @@ func executeConsoleCommand(client *http.Client, opts tuiCommandOptions, runID st
 	serverURL := strings.TrimRight(opts.serverURL, "/")
 	if strings.HasPrefix(input, "/") {
 		var out bytes.Buffer
-		handled, err := chatCommandHandlerWithClient(serverURL, runID, client)(context.Background(), input, &out, ui.ChatContext{ServerURL: serverURL, RunID: runID}, ui.ChatOptions{Plain: true})
+		handled, err := chatCommandHandlerWithClient(serverURL, runID, client)(ctx, input, &out, ui.ChatContext{ServerURL: serverURL, RunID: runID}, ui.ChatOptions{Plain: true})
 		if !handled && err == nil {
 			err = fmt.Errorf("unknown command %q; use /help", input)
 		}
@@ -560,7 +598,7 @@ func executeConsoleCommand(client *http.Client, opts tuiCommandOptions, runID st
 		runID:      runID,
 		httpClient: operatorStreamHTTPClient(),
 	}
-	err := responder.StreamRespond(context.Background(), input, func(delta string) error {
+	err := responder.StreamRespond(ctx, input, func(delta string) error {
 		out.WriteString(delta)
 		return nil
 	})

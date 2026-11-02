@@ -38,6 +38,20 @@ agent's authenticated `/ready` endpoint and renders pipeline, orchestrator,
 run-store, queue, Headroom, and MemPalace readiness. Set `REVIEW_API_TOKEN`
 when the server requires operator auth.
 
+Canonical accounting controls are separate from those legacy run commands:
+
+```sh
+7review attempt <exact-attempt-id> --server http://localhost:8080 --json
+7review cancel-attempt <exact-attempt-id> --command-id <stable-id> --expected-version <version> --revision <revision> --reason "operator stop" --server http://localhost:8080
+```
+
+Set `REVIEW_OPERATOR_TOKEN` to a credential explicitly mapped by the server;
+`REVIEW_API_TOKEN` does not implicitly establish that identity. Canonical review
+admission prints the exact attempt ID. Cancellation requires an explicit observed
+version/revision and stable command ID; it never resolves a selected run alias or
+retargets a conflict. Remote hosts require HTTPS; loopback HTTP is supported.
+See [canonical operator setup and retry behavior](accounting.md#cancellation-commands).
+
 `tui` runs as an interactive review workspace by default. The live screen keeps
 a transcript/output pane on the left, a compact context rail on the right, and a
 fixed composer at the bottom. Type slash commands directly in the composer:
@@ -45,6 +59,10 @@ fixed composer at the bottom. Type slash commands directly in the composer:
 `/draft`, `/memory`, `/approve --report-file final.md`, and
 `/publish-final --report-file final.md`. Type a normal message when a run is
 active to stream model chat through the running agent's `/chat/stream` endpoint.
+`/attempt <exact-attempt-id>` and `/cancel-attempt ...` are also available without
+a selected run. Their flags match the CLI except that the TUI's server is pinned.
+Interrupting these requests cancels the HTTP context, not an already-committed
+server action; an unknown outcome is reported for exact-command reconciliation.
 Press `r` to refresh immediately, `?` to show or hide command help, and `q`,
 `esc`, or `ctrl+c` to exit when the input is empty. Use `--once` for a single
 non-interactive dashboard snapshot.

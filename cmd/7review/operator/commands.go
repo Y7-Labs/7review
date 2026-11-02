@@ -25,6 +25,8 @@ var Commands = []Command{
 	{Name: "/memory", Aliases: []string{"/mempalace"}, Usage: "/memory", Description: "Preview approved MemPalace proposal.", RequiresRun: true},
 	{Name: "/approve", Aliases: []string{"/hil"}, Usage: "/approve --report-file <path>", Description: "Approve and publish the final review.", RequiresRun: true, Examples: []string{"/approve --report-file final.md"}},
 	{Name: "/publish-final", Aliases: []string{"/publish"}, Usage: "/publish-final --report-file <path>", Description: "Retry final report publishing.", RequiresRun: true, Examples: []string{"/publish-final --report-file final.md"}},
+	{Name: "/attempt", Usage: "/attempt <exact-attempt-id>", Description: "Show canonical attempt identity, version and reservation status."},
+	{Name: "/cancel-attempt", Usage: "/cancel-attempt <exact-attempt-id> --command-id <id> --expected-version <n> --revision <revision> --reason <text>", Description: "Cancel an exact canonical attempt with a versioned command."},
 }
 
 func CanonicalCommand(value string) string {

@@ -114,8 +114,14 @@ before treating that exact amount as unused. Damaged attribution/proof and
 contradictory qualified usage fail closed across all three scopes. Sending and
 unknown usage, other reservations and snapshot charges remain accounted. Restart,
 duplicate workers, commit failure/death/unknown acknowledgment and empty live
-catalog cleanup are tested. Superseded-only release, remaining command/CLI/TUI
-controls and qualification remain open; this is not alpha readiness.
+catalog cleanup are tested. Canonical CLI/TUI attempt reads and explicit versioned
+cancellation now share the mapped-credential client, with no service-token
+fallback, alias resolution, redirects or conflict retargeting. Lost HTTP
+acknowledgment is reconciled through exact command replay; console interruptions
+and late model events do not assert rollback or overwrite operator receipts.
+Compose now forwards the mapping and dedicated credential explicitly. Other
+canonical commands, superseded-only release and qualification remain open; this
+is not alpha readiness.
 The v8-to-v9 through v16-to-v17 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v17 before restart. No deployed database was changed.

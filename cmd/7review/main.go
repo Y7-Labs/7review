@@ -30,6 +30,19 @@ const operatorStreamTimeout = 10 * time.Minute
 const maxSSEEventBytes = 4 << 20
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "attempt" || os.Args[1] == "cancel-attempt") {
+		var err error
+		if os.Args[1] == "attempt" {
+			err = runOperatorAttempt(os.Args[2:], os.Stdout, operatorRequestHTTPClient())
+		} else {
+			err = runCancelAttempt(os.Args[2:], os.Stdout, operatorRequestHTTPClient())
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "accounting" {
 		if err := runAccountingCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -140,9 +153,11 @@ func runListRuns() {
 }
 
 type requestReviewCommandResult struct {
-	RunID  string `json:"run_id"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
+	AttemptID string `json:"attempt_id,omitempty"`
+	Durable   bool   `json:"durable,omitempty"`
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 func runRequestReview(args []string, out io.Writer, client *http.Client) error {
@@ -178,11 +193,24 @@ func runRequestReview(args []string, out io.Writer, client *http.Client) error {
 	if result.RunID == "" {
 		return fmt.Errorf("request_review returned no run id")
 	}
-	if result.Reason != "" {
-		fmt.Fprintf(out, "review %s for %s: %s\n", result.Status, result.RunID, result.Reason)
-		return nil
+	if result.Durable || result.AttemptID != "" {
+		if err := review.ValidateOperatorAttemptID(result.AttemptID); err != nil {
+			return errors.New("durable review response did not establish a valid exact attempt ID; inspect acceptance before retrying")
+		}
 	}
-	fmt.Fprintf(out, "review %s for %s\n", result.Status, result.RunID)
+	if result.Reason != "" {
+		if _, err := fmt.Fprintf(out, "review %s for %s: %s\n", result.Status, result.RunID, result.Reason); err != nil {
+			return err
+		}
+	} else {
+		if _, err := fmt.Fprintf(out, "review %s for %s\n", result.Status, result.RunID); err != nil {
+			return err
+		}
+	}
+	if result.AttemptID != "" {
+		_, err := fmt.Fprintf(out, "attempt %s\n", result.AttemptID)
+		return err
+	}
 	return nil
 }
 

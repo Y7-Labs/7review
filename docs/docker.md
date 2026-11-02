@@ -46,6 +46,33 @@ make docker-up
 GitHub can be used instead of GitLab by setting `GITHUB_TOKEN` and
 `GITHUB_WEBHOOK_SECRET`.
 
+### Canonical Operator Controls
+
+The Compose service explicitly forwards `REVIEW_OPERATOR_GRANTS_JSON` and
+`REVIEW_OPERATOR_TOKEN`, independently of `REVIEW_API_TOKEN`. For one local
+principal, configure its grant's `token_env` as `REVIEW_OPERATOR_TOKEN` and set
+that high-entropy credential in trusted host configuration. No grant is inferred
+from merely setting either token. Additional principals with different secret
+variable names need explicit service `environment` entries in a private Compose
+override; the stack deliberately does not forward the entire host environment.
+
+Canonical controls require the coordinated runtime, trusted host ceilings and
+explicit schema v17 migration; the default legacy stack is not that authority.
+After explicitly building/recreating the intended service configuration, use
+the host CLI against its loopback-published port, or the container binary against
+its own loopback address:
+
+```sh
+docker compose exec 7review /app/7review attempt <exact-attempt-id> --server http://localhost:8080 --json
+```
+
+For the local override use the same project/file flags as its other commands.
+Do not use plain `http://7review:8080` for canonical controls from another
+container: the client requires remote HTTPS or local loopback HTTP. The token must
+match the mapped principal, and a cancellation still requires explicit command
+ID, observed control version, revision and reason. See
+[canonical accounting controls](accounting.md#cancellation-commands).
+
 For local Ollama with Docker Compose, run Ollama on the host and expose it on an
 address reachable from containers. The agent should use the Compose network
 gateway, not `127.0.0.1`, because localhost inside the agent container is the
