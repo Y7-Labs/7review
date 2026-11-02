@@ -39,10 +39,9 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v6 adds locally recoverable action-result records to v5 transactional
-acceptance jobs and owned attempt linkage, following the
-v4 durable HTTP inbox and v3 intake receipts/generation fencing,
-without clearing holds. A missing or
+Schema v7 commits complete accepted aggregates on top of v6 action-result
+recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
+A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
 
 ## Runtime Intake
@@ -66,18 +65,27 @@ cannot spend on any production model. Real-provider qualification remains requir
 
 ### HTTP Acceptance and Recovery
 
-Canonical GitHub/GitLab review requests commit a PostgreSQL inbox row before HTTP
-202. Responses include `durable: true`, a stable `run_id` and acceptance status.
+Canonical GitHub/GitLab review requests first acquire trusted SCM/base policy and
+prepare the initial Source/skill/rule plan, without model or publication effects.
+One transaction then commits inbox, pending job, attested attempt/work intent,
+generation pointer, intake receipt, prepared state and initial acceptance event
+before HTTP 202. Responses include `durable: true`, stable `run_id`/`attempt_id`
+and acceptance status. Preparation is bounded by a 30-second HTTP intake context;
+its time counts toward the original execution deadline. PostgreSQL microsecond
+normalization never extends that deadline.
 Delivery replay returns that same ID and never extends its original deadline;
 changed raw or normalized payloads are rejected and durably audited. Requests
 without a delivery ID (including explicit manual requests) are fresh intents,
 not idempotent retries. Ignored/non-reviewable events do not claim durable work.
+Known delivery replays resolve the committed aggregate before new SCM reads or
+current trigger selection, including after a lost 202 or expired retry deadline.
+Corrupt/missing checkpoints cannot be acknowledged or reconstructed implicitly.
 
 Workers poll pending rows, so a crash between acceptance and queue notification
 cannot lose accepted work. A committed exclusive claim precedes pipeline entry.
-Acceptance creates its durable job in the same transaction. Attested admission
-links the job to its immutable attempt/receipt atomically, under the original
-owner and deadline. The model sending transaction checks that owner and commits
+Workers load the checksummed accepted Source/continuation, not newer SCM state;
+they do not re-admit the request. Initial admission ownership is transaction-local
+and revoked before commit. The model sending transaction checks the worker owner and commits
 the job effect-started marker with the action and all holds. Duplicate-only jobs
 link to the original receipt but cannot authorize additional spending.
 The production authority requires owned jobs for service admission/dispatch;
@@ -108,10 +116,12 @@ promoted. Recovery storage failure blocks new inbox claims for that poll.
 
 This conservative recovery intentionally sacrifices automatic progress after a
 claimed crash. Prepared-action reclaim, validated-result continuation,
-authenticated operator recovery, durable final run artifacts and full aggregate
-event atomicity remain unimplemented. Inbox/job acceptance and later attested
-attempt linkage are transactional, not a claim that the entire target aggregate
-already commits before HTTP acknowledgement.
+authenticated operator recovery, durable final run artifacts and the complete
+mutable assessment/action state machine remain unimplemented. Before-202 initial
+aggregate atomicity is not completion of those separate recovery/release gates.
+Pre-v7 nonterminal jobs without checkpoints become `legacy_unknown`; they are
+not automatically executed or silently upgraded from current SCM. Their original
+result attribution and unresolved holds remain available for conservative recovery.
 Do not requeue uncertain rows manually or delete them to obtain fresh allowance.
 Inbox fault tests include deferred commit failures and abrupt subprocess exit
 after acceptance/claim commit; replay preserves the same original receipt.

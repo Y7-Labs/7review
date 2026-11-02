@@ -2,9 +2,11 @@ package accounting
 
 import (
 	"context"
+	"github.com/Y4NN777/7review/agent/review"
 	"github.com/Y4NN777/7review/internal/testpostgres"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRuntimeSettingsCannotSilentlyEnablePartialAccounting(t *testing.T) {
@@ -30,6 +32,9 @@ func TestPostgresRuntimeChecksSchemaWithoutAuthorizingDefaultRoutes(t *testing.T
 	defer runtime.Close()
 	if !runtime.Authority.cfg.RequireServiceJobs {
 		t.Fatal("production runtime permits service intake outside durable jobs")
+	}
+	if _, err = runtime.Authority.AcceptInbox(context.Background(), review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7"}, time.Minute); err == nil {
+		t.Fatal("production runtime accepted incomplete aggregate through compatibility API")
 	}
 	if _, err = runtime.Authority.cfg.Catalog.Quote(quoteIntent(), boundsTime); err == nil {
 		t.Fatal("enabling intake implicitly authorized an unqualified route")

@@ -658,6 +658,39 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: focused red/green tests and the full pipeline package pass.
   HTTP acceptance has not yet been switched to the new preparation path.
 
+### Slice 39: Complete Before-202 Service Aggregate
+
+- R14/S15 signed HTTP red cases exposed acknowledgement before attempt/state
+  commit, failure to reject aggregate commit errors, and policy selection hiding
+  a prior accepted receipt. Canonical HTTP intake now prepares read-only evidence,
+  commits the full initial aggregate and only then returns its stable receipt.
+- Workers claim only complete production aggregates and load frozen state; the
+  old incomplete acceptance API is denied in production. Invalid preparation,
+  missing/corrupt state and commit failure cannot produce a durable 202 receipt.
+- PostgreSQL precision tests caught nanosecond/microsecond deadline mismatch;
+  deadlines normalize downward. An expired retry still resolves an existing
+  receipt. Concurrent identical deliveries share one aggregate; failed new-head
+  commits preserve old currentness, while successful supersession fences it and
+  retains unresolved holds.
+- Subprocess exit immediately before writing 202 proves the committed aggregate
+  survives a lost response. Restart performs no new SCM/policy reads. The default
+  unqualified catalog makes zero calls; an explicitly test-qualified in-memory
+  provider executes once after sending/three holds commit. Replay makes no new
+  attempt, job, model call, usage settlement, HIL approval or publication.
+- v6 upgrade keeps old jobs legacy-unknown without inventing checkpoints or
+  resetting holds. Original ownership remains for late attributable response
+  recovery through the immutable sending intent, not a mutable dispatch grant;
+  this also works when v7 has already disabled the old grant. It does not restore
+  dispatch authority or rewrite an already-applied migration.
+- This closes initial before-202 aggregate atomicity under the controlled tests,
+  not prepared reclaim, validated continuation, final-artifact persistence,
+  operator recovery, provider currentness or the complete ceilings/release gates.
+- A final corruption case caught a cross-run acceptance event passing replay
+  checks. Event type/run/attempt/generation are now all checked against the
+  committed aggregate, independently of checkpoint-body integrity.
+- Verification (2026-11-02): full PostgreSQL-enabled suite, broad real-DB race tests, focused
+  before-202 crash/replay/corruption races, vet, gofmt, diff and Compose checks.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

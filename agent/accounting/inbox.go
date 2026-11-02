@@ -56,6 +56,9 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 }
 
 func (a *Authority) AcceptInbox(ctx context.Context, req review.Request, timeout time.Duration) (*InboxItem, error) {
+	if a.cfg.RequireServiceJobs {
+		return nil, errors.New("production service acceptance requires a complete aggregate")
+	}
 	tx, err := a.begin(ctx)
 	if err != nil {
 		return nil, err
@@ -145,7 +148,7 @@ func (a *Authority) LookupInbox(ctx context.Context, runID string) (*InboxItem, 
 
 func (a *Authority) lookupInboxTx(ctx context.Context, tx *sql.Tx, runID string) (item *InboxItem, err error) {
 	item = &InboxItem{}
-	err = tx.QueryRowContext(ctx, `SELECT i.run_id,CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired' WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,i.deadline,coalesce(j.attempt_id,''),j.phase,(SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND j.dispatch_allowed AND a.state IN ('sending','uncertain')) FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired' WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,i.deadline,coalesce(j.attempt_id,''),j.phase,(SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND a.state IN ('sending','uncertain')) FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +167,7 @@ func (a *Authority) ClaimInbox(ctx context.Context) (*InboxItem, error) {
 	}
 	item := &InboxItem{}
 	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT run_id,request,deadline FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2 AND state='pending' AND deadline>clock_timestamp() ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&item.RunID, &raw, &item.Deadline)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,i.request,i.deadline FROM budget_inbox i WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.state='pending' AND i.deadline>clock_timestamp() AND EXISTS (SELECT 1 FROM budget_jobs j WHERE j.run_id=i.run_id AND j.phase IN ('accepted','admitted')) AND (NOT $3 OR EXISTS (SELECT 1 FROM budget_aggregates g WHERE g.run_id=i.run_id)) ORDER BY i.created_at,i.id LIMIT 1 FOR UPDATE OF i SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID, a.cfg.RequireServiceJobs).Scan(&item.RunID, &raw, &item.Deadline)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}

@@ -100,7 +100,7 @@ correct currentness and rejection of stale/ambiguous updates.
 
 ### G02: Durable Intake, Jobs And Action Journal
 
-Status: missing coordinated implementation.
+Status: coordinated initial acceptance implemented; complete action controller/recovery remains open.
 Requirements: R10, R13, R14, R17; SPEC 10/14/15.
 
 - Add the approved PostgreSQL authority/journal, migrations and startup wiring.
@@ -115,11 +115,20 @@ Requirements: R10, R13, R14, R17; SPEC 10/14/15.
   and expose recovery actions.
 - Implement actual graceful intake/worker shutdown and a documented restart path.
 
-Evidence: [workers](../agent/app/workers.go) use an in-memory channel;
+Original legacy evidence: [workers](../agent/app/workers.go) use an in-memory channel;
 [enqueueReview](../agent/app/routes.go) acknowledges queued closures, not a durable
 inbox transaction. [FileRunStore](../agent/pipeline/support.go) uses JSON
 write/rename and separate updates; there is no shared transactional journal or
 PostgreSQL driver/runtime service. Persisted run JSON is not durable queued work.
+
+Evidence update (2026-11-02): opt-in canonical HTTP intake now performs trusted
+SCM/policy preparation and commits inbox, attempt/work identity, pending job,
+receipt, Source/continuation and initial event before 202 in PostgreSQL. Deferred
+commit faults leave no partial acceptance or generation change. Subprocess exit
+at the response boundary, replay without SCM, pending restart and one guarded
+test-provider call are covered, with unresolved usage holds retained. This closes
+the initial before-202 transaction gap, not prepared-action reclaim, validated
+continuation, durable final artifacts or operational release qualification.
 
 Exit: real database/process-crash tests S15-S17/S35/S43 and all ENG-DUR cases.
 Kill processes at each specified boundary; verify receipts and actual action counts.
@@ -156,7 +165,7 @@ prepared-action recovery, validated response continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-35.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-39.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

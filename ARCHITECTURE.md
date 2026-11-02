@@ -384,11 +384,14 @@ sequenceDiagram
   participant Publish as Publisher
   User->>SCM: Open or update change
   SCM->>App: Authenticated event
-  App->>DB: Commit inbox receipt and work
+  App->>Tools: Acquire trusted snapshot and base-policy preparation (no inference)
+  Tools-->>App: Bound initial state
+  App->>DB: Commit inbox, attempt, state/event and pending job
   DB-->>App: Committed
   App-->>SCM: Acceptance receipt
   App->>Engine: Consume accepted work
-  Engine->>Tools: Acquire snapshots and cheap triage inputs
+  Engine->>DB: Claim and load frozen accepted state
+  Engine->>Tools: Acquire additional governed triage inputs
   Tools-->>Engine: Bound evidence
   loop While an eligible action fits policy and budget
     Engine->>DB: Reserve cost and persist dispatch

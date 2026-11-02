@@ -44,12 +44,14 @@ attempts, generation fencing and trusted provider hosts. Production inference
 intentionally remains fail-closed, and canonical service work is artifact-only.
 Durable HTTP acceptance and pending-work recovery now preserve stable receipts
 and original deadlines; claimed crashes remain non-retryable/uncertain.
-Inbox/job acceptance, owned attempt linkage and local unvalidated response
-recovery are now transactional. Full G01-G03 prepared-action recovery,
+The complete initial inbox/attempt/job/Source/event aggregate now commits before
+202, with controlled PostgreSQL/process-crash evidence. Workers use the frozen
+checkpoint; lost-response replay retains identity without new SCM reads. Local
+unvalidated response recovery remains separate. Full G01-G03 prepared-action recovery,
 validated continuation/currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-35.
+[Accounting](docs/accounting.md) and progress slices 20-39.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

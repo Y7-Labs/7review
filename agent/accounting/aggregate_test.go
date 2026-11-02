@@ -2,7 +2,9 @@ package accounting
 
 import (
 	"context"
+	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
+	"sync"
 	"testing"
 	"time"
 )
@@ -32,6 +34,140 @@ func TestPostgresAdmissionCallerTransactionRollsBackWholeIdentity(t *testing.T) 
 	}
 	if _, err = a.Admit(context.Background(), input); err != nil {
 		t.Fatalf("rolled-back generation consumed admission: %v", err)
+	}
+}
+
+func TestPostgresFailedAggregateSupersessionPreservesCurrentAttemptAndHold(t *testing.T) {
+	db, _ := postgresFixture(t)
+	a := ledgerAuthority(t, db, ledgerLimits())
+	req, input, source := preparedAggregate(t, a)
+	first, err := a.AcceptAggregate(context.Background(), req, input, source, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := a.ClaimInbox(context.Background())
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %#v %v", claim, err)
+	}
+	old, err := a.LoadAggregate(context.Background(), review.JobClaim{RunID: claim.RunID, Token: claim.ClaimToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.DeliveryID = "next-delivery"
+	req.SourceSHA = "next-head"
+	input.Request = req
+	input.DeliveryID = req.DeliveryID
+	input.ExpectedGeneration = 1
+	scm := *source.SCM
+	scm.DiffRefs.HeadSHA = req.SourceSHA
+	source.SCM = &scm
+	source.Request = req
+	_, att, err := review.AttestSCMRequest(req, &scm, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Attestation = att
+	input.Execution.ComparisonTree = att.ComparisonTree
+	source.Attestation = &att
+	_, err = db.Exec(`CREATE FUNCTION fail_superseding_aggregate() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected supersession failure'; END $$; CREATE CONSTRAINT TRIGGER fail_superseding_aggregate AFTER INSERT ON budget_aggregates DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_superseding_aggregate()`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.AcceptAggregate(context.Background(), req, input, source, nil); err == nil {
+		t.Fatal("failed supersession acknowledged")
+	}
+	var current string
+	var generation int
+	if err = db.QueryRow(`SELECT current_attempt_id,generation FROM budget_heads`).Scan(&current, &generation); err != nil || current != first.AttemptID || generation != 1 {
+		t.Fatalf("failed acceptance obsoleted old attempt: %s %d %v", current, generation, err)
+	}
+	i := dispatchForReceipt(ledgerIntent(t, db, "fixture-dispatch", "7", ledgerLimits()), old.Receipt)
+	i.Job = &review.JobClaim{RunID: claim.RunID, Token: claim.ClaimToken}
+	if _, err = a.ReserveAndBegin(context.Background(), i); err != nil {
+		t.Fatalf("rollback fenced still-current work: %v", err)
+	}
+	if _, err = db.Exec(`DROP TRIGGER fail_superseding_aggregate ON budget_aggregates`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.AcceptAggregate(context.Background(), req, input, source, nil); err != nil {
+		t.Fatal(err)
+	}
+	i.ActionID = "late-old-dispatch"
+	if _, err = a.ReserveAndBegin(context.Background(), i); err == nil {
+		t.Fatal("committed supersession did not fence old dispatch")
+	}
+	var holds int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds); err != nil || holds != 3 {
+		t.Fatalf("supersession reset uncertain spend: %d %v", holds, err)
+	}
+}
+
+func TestPostgresConcurrentBefore202ReplaysShareOneAggregate(t *testing.T) {
+	db, _ := postgresFixture(t)
+	a := ledgerAuthority(t, db, ledgerLimits())
+	req, input, source := preparedAggregate(t, a)
+	var wg sync.WaitGroup
+	receipts := make(chan *InboxItem, 4)
+	for n := 0; n < 4; n++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			item, err := a.AcceptAggregate(context.Background(), req, input, source, nil)
+			if err != nil {
+				t.Error(err)
+			}
+			receipts <- item
+		}()
+	}
+	wg.Wait()
+	close(receipts)
+	var id string
+	for item := range receipts {
+		if item == nil {
+			t.Fatal("concurrent acceptance failed")
+		}
+		if id == "" {
+			id = item.RunID
+		}
+		if item.RunID != id || item.AttemptID == "" {
+			t.Fatalf("replay allocated another identity: %#v", item)
+		}
+	}
+	for _, table := range []string{"budget_inbox", "budget_jobs", "budget_attempts", "budget_intakes", "budget_aggregates"} {
+		var count int
+		if err := db.QueryRow(`SELECT count(*) FROM ` + table).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("%s duplicated: %d %v", table, count, err)
+		}
+	}
+}
+
+func TestPostgresV6UpgradeRetainsHoldsAndLateResultsWithoutReauthorizing(t *testing.T) {
+	a, i, permit, runID, _ := linkedAction(t)
+	// Rehearse a v6 accepted job: no complete immutable aggregate existed.
+	if _, err := a.db.Exec(`DROP TABLE budget_aggregates; UPDATE budget_schema SET version=6`); err != nil {
+		t.Fatal(err)
+	}
+	if err := Migrate(context.Background(), a.db); err != nil {
+		t.Fatal(err)
+	}
+	i.ActionID = "obsolete-owner-new-send"
+	if _, err := a.ReserveAndBegin(context.Background(), i); err == nil {
+		t.Fatal("migration reauthorized legacy job")
+	}
+	response := []byte("late attributable response")
+	if err := a.RecordOutcome(context.Background(), permit, orchestrator.DispatchOutcome{Response: response, ResponseReceived: true, ResponseDigest: hash(response), ElapsedMS: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := a.RecoverActionResults(context.Background(), 32); err != nil || n != 1 {
+		t.Fatalf("upgrade lost original response ownership: %d %v", n, err)
+	}
+	status, err := a.LookupInbox(context.Background(), runID)
+	if err != nil || status.JobPhase != "legacy_unknown" || status.RecordedUnvalidated != 1 {
+		t.Fatalf("legacy recovery fabricated state: %#v %v", status, err)
+	}
+	var holds int
+	if err = a.db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds); err != nil || holds != 3 {
+		t.Fatalf("migration reset unresolved holds: %d %v", holds, err)
 	}
 }
 
@@ -85,11 +221,26 @@ func TestPostgresAggregateReplayCannotRebindOrConcealCorruption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expired := input
+	expired.Execution.DeadlineAt = time.Now().Add(-time.Minute)
+	replay, err := a.AcceptAggregate(context.Background(), req, expired, review.Source{}, nil)
+	if err != nil || replay.RunID != accepted.RunID || !replay.Deadline.Equal(accepted.Deadline) {
+		t.Fatalf("expired retry failed to resolve committed receipt: %#v %v", replay, err)
+	}
 	req.Title = "conflicting raw input"
 	if _, err = a.ReplayAggregate(context.Background(), req); err != ErrInboxConflict {
 		t.Fatalf("conflict not rejected before reacquisition: %v", err)
 	}
 	req.Title = ""
+	if _, err = db.Exec(`UPDATE budget_aggregates SET initial_event=jsonb_set(initial_event,'{run_id}','"wrong-run"') WHERE run_id=$1`, accepted.RunID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.ReplayAggregate(context.Background(), req); err == nil {
+		t.Fatal("cross-run acceptance event acknowledged")
+	}
+	if _, err = db.Exec(`UPDATE budget_aggregates SET initial_event=jsonb_set(initial_event,'{run_id}',to_jsonb($1::text)) WHERE run_id=$1`, accepted.RunID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = db.Exec(`UPDATE budget_aggregates SET checkpoint=convert_to('corrupt','UTF8') WHERE run_id=$1`, accepted.RunID); err != nil {
 		t.Fatal(err)
 	}

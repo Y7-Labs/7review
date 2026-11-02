@@ -12,9 +12,20 @@ import (
 	"github.com/Y4NN777/7review/agent/review"
 )
 
+type acceptanceEvent struct {
+	Type       string `json:"type"`
+	RunID      string `json:"run_id"`
+	AttemptID  string `json:"attempt_id"`
+	Generation uint64 `json:"generation"`
+}
+
 // AcceptAggregate commits every member of accepted work before acknowledgement.
 // It does not issue a dispatch permit.
 func (a *Authority) AcceptAggregate(ctx context.Context, req review.Request, input review.Admission, source review.Source, continuation []byte) (*InboxItem, error) {
+	if prior, err := a.ReplayAggregate(ctx, req); err != nil || prior != nil {
+		return prior, err
+	}
+	input.Execution.DeadlineAt = input.Execution.DeadlineAt.UTC().Truncate(time.Microsecond)
 	tx, err := a.begin(ctx)
 	if err != nil {
 		return nil, err
@@ -73,6 +84,7 @@ func (a *Authority) AcceptAggregate(ctx context.Context, req review.Request, inp
 	source.Execution = verified.Source.Execution
 	source.Attestation = verified.Source.Attestation
 	source.Investigation = verified.Source.Investigation
+	source.Policy = review.Source{Policy: receipt.Policy}.Clone().Policy
 	source.Run.ID = item.RunID
 	aggregate := review.AcceptedAggregate{Version: 1, OriginalRequest: req, Receipt: receipt, Source: source, Continuation: append([]byte(nil), continuation...)}
 	raw, err := json.Marshal(aggregate)
@@ -82,7 +94,7 @@ func (a *Authority) AcceptAggregate(ctx context.Context, req review.Request, inp
 	if len(raw) > 16<<20 {
 		return nil, errors.New("prepared aggregate exceeds storage bound")
 	}
-	event, _ := json.Marshal(map[string]any{"type": "aggregate_accepted", "run_id": item.RunID, "attempt_id": receipt.Attempt.AttemptID, "generation": receipt.Attempt.Generation})
+	event, _ := json.Marshal(acceptanceEvent{Type: "aggregate_accepted", RunID: item.RunID, AttemptID: receipt.Attempt.AttemptID, Generation: receipt.Attempt.Generation})
 	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_aggregates(run_id,checkpoint,checkpoint_digest,initial_event) VALUES($1,$2,$3,$4)`, item.RunID, raw, hash(raw), event); err != nil {
 		return nil, err
 	}
@@ -118,9 +130,9 @@ func validatePreparedSource(source review.Source, input review.Admission) error 
 
 func (a *Authority) readAggregateTx(ctx context.Context, tx *sql.Tx, runID string) (review.AcceptedAggregate, error) {
 	var aggregate review.AcceptedAggregate
-	var raw, receiptRaw []byte
-	var digest, attemptID, eventAttempt string
-	err := tx.QueryRowContext(ctx, `SELECT g.checkpoint,g.checkpoint_digest,j.receipt,j.attempt_id,g.initial_event->>'attempt_id' FROM budget_aggregates g JOIN budget_jobs j ON j.run_id=g.run_id JOIN budget_inbox i ON i.run_id=j.run_id WHERE g.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3`, runID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&raw, &digest, &receiptRaw, &attemptID, &eventAttempt)
+	var raw, receiptRaw, eventRaw []byte
+	var digest, attemptID string
+	err := tx.QueryRowContext(ctx, `SELECT g.checkpoint,g.checkpoint_digest,j.receipt,j.attempt_id,g.initial_event FROM budget_aggregates g JOIN budget_jobs j ON j.run_id=g.run_id JOIN budget_inbox i ON i.run_id=j.run_id WHERE g.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3`, runID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&raw, &digest, &receiptRaw, &attemptID, &eventRaw)
 	if err != nil {
 		return aggregate, errors.New("complete accepted aggregate unavailable; recovery required")
 	}
@@ -130,11 +142,18 @@ func (a *Authority) readAggregateTx(ctx context.Context, tx *sql.Tx, runID strin
 	if err = json.Unmarshal(raw, &aggregate); err != nil {
 		return aggregate, err
 	}
+	var event acceptanceEvent
+	if err = json.Unmarshal(eventRaw, &event); err != nil {
+		return aggregate, err
+	}
+	if event.Type != "aggregate_accepted" || event.RunID != runID || event.AttemptID != attemptID || event.Generation != aggregate.Receipt.Attempt.Generation {
+		return aggregate, errors.New("accepted aggregate event mismatch")
+	}
 	canonicalReceipt, err := json.Marshal(aggregate.Receipt)
 	if err != nil {
 		return aggregate, err
 	}
-	if aggregate.Version != 1 || aggregate.Source.Run.ID != runID || aggregate.Receipt.Attempt.AttemptID != attemptID || eventAttempt != attemptID || !bytes.Equal(canonicalReceipt, receiptRaw) || !reflect.DeepEqual(aggregate.Source.Attempt, aggregate.Receipt.Attempt) || !reflect.DeepEqual(aggregate.Source.Execution, aggregate.Receipt.Execution) || !reflect.DeepEqual(aggregate.Source.Policy, aggregate.Receipt.Policy) {
+	if aggregate.Version != 1 || aggregate.Source.Run.ID != runID || aggregate.Receipt.Attempt.AttemptID != attemptID || !bytes.Equal(canonicalReceipt, receiptRaw) || !reflect.DeepEqual(aggregate.Source.Attempt, aggregate.Receipt.Attempt) || !reflect.DeepEqual(aggregate.Source.Execution, aggregate.Receipt.Execution) || !reflect.DeepEqual(aggregate.Source.Policy, aggregate.Receipt.Policy) {
 		return aggregate, errors.New("accepted aggregate identity mismatch")
 	}
 	if _, err = review.NewVerifiedContext(aggregate.Source.Request, aggregate.Receipt.Attempt, aggregate.Receipt.Execution, aggregate.Receipt.Attestation); err != nil {

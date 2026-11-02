@@ -270,20 +270,26 @@ func inactiveWebhookHandler(provider string) http.HandlerFunc {
 }
 
 type reviewDispatchResult struct {
-	Durable bool   `json:"durable,omitempty"`
-	RunID   string `json:"run_id"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason,omitempty"`
+	AttemptID string `json:"attempt_id,omitempty"`
+	Durable   bool   `json:"durable,omitempty"`
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 type requestReviewResult struct {
-	Durable bool   `json:"durable,omitempty"`
-	RunID   string `json:"run_id"`
-	Status  string `json:"status"`
-	Reason  string `json:"reason,omitempty"`
+	AttemptID string `json:"attempt_id,omitempty"`
+	Durable   bool   `json:"durable,omitempty"`
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason,omitempty"`
 }
 
 func (s *Server) handleWebhookReview(req review.Request) (reviewDispatchResult, error) {
+	if s.pipeline != nil && s.pipeline.Canonical != nil {
+		result, err := s.enqueueReview(req, true)
+		return reviewDispatchResult{Durable: result.Durable, RunID: result.RunID, AttemptID: result.AttemptID, Status: result.Status, Reason: result.Reason}, err
+	}
 	decision := s.reviewPolicyDecision(req)
 	runID := requestRunID(req)
 	if !decision.allowed {

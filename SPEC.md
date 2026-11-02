@@ -112,18 +112,16 @@ commit precede acknowledgement. Invalid credentials return 401/403, invalid inpu
 400/422, admission-limit rejection 429, and storage unavailability 503. Accepted
 work returns 202 with a durable receipt, including when workers are busy.
 
-Implementation checkpoint (2026-10-29): the opt-in canonical runtime commits
-normalized review inbox requests and stable run IDs before 202. Operational
-`GET /inbox?run_id=...` exposes acceptance state/deadline under the existing API
-token policy, without payloads or execution credentials. Only unclaimed work is
-automatically recovered; claimed crashes remain non-retryable and become
-uncertain at expiry. This intermediate implementation does not satisfy the full
-atomic inbox/attempt/job contract or action-level recovery acceptance criteria.
-The next checkpoint atomically creates acceptance jobs, links attested admission
-under the job owner, and fences model sending with that ownership. Committed
-responses can be locally indexed as unvalidated without resending. Prepared
-reclaim, validated continuation and the complete before-202 aggregate remain
-separate open acceptance gates.
+Implementation checkpoint (2026-11-02): opt-in canonical intake prepares trusted
+SCM/base-policy evidence without inference, then atomically commits inbox,
+attempt/work identity, pending job, receipt, prepared Source/continuation and
+initial event before 202. Workers consume that checkpoint without readmission.
+Known delivery retries resolve original identity/deadline before new SCM reads.
+`GET /inbox?run_id=...` exposes limited status under the API token policy.
+Controlled PostgreSQL fault/subprocess S15 cases are executed; production release
+is not thereby qualified. Claimed crashes remain non-retryable/uncertain; local
+recorded responses remain unvalidated. Prepared reclaim, validated continuation,
+durable final artifacts and operator recovery are separate open acceptance gates.
 
 Local/CI application calls return typed receipts or errors, not HTTP responses.
 They checkpoint before dispatch in the selected store. An ephemeral receipt is
@@ -1741,8 +1739,9 @@ CI runner/gates  -> process exit + provenance + baseline       S45 S48-S50 S52
 native feedback  -> schema + grant + race/reconciliation       S46 S47 S51
 ```
 
-Every listed candidate test is a gap until implemented and executed. Existing
-Go tests provide legacy characterization only; no new scenario is marked passed.
+Every listed candidate test is a gap until implemented and executed. Legacy
+characterization is not target qualification; later controlled evidence is
+recorded per scenario and in the implementation progress ledger.
 Use fake clocks/barriers for expiry and races, not sleeps. Real process termination
 is necessary for commit/dispatch/recovery boundaries that an in-memory fake hides.
 
@@ -2572,8 +2571,11 @@ recovery/coordination guarantees. A scenario may contain several named variants;
 - Evidence: Receipt ID and persisted pending job.
 - Then: Recover and execute once effectively; duplicate intake resolves to original receipt.
 - Forbidden: Return 202 before durable commit or require original caller to resubmit lost work.
-- Future verification: fault; `TestScenario_S15_AcceptedWorkRecovery`.
-- Evidence status: specified only; no execution receipt.
+- Verification: PostgreSQL rollback/concurrency tests and subprocess
+  `TestScenarioS15CommittedAggregateSurvivesLost202AndRestart` plus
+  `TestScenarioS15AcceptedRecoveryDispatchesOnceUnderTestQualification`.
+- Evidence status: controlled fake-provider cases executed; production recovery,
+  provider qualification and release evidence remain pending.
 
 ## S16: Crash after remote publication
 
@@ -3100,5 +3102,6 @@ recovery/coordination guarantees. A scenario may contain several named variants;
 
 R20 additionally requires paired live-model evaluations for finding detection,
 invalid claims, appropriate vs unnecessary escalation, human minutes and cost.
-An escalation is not a detected defect. All scenarios above have unexecuted
-status even when related legacy tests exist.
+An escalation is not a detected defect. Scenarios without explicit execution
+evidence above remain unexecuted even when related legacy tests exist. Controlled
+S15 evidence does not qualify the remaining live-model or release objectives.

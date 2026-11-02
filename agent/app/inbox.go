@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/Y4NN777/7review/agent/review"
@@ -47,17 +48,36 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) acceptInbox(req review.Request) (requestReviewResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	deadline := time.Now().UTC().Add(s.webhookJobTimeout())
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	receipt, err := s.accountingRuntime.Authority.AcceptInbox(ctx, req, s.webhookJobTimeout())
+	receipt, err := s.accountingRuntime.Authority.ReplayAggregate(ctx, req)
 	if err != nil {
 		return requestReviewResult{Status: "rejected", Reason: "durable inbox acceptance failed"}, err
+	}
+	if receipt == nil {
+		if req.EventAction != "manual" {
+			if decision := s.reviewPolicyDecision(req); !decision.allowed {
+				return requestReviewResult{RunID: requestRunID(req), Status: "ignored", Reason: "ignored by review policy: " + decision.reason}, nil
+			}
+		}
+		prepared, prepareErr := s.pipeline.PrepareService(ctx, req, deadline)
+		if prepareErr != nil {
+			return requestReviewResult{Status: "rejected", Reason: "trusted preparation failed"}, prepareErr
+		}
+		if prepared.Ignored {
+			return requestReviewResult{RunID: requestRunID(req), Status: "ignored", Reason: prepared.Reason}, nil
+		}
+		receipt, err = s.accountingRuntime.Authority.AcceptAggregate(ctx, req, prepared.Admission, prepared.Source, prepared.Continuation)
+		if err != nil {
+			return requestReviewResult{Status: "rejected", Reason: "durable aggregate acceptance failed"}, err
+		}
 	}
 	status := receipt.State
 	if status == "pending" {
 		status = "enqueued"
 	}
-	return requestReviewResult{Durable: true, RunID: receipt.RunID, Status: status}, nil
+	return requestReviewResult{Durable: true, RunID: receipt.RunID, AttemptID: receipt.AttemptID, Status: status}, nil
 }
 
 func (s *Server) startInboxWorkers() {
@@ -143,5 +163,16 @@ func (s *Server) runInboxItem(ctx context.Context, req review.Request, id string
 			err = errInboxPanic
 		}
 	}()
-	return s.pipeline.RunIdentified(ctx, req, id)
+	claim := review.JobClaimFromContext(ctx)
+	if claim == nil || claim.RunID != id {
+		return errors.New("accepted execution requires matching job claim")
+	}
+	aggregate, loadErr := s.accountingRuntime.Authority.LoadAggregate(ctx, *claim)
+	if loadErr != nil {
+		return loadErr
+	}
+	if !reflect.DeepEqual(aggregate.OriginalRequest, req) {
+		return errors.New("accepted execution request mismatch")
+	}
+	return s.pipeline.RunAccepted(ctx, aggregate)
 }

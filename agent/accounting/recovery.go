@@ -22,14 +22,16 @@ func (a *Authority) RecoverActionResults(ctx context.Context, limit int) (int, e
 	}
 	defer tx.Rollback()
 	var runID, attemptID string
-	err = tx.QueryRowContext(ctx, `SELECT j.run_id,j.attempt_id FROM budget_jobs j JOIN budget_inbox i ON i.run_id=j.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND j.dispatch_allowed AND EXISTS (SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND a.state='result_recorded' AND NOT EXISTS (SELECT 1 FROM budget_action_results r WHERE r.action_id=a.id)) ORDER BY j.run_id LIMIT 1 FOR UPDATE OF j SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&runID, &attemptID)
+	// Attribution comes from the immutable sending intent, not a grant that may
+	// have been revoked or disabled by migration. This never permits resending.
+	err = tx.QueryRowContext(ctx, `SELECT j.run_id,j.attempt_id FROM budget_jobs j JOIN budget_inbox i ON i.run_id=j.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND EXISTS (SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND a.state='result_recorded' AND NOT EXISTS (SELECT 1 FROM budget_action_results r WHERE r.action_id=a.id)) ORDER BY j.run_id LIMIT 1 FOR UPDATE OF j SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&runID, &attemptID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, tx.Commit()
 	}
 	if err != nil {
 		return 0, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT a.id,a.request_digest,a.outcome FROM budget_actions a WHERE a.attempt_id=$1 AND a.state='result_recorded' AND NOT EXISTS (SELECT 1 FROM budget_action_results r WHERE r.action_id=a.id) ORDER BY a.created_at,a.id LIMIT $2`, attemptID, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT a.id,a.request_digest,a.outcome FROM budget_actions a WHERE a.attempt_id=$1 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$3 AND a.state='result_recorded' AND NOT EXISTS (SELECT 1 FROM budget_action_results r WHERE r.action_id=a.id) ORDER BY a.created_at,a.id LIMIT $2`, attemptID, limit, runID)
 	if err != nil {
 		return 0, err
 	}
