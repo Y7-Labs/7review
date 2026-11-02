@@ -1490,8 +1490,8 @@ func parseRepairedFindings(repaired, status string) ([]review.Finding, bool) {
 	if status == "empty_response" || status == "unparseable" {
 		return nil, false
 	}
-	findings, reparsed := parseFindingsDetailed(repaired)
-	return findings, reparsed == status
+	findings, _, requests, reparsed := parseReviewOutputDetailed(repaired)
+	return findings, len(requests) == 0 && reparsed == status
 }
 
 func chunkDiff(files []review.FileDiff, maxTokens int) [][]review.FileDiff {
