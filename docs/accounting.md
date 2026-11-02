@@ -321,6 +321,20 @@ child, two total calls and the original holds are retained. Invalid references,
 parent phase/digests/run/deadline or missing authority fail closed without legacy
 reservation fallback. Ephemeral/legacy execution retains its separate path.
 
+### Atomic Batch Preparation Foundation
+
+The internal `PrepareModelBatch` API reserves one complete ordered initial batch
+set and all its holds in a single transaction, bounded to 128 slots/64 MiB. It
+checks identical frozen group inputs and job ownership, rejects partial legacy
+sets, and returns receipts only after commit. A later-slot route/capacity denial
+or deferred commit failure rolls back the whole set. Competing callers and exact
+restart retries preserve one set. Sending actions cannot be reset by retry.
+
+This API is not yet wired into `CompleteParallel`; live batching still prepares
+individual actions. Sealed membership and group-confined recovery ownership must
+be implemented before integration. It does not loosen action-only reclaim or
+make prepared siblings after external progress eligible for broad job takeover.
+
 ### Terminal Model Projection
 
 Bounded inbox workers can now commit a terminal job reference for validated or

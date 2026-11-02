@@ -996,6 +996,27 @@ This is an incremental behavior ledger, not a completion declaration.
   controls and safe cancellation/refund remain open. Ceilings and alpha are not
   complete. No deployed database has been migrated.
 
+### 61. Atomic Initial Batch Preparation
+
+- Added the accounting `PrepareModelBatch` operation: one bounded, ordered set of
+  frozen initial batch slots reserves all actions and all three scope holds in
+  one transaction, without acquiring leases or authorizing provider I/O.
+- Every slot must share the same job token, group digest, source and qualified
+  validator. Missing/duplicate/reordered slots and mixed checkpoints fail before
+  preparation. Existing partial/foreign legacy work cannot be adopted as a new
+  atomic set. Retrying an already-sending group never resets its effects.
+- PostgreSQL tests exercise two competing preparers, a reopened authority retry,
+  later-slot route/capacity denial, and deferred commit failure. Failed operations
+  expose no receipts and leave no partial actions/holds; successful retries do not
+  reserve twice.
+- Verification: full PostgreSQL-backed suite, focused batch race tests, vet and
+  formatting pass.
+- This is the storage foundation, not complete batch recovery. `CompleteParallel`
+  still uses individual dispatch preparation; integration, sealed membership,
+  group-confined recovery ownership and live/restart overlap are the next work.
+  Existing action-only reclaim restrictions remain intact. No schema change;
+  explicit runtime version remains 12. Ceilings and alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

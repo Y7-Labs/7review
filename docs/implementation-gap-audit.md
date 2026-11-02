@@ -175,12 +175,13 @@ frame; an overlap test verifies no duplicate child or stale-owner completion.
 Terminal model projection now atomically finishes checked jobs, disables dispatch
 and serves durable HTTP results across restart without approval or refund. Parent
 proofs and all job actions must belong to the same checked lineage. Tool/batch
-cursor unification remains incomplete. Live
+cursor unification remains incomplete. Atomic initial-batch preparation now has a
+tested storage API, but is not yet wired to live dispatch or group recovery. Live
 recovery qualification, complete validated continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-60.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-61.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.
