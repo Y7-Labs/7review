@@ -30,6 +30,15 @@ func cliCancelResponse(c review.CancelAttemptCommand) string {
 	return string(raw)
 }
 
+func publicationArgs() []string {
+	return []string{"attempt-1", "--command-id", "publish-1", "--expected-version", "2", "--revision", "head", "--assessment-digest", "sha256:" + strings.Repeat("a", 64), "--artifact-digest", "sha256:" + strings.Repeat("b", 64), "--provider", "github", "--host", "github.com", "--repository-id", "org/repo", "--change-number", "7", "--artifact-class", "assessment", "--reason", "reviewed exact assessment", "--server", "https://agent"}
+}
+
+func cliPublicationResponse(c review.AuthorizePublicationCommand) string {
+	raw, _ := json.Marshal(review.PublicationAuthorizationReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: "sha256:" + strings.Repeat("c", 64), AttemptID: c.AttemptID, ActorID: "alice", Kind: c.Kind, Revision: c.Revision, ControlVersion: c.ExpectedVersion + 1, AssessmentDigest: c.Payload.AssessmentDigest, ArtifactDigest: c.Payload.ArtifactDigest, Destination: c.Payload.Destination, State: "authorized", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	return string(raw)
+}
+
 func TestCanonicalCLIShowsScopedStatusAndSubmitsOneExactCancellation(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	t.Setenv("REVIEW_API_TOKEN", "legacy-secret")
@@ -76,6 +85,58 @@ func TestCanonicalCLIShowsScopedStatusAndSubmitsOneExactCancellation(t *testing.
 	}
 }
 
+func TestCanonicalCLISubmitsOneExactPublicationAuthorizationWithoutLookup(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Fatalf("publication CLI used wrong transport: %s %s", r.Method, r.URL.String())
+		}
+		raw, _ := io.ReadAll(r.Body)
+		c, err := review.DecodeAuthorizePublicationCommand(raw)
+		if err != nil || c.CommandID != "publish-1" || c.AttemptID != "attempt-1" || c.ExpectedVersion != 2 || c.Revision != "head" || c.Payload.Destination != (review.PublicationDestination{Provider: "github", Host: "github.com", RepositoryID: "org/repo", ChangeNumber: "7", ArtifactClass: "assessment"}) || c.Payload.Reason != "reviewed exact assessment" {
+			t.Fatalf("publication CLI changed command: %+v %v", c, err)
+		}
+		return jsonResponse(http.StatusOK, cliPublicationResponse(c)), nil
+	})}
+	var out strings.Builder
+	if err := runAuthorizePublication(publicationArgs(), &out, client); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || !strings.Contains(out.String(), "authorized publication for attempt-1") || !strings.Contains(out.String(), "publish-1") || !strings.Contains(out.String(), "github.com/org/repo change 7") {
+		t.Fatalf("unproven publication output/calls: %d %s", calls, out.String())
+	}
+}
+
+func TestCanonicalPublicationCLIRejectsIncompleteDuplicateOrImplicitTargetsBeforeIO(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return jsonResponse(http.StatusOK, "{}"), nil
+	})}
+	complete := publicationArgs()
+	cases := [][]string{
+		nil,
+		{"attempt-1"},
+		append(append([]string(nil), complete...), "--expected-version=3"),
+		append(append([]string(nil), complete...), "--repository-id=other/repo"),
+		append(append([]string(nil), complete...), "extra"),
+		append(append([]string(nil), complete...), "--unknown"),
+		{"attempt-1", "--command-id", "publish-1", "--expected-version", "2", "--revision", "head", "--assessment-digest", "sha256:" + strings.Repeat("a", 64), "--artifact-digest", "sha256:" + strings.Repeat("b", 64), "--provider", "github", "--repository-id", "org/repo", "--change-number", "7", "--artifact-class", "assessment", "--reason", "reviewed"},
+	}
+	for _, args := range cases {
+		var out strings.Builder
+		if err := runAuthorizePublication(args, &out, client); err == nil || out.Len() != 0 {
+			t.Fatalf("ambiguous publication target accepted: %#v output=%s", args, out.String())
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("invalid publication command reached network: %d", calls)
+	}
+}
+
 func TestCanonicalCLIRejectsMissingDuplicateAmbiguousOrUnknownArgumentsBeforeIO(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	calls := 0
@@ -117,15 +178,21 @@ func TestCanonicalTerminalCommandsRequireExplicitAttemptAndHonorCancellation(t *
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
 		raw, _ := io.ReadAll(r.Body)
-		c, err := review.DecodeCancelAttemptCommand(raw)
-		if err != nil || c.AttemptID != "attempt-1" || c.Payload.Reason != "operator stop" {
-			t.Fatalf("terminal rebound selection: %+v %v", c, err)
+		if c, err := review.DecodeCancelAttemptCommand(raw); err == nil {
+			if c.AttemptID != "attempt-1" || c.Payload.Reason != "operator stop" {
+				t.Fatalf("terminal rebound cancellation: %+v", c)
+			}
+			return jsonResponse(200, cliCancelResponse(c)), nil
 		}
-		return jsonResponse(200, cliCancelResponse(c)), nil
+		c, err := review.DecodeAuthorizePublicationCommand(raw)
+		if err != nil || c.AttemptID != "attempt-1" || c.Payload.Destination.RepositoryID != "org/repo" {
+			t.Fatalf("terminal rebound publication: %+v %v", c, err)
+		}
+		return jsonResponse(200, cliPublicationResponse(c)), nil
 	})}
 	handler := chatCommandHandlerWithClient("https://agent", "owner/repo!7", client)
 	var out strings.Builder
-	for _, text := range []string{"/attempt", "/cancel-attempt", `/cancel-attempt attempt-1 --command-id cancel-1 --expected-version 1 --revision head --reason stop --server https://other`} {
+	for _, text := range []string{"/attempt", "/cancel-attempt", "/authorize-publication", `/cancel-attempt attempt-1 --command-id cancel-1 --expected-version 1 --revision head --reason stop --server https://other`, `/authorize-publication attempt-1 --server https://other`} {
 		if handled, err := handler(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err == nil {
 			t.Fatalf("missing/foreign target accepted: %s %v", text, err)
 		}
@@ -137,12 +204,16 @@ func TestCanonicalTerminalCommandsRequireExplicitAttemptAndHonorCancellation(t *
 	if handled, err := handler(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err != nil || !strings.Contains(out.String(), "cancelled attempt-1") {
 		t.Fatalf("terminal cancellation: %v %s", err, out.String())
 	}
+	publication := `/authorize-publication attempt-1 --command-id publish-1 --expected-version 2 --revision head --assessment-digest sha256:` + strings.Repeat("a", 64) + ` --artifact-digest sha256:` + strings.Repeat("b", 64) + ` --provider github --host github.com --repository-id org/repo --change-number 7 --artifact-class assessment --reason "reviewed exact assessment"`
+	if handled, err := handler(context.Background(), publication, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err != nil || !strings.Contains(out.String(), "authorized publication for attempt-1") {
+		t.Fatalf("terminal publication authorization: %v %s", err, out.String())
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := handler(ctx, text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("terminal ignored cancelled context: %v", err)
 	}
-	if calls != 1 {
+	if calls != 2 {
 		t.Fatal("cancelled terminal command reached network")
 	}
 }
@@ -156,7 +227,7 @@ func TestCanonicalConsoleInterruptionKeepsOutcomeUnconfirmedUntilRequestReturns(
 		return nil, r.Context().Err()
 	})}
 	m := newConsoleTUIModel(client, tuiCommandOptions{serverURL: "https://agent"})
-	m.input = `/cancel-attempt attempt-1 --command-id cancel-1 --expected-version 1 --revision head --reason "operator stop"`
+	m.input = `/authorize-publication attempt-1 --command-id publish-1 --expected-version 2 --revision head --assessment-digest sha256:` + strings.Repeat("a", 64) + ` --artifact-digest sha256:` + strings.Repeat("b", 64) + ` --provider github --host github.com --repository-id org/repo --change-number 7 --artifact-class assessment --reason "reviewed exact assessment"`
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(consoleTUIModel)
 	if m.cancel == nil || cmd == nil {
@@ -224,10 +295,47 @@ func TestCanonicalCLIExecutableChild(t *testing.T) {
 	if server == "" {
 		t.Skip("subprocess helper")
 	}
-	os.Args = append([]string{"7review", "cancel-attempt"}, cancelArgs()...)
+	command, args := "cancel-attempt", cancelArgs()
+	if os.Getenv("SEVENREVIEW_CANONICAL_CLI_TEST_MODE") == "publication" {
+		command, args = "authorize-publication", publicationArgs()
+	}
+	os.Args = append([]string{"7review", command}, args...)
 	os.Args = append(os.Args[:len(os.Args)-2], "--server", server, "--json")
 	main()
 	os.Exit(0)
+}
+
+func TestCanonicalCLIExecutableDispatchesPublicationAuthorizationAndEmitsValidatedJSON(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Error("executable used wrong publication route/credential")
+		}
+		raw, _ := io.ReadAll(r.Body)
+		c, err := review.DecodeAuthorizePublicationCommand(raw)
+		if err != nil {
+			t.Error(err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(cliPublicationResponse(c)))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCanonicalCLIExecutableChild$")
+	child.Env = append(os.Environ(), "SEVENREVIEW_CANONICAL_CLI_TEST_SERVER="+server.URL, "SEVENREVIEW_CANONICAL_CLI_TEST_MODE=publication")
+	out, err := child.CombinedOutput()
+	if err != nil {
+		t.Fatalf("executable failed: %v %s", err, out)
+	}
+	var receipt review.PublicationAuthorizationReceipt
+	if err = json.Unmarshal(out, &receipt); err != nil || receipt.CommandID != "publish-1" || receipt.AttemptID != "attempt-1" || receipt.Destination.RepositoryID != "org/repo" || requests.Load() != 1 {
+		t.Fatalf("executable publication acknowledgment: %+v requests=%d err=%v out=%s", receipt, requests.Load(), err, out)
+	}
 }
 
 func TestCanonicalCLIExecutableDispatchesCancellationAndEmitsValidatedJSON(t *testing.T) {

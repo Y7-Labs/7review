@@ -122,8 +122,11 @@ cancellation now share the mapped-credential client, with no service-token
 fallback, alias resolution, redirects or conflict retargeting. Lost HTTP
 acknowledgment is reconciled through exact command replay; console interruptions
 and late model events do not assert rollback or overwrite operator receipts.
-Compose now forwards the mapping and dedicated credential explicitly. Other
-canonical commands and qualification remain open; this
+Exact terminal publication authorization now uses the same HTTP/client/CLI/TUI
+boundary with explicit assessment, artifact and destination identity. It records
+authority only; governed outbox delivery remains open. Compose forwards the
+mapping and dedicated credential explicitly. Other canonical commands and
+qualification remain open; this
 is not alpha readiness.
 The v8-to-v9 through v18-to-v19 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires

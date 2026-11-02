@@ -179,6 +179,7 @@ The CLI and terminal chat use the same canonical endpoints and validated receipt
 export REVIEW_OPERATOR_TOKEN="$ALICE_OPERATOR_TOKEN"
 7review attempt <exact-attempt-id> --server http://localhost:8080 --json
 7review cancel-attempt <exact-attempt-id> --command-id <stable-command-id> --expected-version <observed-version> --revision <exact-analysis-revision> --reason "operator requested stop" --server http://localhost:8080 --json
+7review authorize-publication <exact-attempt-id> --command-id <stable-command-id> --expected-version <observed-version> --revision <exact-analysis-revision> --assessment-digest <validated-assessment-sha256> --artifact-digest <exact-draft-sha256> --provider github --host github.com --repository-id <owner/repo> --change-number <number> --artifact-class assessment --reason "reviewed exact assessment" --server http://localhost:8080 --json
 ```
 
 Use the exact `attempt_id` returned by canonical intake. `7review review` now
@@ -199,13 +200,14 @@ echoed, so credential reflection cannot become terminal output.
 
 A 409 exposes only a validated current-attempt reference; the client does not
 follow that reference, retry or retarget. A transport failure, unsupported success
-response or 5xx may follow a committed cancellation. Retry the identical command
-ID and payload with the same mapped principal after inspection, not a newly
-generated command. A cancellation receipt reports the original disposition;
+response or 5xx may follow a committed operator command. Retry the identical
+command ID and payload with the same mapped principal after inspection, not a
+newly generated command. A cancellation receipt reports the original disposition;
 query the attempt again for current release/retained counters.
 
-In chat/TUI the commands are `/attempt <exact-attempt-id>` and
-`/cancel-attempt <exact-attempt-id> --command-id ... --expected-version ... --revision ... --reason "..."`.
+In chat/TUI the commands are `/attempt <exact-attempt-id>`,
+`/cancel-attempt <exact-attempt-id> --command-id ... --expected-version ... --revision ... --reason "..."`,
+and `/authorize-publication` with the same exact fields as the CLI.
 They do not use the selected legacy run, and cannot override the terminal's server
 using command flags. Interrupting a console HTTP request does not assert backend
 rollback: the console waits for the request outcome and preserves the unconfirmed
@@ -214,8 +216,12 @@ request or its receipt. Existing dashboard/legacy commands still use their
 separate `REVIEW_API_TOKEN` where configured.
 
 Send `POST /operator/commands` with the mapped credential and
-`Content-Type: application/json`. The only implemented command kind is currently
-`cancel_attempt`; the closed envelope is bounded to 8 KiB:
+`Content-Type: application/json`. The implemented command kinds are
+`cancel_attempt` and `authorize_publication`; each closed envelope is bounded to
+8 KiB. Publication authorization records disclosure authority only: it does not
+enqueue or perform provider delivery, merge, notification, or memory activation.
+
+Cancellation envelope:
 
 ```json
 {"schema_version":1,"command_id":"cancel-unique-id","attempt_id":"exact-attempt-id","expected_version":1,"revision":"exact-analysis-revision","kind":"cancel_attempt","payload":{"reason":"operator requested stop"}}

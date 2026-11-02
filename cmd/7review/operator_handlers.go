@@ -24,23 +24,24 @@ type operatorCommandContext struct {
 type operatorCommandHandler func(operatorCommandContext) error
 
 var operatorCommandHandlers = map[string]operatorCommandHandler{
-	"/attempt":        handleOperatorAttemptCommand,
-	"/cancel-attempt": handleCancelAttemptCommand,
-	"/help":           handleHelpCommand,
-	"/status":         handleStatusCommand,
-	"/tools":          handleToolsCommand,
-	"/providers":      handleProvidersCommand,
-	"/config":         handleConfigCommand,
-	"/skills":         handleSkillsCommand,
-	"/sessions":       handleSessionsCommand,
-	"/diff":           handleDiffCommand,
-	"/context":        handleContextCommand,
-	"/history":        handleHistoryCommand,
-	"/memory":         handleMemoryCommand,
-	"/run":            handleRunCommand,
-	"/draft":          handleDraftCommand,
-	"/approve":        handleApproveCommand,
-	"/publish-final":  handlePublishFinalCommand,
+	"/attempt":               handleOperatorAttemptCommand,
+	"/cancel-attempt":        handleCancelAttemptCommand,
+	"/authorize-publication": handleAuthorizePublicationCommand,
+	"/help":                  handleHelpCommand,
+	"/status":                handleStatusCommand,
+	"/tools":                 handleToolsCommand,
+	"/providers":             handleProvidersCommand,
+	"/config":                handleConfigCommand,
+	"/skills":                handleSkillsCommand,
+	"/sessions":              handleSessionsCommand,
+	"/diff":                  handleDiffCommand,
+	"/context":               handleContextCommand,
+	"/history":               handleHistoryCommand,
+	"/memory":                handleMemoryCommand,
+	"/run":                   handleRunCommand,
+	"/draft":                 handleDraftCommand,
+	"/approve":               handleApproveCommand,
+	"/publish-final":         handlePublishFinalCommand,
 }
 
 func chatCommandHandlerWithClient(serverURL, runID string, client *http.Client) ui.ChatCommandFunc {
@@ -84,6 +85,16 @@ func handleCancelAttemptCommand(ctx operatorCommandContext) error {
 	var out strings.Builder
 	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
 	if err := runCancelAttemptContext(ctx.Context, args, &out, ctx.Client); err != nil {
+		return err
+	}
+	writeAgentMessage(ctx, strings.TrimSpace(out.String()))
+	return nil
+}
+
+func handleAuthorizePublicationCommand(ctx operatorCommandContext) error {
+	var out strings.Builder
+	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
+	if err := runAuthorizePublicationContext(ctx.Context, args, &out, ctx.Client); err != nil {
 		return err
 	}
 	writeAgentMessage(ctx, strings.TrimSpace(out.String()))

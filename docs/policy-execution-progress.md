@@ -1486,8 +1486,10 @@ This is an incremental behavior ledger, not a completion declaration.
   v18 upgrade rehearsal rolls back DDL/version atomically, retries idempotently,
   preserves terminal evidence and infers no authorization. No deployed database
   was migrated.
-- HTTP/client/CLI/TUI exposure and a governed publication outbox remain open;
-  legacy `/approve` still is not canonical authority. Other operator commands,
+- HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
+  command and validated receipt without retries, redirects, refetch or retarget.
+  A governed publication outbox and delivery remain open; legacy `/approve`
+  still is not canonical authority. Other operator commands,
   incident adjustments and live provider qualification remain open. Ceilings and
   alpha remain unfinished.
 
