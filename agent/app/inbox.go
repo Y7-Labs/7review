@@ -44,7 +44,8 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		JobPhase            string    `json:"job_phase"`
 		RecordedUnvalidated int64     `json:"recorded_unvalidated"`
 		UnresolvedActions   int64     `json:"unresolved_actions"`
-	}{item.RunID, item.State, item.Deadline, item.AttemptID, item.JobPhase, item.RecordedUnvalidated, item.UnresolvedActions})
+		PreparedActions     int64     `json:"prepared_actions"`
+	}{item.RunID, item.State, item.Deadline, item.AttemptID, item.JobPhase, item.RecordedUnvalidated, item.UnresolvedActions, item.PreparedActions})
 }
 
 func (s *Server) acceptInbox(req review.Request) (requestReviewResult, error) {

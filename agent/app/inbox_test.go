@@ -260,6 +260,13 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 	if actions != 1 || holds != 3 {
 		p.t.Errorf("provider preceded atomic sending/holds: actions=%d holds=%d", actions, holds)
 	}
+	var fenced int
+	if err := p.db.QueryRowContext(ctx, `SELECT count(*) FROM budget_actions a JOIN budget_action_leases l ON l.action_id=a.id WHERE a.attempt_id=$1 AND a.fenced AND l.sending_fence=l.fence AND l.fence>0 AND l.worker_id IS NOT NULL`, p.attempt).Scan(&fenced); err != nil {
+		return "", err
+	}
+	if fenced != 1 {
+		p.t.Errorf("provider preceded fenced sending commit: %d", fenced)
+	}
 	return "[]", nil
 }
 

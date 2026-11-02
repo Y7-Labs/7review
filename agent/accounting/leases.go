@@ -1,12 +1,12 @@
 package accounting
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"math"
-	"reflect"
 	"time"
 
 	"github.com/Y4NN777/7review/agent/orchestrator"
@@ -78,7 +78,15 @@ func (a *Authority) checkPreparedQuote(ctx context.Context, tx *sql.Tx, i orches
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(current, q) {
+	currentJSON, err := json.Marshal(current)
+	if err != nil {
+		return err
+	}
+	storedJSON, err := json.Marshal(q)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(currentJSON, storedJSON) {
 		return errors.New("prepared route/price qualification changed")
 	}
 	routeID, _ := json.Marshal([]string{q.Qualification.Provider, q.Qualification.Model, q.RouteVersion})

@@ -726,6 +726,22 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: real PostgreSQL race cases for stale owners, concurrent claims,
   commit faults, authority revocation, missing records and outcome fencing.
 
+### Slice 42: Live Fenced Dispatch Wiring
+
+- Every configured PostgreSQL model invocation now prepares, claims and begins
+  before provider I/O. Failure or malformed receipt at any stage is terminal;
+  an authority exposing the staged protocol never downgrades to immediate send.
+- The orchestrator validates immutable input, worker/fence provenance and the
+  sending deadline. RecordOutcome carries the issued sending fence. The shared
+  boundary still covers parallel, fallback, formatter, streaming and native paths.
+- The real service test asserts a committed sending fence and three holds before
+  its controlled provider call. It caught monotonic/local-zone time metadata in
+  quote comparison; canonical persisted JSON now compares the full semantic quote
+  without weakening price/version/validity checks.
+- `/inbox` reports prepared holds separately from unresolved sends. Readiness
+  checks lease storage too. Production catalog remains empty; no provider or
+  autonomous recovery adapter is implicitly qualified by enabling leases.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

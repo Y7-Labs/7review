@@ -30,6 +30,82 @@ type recordingBudget struct {
 	notAfter   time.Time
 }
 
+type stagedBudget struct {
+	recordingBudget
+	stage       string
+	order       []string
+	prepared    DispatchIntent
+	legacyCalls int
+}
+
+func (b *stagedBudget) ReserveAndBegin(context.Context, DispatchIntent) (DispatchPermit, error) {
+	b.legacyCalls++
+	return DispatchPermit{}, errors.New("legacy path forbidden")
+}
+func (b *stagedBudget) PrepareAction(_ context.Context, i DispatchIntent) (PreparedAction, error) {
+	b.order = append(b.order, "prepare")
+	b.prepared = i
+	if b.stage == "prepare" {
+		return PreparedAction{}, errors.New("prepare failed")
+	}
+	p := PreparedAction{ID: i.ActionID, RequestDigest: i.RequestDigest}
+	if b.stage == "bad prepare" {
+		p.ID = "wrong"
+	}
+	return p, nil
+}
+func (b *stagedBudget) ClaimPrepared(_ context.Context, p PreparedAction, worker string, lease time.Duration) (ActionClaim, error) {
+	b.order = append(b.order, "claim")
+	if b.stage == "claim" {
+		return ActionClaim{}, errors.New("claim failed")
+	}
+	c := ActionClaim{ID: p.ID, RequestDigest: p.RequestDigest, WorkerID: worker, Fence: p.Fence + 1, LeaseUntil: time.Now().Add(lease), Intent: &b.prepared, Job: b.prepared.Job}
+	if b.stage == "bad claim" {
+		c.RequestDigest = "wrong"
+	}
+	return c, nil
+}
+func (b *stagedBudget) BeginPrepared(_ context.Context, c ActionClaim) (DispatchPermit, error) {
+	b.order = append(b.order, "begin")
+	if b.stage == "begin" {
+		return DispatchPermit{}, errors.New("begin failed")
+	}
+	p := DispatchPermit{ID: c.ID, RequestDigest: c.RequestDigest, Fence: c.Fence, WorkerID: c.WorkerID, ActiveMS: 10, NotAfter: c.LeaseUntil}
+	if b.stage == "bad begin" {
+		p.Fence++
+	}
+	return p, nil
+}
+
+func TestFencedAuthorityStagesEveryLiveDispatchAndNeverFallsBackToLegacy(t *testing.T) {
+	for _, stage := range []string{"", "prepare", "bad prepare", "claim", "bad claim", "begin", "bad begin"} {
+		t.Run(stage, func(t *testing.T) {
+			limits := budgetTestLimits()
+			a := &stagedBudget{stage: stage}
+			calls := 0
+			provider := budgetProvider{call: func(context.Context, LLMRequest) (string, error) {
+				calls++
+				if strings.Join(a.order, ",") != "prepare,claim,begin" {
+					t.Error("provider preceded fenced sending")
+				}
+				return "[]", nil
+			}}
+			o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": provider}, WithOperatorCeilings(&limits), WithBudgetAuthority(a))
+			_, err := o.Complete(context.Background(), fundedContext(limits), RoleReasoner, "test", "sys", "user")
+			if stage == "" {
+				if err != nil || calls != 1 || len(a.outcomes) != 1 {
+					t.Fatalf("staged dispatch failed: calls=%d err=%v", calls, err)
+				}
+			} else if err == nil || !IsBudgetError(err) || calls != 0 || len(a.outcomes) != 0 {
+				t.Fatalf("failed stage authorized I/O: stage=%s calls=%d err=%v", stage, calls, err)
+			}
+			if a.legacyCalls != 0 {
+				t.Fatal("fenced authority downgraded to immediate-send API")
+			}
+		})
+	}
+}
+
 func (b *recordingBudget) ReserveAndBegin(_ context.Context, i DispatchIntent) (DispatchPermit, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

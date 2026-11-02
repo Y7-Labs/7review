@@ -23,6 +23,13 @@ type BudgetAuthority interface {
 	RecordOutcome(context.Context, DispatchPermit, DispatchOutcome) error
 }
 
+type PreparedBudgetAuthority interface {
+	BudgetAuthority
+	PrepareAction(context.Context, DispatchIntent) (PreparedAction, error)
+	ClaimPrepared(context.Context, PreparedAction, string, time.Duration) (ActionClaim, error)
+	BeginPrepared(context.Context, ActionClaim) (DispatchPermit, error)
+}
+
 type DispatchIntent struct {
 	Job                                                      *review.JobClaim `json:",omitempty"`
 	ActionID                                                 string
@@ -165,7 +172,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec Mo
 		}
 		intent.PolicyDigest = rc.Source.Policy.Digest
 	}
-	permit, err := o.budgetAuthority.ReserveAndBegin(ctx, intent)
+	permit, err := o.reserveDispatch(ctx, intent)
 	if err != nil {
 		return "", &budgetError{fmt.Errorf("reservation denied: %w", err)}
 	}

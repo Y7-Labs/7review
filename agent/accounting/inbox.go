@@ -13,6 +13,7 @@ import (
 // InboxItem acknowledges durable acceptance, not permission to dispatch.
 // Claimed work is never automatically retried: its effects may be uncertain.
 type InboxItem struct {
+	PreparedActions     int64
 	created             bool
 	AttemptID           string
 	JobPhase            string
@@ -39,7 +40,7 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs", "budget_action_results", "budget_aggregates"} {
+	for _, table := range []string{"budget_inbox", "budget_inbox_conflicts", "budget_jobs", "budget_action_results", "budget_aggregates", "budget_action_leases"} {
 		if err = requireRelation(ctx, tx, table); err != nil {
 			return nil, err
 		}
@@ -148,7 +149,7 @@ func (a *Authority) LookupInbox(ctx context.Context, runID string) (*InboxItem, 
 
 func (a *Authority) lookupInboxTx(ctx context.Context, tx *sql.Tx, runID string) (item *InboxItem, err error) {
 	item = &InboxItem{}
-	err = tx.QueryRowContext(ctx, `SELECT i.run_id,CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired' WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,i.deadline,coalesce(j.attempt_id,''),j.phase,(SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND a.state IN ('sending','uncertain')) FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired' WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,i.deadline,coalesce(j.attempt_id,''),j.phase,(SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND a.state IN ('sending','uncertain')),(SELECT count(*) FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND a.state='prepared') FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions, &item.PreparedActions)
 	if err != nil {
 		return nil, err
 	}
