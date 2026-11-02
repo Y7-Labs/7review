@@ -36,6 +36,14 @@ type Authority struct {
 	cfg Config
 }
 
+var ErrBudgetExhausted = errors.New("budget exhausted")
+
+type scopeBudgetError struct{ scope string }
+
+func (e scopeBudgetError) Error() string       { return e.scope + " budget exhausted" }
+func (scopeBudgetError) Unwrap() error         { return ErrBudgetExhausted }
+func (scopeBudgetError) BudgetExhausted() bool { return true }
+
 func NewAuthority(db *sql.DB, cfg Config) (*Authority, error) {
 	if db == nil || !validID(cfg.BoundaryID) || !validID(cfg.ProjectID) || cfg.Catalog == nil {
 		return nil, errors.New("database, boundary and route catalog are required")
@@ -674,7 +682,7 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 	}
 	used := requested
 	if exceeds(used, ref.limit) {
-		return fmt.Errorf("%s budget exhausted", ref.kind)
+		return scopeBudgetError{ref.kind}
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT CASE WHEN a.settled THEN a.actual_amount ELSE a.upper_amount END FROM budget_actions a JOIN budget_holds h ON h.action_id=a.id WHERE h.scope_id=$1 AND (NOT a.settled OR h.origin_period=$2)`, ref.id, ref.origin)
 	if err != nil {
@@ -692,8 +700,11 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 		}
 		current, additional, cap := amounts(used), amounts(amount), amounts(ref.limit)
 		for n := range current {
-			if additional[n] < 0 || additional[n] > cap[n]-current[n] {
-				return fmt.Errorf("%s budget exhausted", ref.kind)
+			if additional[n] < 0 {
+				return ErrIntegrity
+			}
+			if additional[n] > cap[n]-current[n] {
+				return scopeBudgetError{ref.kind}
 			}
 			current[n] += additional[n]
 		}
@@ -712,8 +723,11 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 	for _, amount := range charges {
 		current, additional, cap := amounts(used), amounts(amount), amounts(ref.limit)
 		for n := range current {
-			if additional[n] < 0 || additional[n] > cap[n]-current[n] {
-				return fmt.Errorf("%s budget exhausted", ref.kind)
+			if additional[n] < 0 {
+				return ErrIntegrity
+			}
+			if additional[n] > cap[n]-current[n] {
+				return scopeBudgetError{ref.kind}
 			}
 			current[n] += additional[n]
 		}

@@ -396,8 +396,8 @@ on the latter paths; canonical multi-batch I/O is action-confined and sequential
 
 This is not complete general continuation: tool-request results persist as
 `needs_tools`, without fabricated observations, additional model calls, terminal
-draft or publication. Automatic tool continuation and authenticated operator
-controls remain open. Unsealed legacy siblings remain ineligible after
+draft or publication. Authenticated operator controls remain open. Unsealed
+legacy siblings remain ineligible after
 external progress.
 
 Snapshot observation sets now expose a bounded `SnapshotUsage` calculation.
@@ -445,8 +445,8 @@ origin periods; unknown model holds continue across renewals. Snapshot accountin
 time is read inside the locked transaction after rendering, rather than retaining
 a pre-render period.
 
-Automatic observation/child creation and the canonical live tool handoff remain
-unwired. This is not complete end-to-end tool continuation, external tool
+Automatic observation/child creation and canonical live tool handoff are now
+wired through the protocol below. This is not complete external tool/CPU
 accounting, authenticated operator control, cancellation/refund or operational
 qualification. Explicit schema v15 is required; ceilings and alpha remain unfinished.
 
@@ -481,8 +481,46 @@ replaying the pipeline. All three qualified tool rounds preserve their ordered
 history and can reach checked terminal completion. Sealed batch membership stays
 immutable; a checked tool child is an explicit nonmember continuation, not a new
 batch slot. Local terminal completion still grants no approval/publication or
-refund and retains every unknown model hold. Worker creation/live handoff wiring
-remains the next step; this API/recovery boundary alone is not alpha readiness.
+refund and retains every unknown model hold. The qualified local workflow below
+is not alpha readiness or live-provider qualification.
+
+### Automatic Tool Continuation
+
+Bounded inbox workers now scan current qualified `needs_tools` parents, accept
+snapshot observations and prepare their exact reasoner children before returning
+to fenced prepared-action recovery. The scan checks namespace, active/current
+attempt, original deadline, current action/observation epoch and frozen reasoner
+routing. It never replays `RunAccepted` or reloads SCM/policy/profile state for a
+claimed job. Restart after observation acceptance resumes child creation without
+charging or rendering the accepted set again. Pending counters exclude both
+formatter and tool parents whose child link has committed.
+
+Canonical live single-batch tool proposals hand off before the legacy tool loop
+can append observations or send another model request. Live/recovery overlap
+uses the same idempotent observation and child operations. Multi-batch tool plans
+follow the worker-only path after sealed initial preparation. Ephemeral/noncanonical
+execution keeps its existing path and does not claim this service guarantee.
+
+Once a canonical model result reference exists, handoff/indexing/advancement
+errors abandon the old frame with a deferred-continuation signal; they do not
+send it through ordinary failed/completed job termination. `FinishInbox` now
+refuses ordinary completion whenever any model reservation exists, including an
+unsent committed preparation with a lost acknowledgement. Terminal model proof
+or a future authenticated disposition is required. Jobs with no model reservation
+can still finish before any effect. Historical legacy terminal rows remain
+non-dispatchable. Neither this barrier nor any failure refunds a hold.
+
+Known capacity exhaustion is typed separately from storage/integrity failures.
+Pending tool scans and pre-send prepared claim/Begin checks defer such waits,
+rotating only the existing job scheduling timestamp so bounded oldest-first
+scans can progress past them. Other inboxes and continuations remain runnable
+within their own ceilings. No scheduling hint clears or extends a token, lease,
+state, deadline, scope origin or reservation. Already committed fenced claims
+retain their existing leases and normal expiry rules. Failed scheduling storage
+propagates rather than enabling a local allowance. Errors after sending, including provider errors
+that resemble quota exhaustion, never use this deferral path. Waits remain
+bounded by worker batches and the original execution deadline; authenticated
+waiting/disposition controls and richer resource-state reporting remain open.
 
 ### Terminal Model Projection
 

@@ -165,7 +165,9 @@ func TestPostgresBeginPreparedRechecksAuthorityAndOriginalReservation(t *testing
 			case "integrity":
 				_, err = a.db.Exec(`UPDATE budget_actions SET integrity_incident=true`)
 			case "job finished":
-				err = a.FinishInbox(ctx, i.Job.RunID, i.Job.Token, false)
+				// Simulate a legacy terminal row. Ordinary live completion can no
+				// longer create this state once a preparation is committed.
+				_, err = a.db.Exec(`UPDATE budget_jobs SET phase='finished',dispatch_allowed=false; UPDATE budget_inbox SET state='failed'`)
 			}
 			if err != nil {
 				t.Fatal(err)

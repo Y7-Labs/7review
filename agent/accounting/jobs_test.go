@@ -146,12 +146,15 @@ func TestPostgresLinkedDispatchRequiresLiveJobOwnership(t *testing.T) {
 	if _, err = a.ReserveAndBegin(context.Background(), i); err != nil {
 		t.Fatal(err)
 	}
-	if err = a.FinishInbox(context.Background(), claim.RunID, claim.ClaimToken, false); err != nil {
+	if err = a.FinishInbox(context.Background(), claim.RunID, claim.ClaimToken, false); err == nil {
+		t.Fatal("live frame terminated uncertain model work")
+	}
+	if err = a.CloseAttempt(context.Background(), i.Attempt.AttemptID); err != nil {
 		t.Fatal(err)
 	}
 	i.ActionID = "late-owner-new-action"
 	if _, err = a.ReserveAndBegin(context.Background(), i); err == nil {
-		t.Fatal("finished job owner dispatched again")
+		t.Fatal("closed attempt owner dispatched again")
 	}
 }
 

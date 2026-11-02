@@ -126,6 +126,9 @@ func (s *Server) startInboxWorkers() {
 					_, recoveryErr = s.accountingRuntime.Authority.RecoverModelReductions(recoveryCtx, 128, pipeline.ModelReducerV1{})
 				}
 				if recoveryErr == nil {
+					_, recoveryErr = s.accountingRuntime.Authority.AdvancePendingModelToolContinuations(recoveryCtx, 8, pipeline.ModelToolObserverV1{}, pipeline.ModelToolContinuationV1{})
+				}
+				if recoveryErr == nil {
 					_, recoveryErr = s.accountingRuntime.Authority.AdvancePendingModelContinuations(recoveryCtx, 8, pipeline.ModelContinuationV1{})
 				}
 				if recoveryErr == nil {
@@ -165,6 +168,9 @@ func (s *Server) startInboxWorkers() {
 					continue
 				}
 				if errors.Is(err, orchestrator.ErrDurableContinuation) {
+					if orchestrator.IsBudgetError(err) {
+						log.Printf("[inbox] durable continuation deferred: run=%s error=%v", item.RunID, err)
+					}
 					timer.Reset(time.Millisecond)
 					continue
 				}

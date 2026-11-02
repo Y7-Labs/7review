@@ -22,6 +22,25 @@ type preparedRecoveryAuthority interface {
 	ReclaimPrepared(context.Context, PreparedAction, string, time.Duration) (ActionClaim, error)
 }
 
+var errPreparedBudgetWait = errors.New("prepared action deferred within original budget")
+
+func deferPreparedBudgetWait(ctx context.Context, a preparedRecoveryAuthority, p PreparedAction, cause error) error {
+	var exhaustion interface{ BudgetExhausted() bool }
+	if !errors.As(cause, &exhaustion) || !exhaustion.BudgetExhausted() {
+		return cause
+	}
+	deferrer, ok := a.(interface {
+		DeferPreparedBudgetWait(context.Context, PreparedAction) error
+	})
+	if !ok {
+		return cause
+	}
+	if err := deferrer.DeferPreparedBudgetWait(ctx, p); err != nil {
+		return err
+	}
+	return errPreparedBudgetWait
+}
+
 // RecoverPreparedActions executes bounded, immutable actions, never a pipeline or
 // fallback chain. Responses are journaled only; they are not validated findings.
 func (o *Orchestrator) RecoverPreparedActions(ctx context.Context, limit int) (int, error) {
@@ -51,6 +70,9 @@ func (o *Orchestrator) RecoverPreparedActions(ctx context.Context, limit int) (i
 			return completed, err
 		}
 		if err := o.recoverPrepared(ctx, a, p); err != nil {
+			if errors.Is(err, errPreparedBudgetWait) {
+				continue
+			}
 			failures = append(failures, fmt.Errorf("action %s: %w", p.ID, err))
 		} else {
 			completed++
@@ -72,7 +94,7 @@ func (o *Orchestrator) recoverPrepared(ctx context.Context, a preparedRecoveryAu
 	}
 	c, err := a.ReclaimPrepared(ctx, p, worker, 30*time.Second)
 	if err != nil {
-		return err
+		return deferPreparedBudgetWait(ctx, a, p, err)
 	}
 	if p.AlreadyStarted || p.Fence >= math.MaxInt64 || c.Fence != p.Fence+1 || c.WorkerID != worker || c.ID != p.ID || c.RequestDigest != p.RequestDigest || c.Intent == nil || c.LeaseUntil.IsZero() {
 		return errors.New("invalid recovered ownership receipt")
@@ -142,7 +164,7 @@ func (o *Orchestrator) recoverPrepared(ctx context.Context, a preparedRecoveryAu
 	}
 	permit, err := a.BeginPrepared(runCtx, c)
 	if err != nil {
-		return err
+		return deferPreparedBudgetWait(runCtx, a, p, err)
 	}
 	if permit.AlreadyStarted || permit.ID != p.ID || permit.RequestDigest != p.RequestDigest || permit.Fence != c.Fence || permit.WorkerID != worker || permit.NotAfter.IsZero() || permit.NotAfter.After(i.Execution.DeadlineAt) || permit.ActiveMS <= 0 || permit.ActiveMS > active {
 		return errors.New("invalid recovered sending receipt; no dispatch")

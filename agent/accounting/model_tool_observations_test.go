@@ -587,13 +587,22 @@ func TestPostgresCancelledToolObservationExposesNoCharge(t *testing.T) {
 
 func toolParentForChange(t *testing.T, a *Authority, change string) orchestrator.DispatchIntent {
 	t.Helper()
+	return toolParentForChangeWithPolicy(t, a, change, nil)
+}
+
+func toolParentForChangeWithPolicy(t *testing.T, a *Authority, change string, policyLimits *review.ResourceLimits) orchestrator.DispatchIntent {
+	t.Helper()
 	ctx := context.Background()
 	req, admission, source := preparedAggregate(t, a)
 	req.ChangeID, req.DeliveryID = change, "tool-delivery-"+change
 	admission.Request, admission.DeliveryID = req, req.DeliveryID
 	admission.Change.ChangeNumber = change
 	limits := a.cfg.Limits.Clone()
-	admission.Policy.Limits, admission.Policy.OperatorCeilings = &limits, &limits
+	policy := limits.Clone()
+	if policyLimits != nil {
+		policy = policyLimits.Clone()
+	}
+	admission.Policy.Limits, admission.Policy.OperatorCeilings = &policy, &limits
 	scm := *source.SCM
 	scm.ChangeID = change
 	_, attestation, err := review.AttestSCMRequest(req, &scm, time.Now().UTC())
@@ -618,7 +627,8 @@ func toolParentForChange(t *testing.T, a *Authority, change string) orchestrator
 	aggregate.Source.Diff = &review.StructuredDiff{Files: []review.FileDiff{{Path: "service.go", Patch: "+change"}}}
 	i := dispatchForReceipt(ledgerIntent(t, a.db, "tool-parent-"+change, change, limits), aggregate.Receipt)
 	i.Job, i.Invocation, i.Step = claim, "complete", "step5"
-	cpctx, err := review.WithModelCheckpoint(review.WithModelValidation(ctx, &review.ModelValidation{Version: 1, MinConfidence: 0.45}), &review.Context{Source: aggregate.Source}, review.ModelCursor{Phase: review.ModelReviewBatches, BatchCount: 1})
+	routing := &review.ModelRouting{Version: 1, Roles: map[string]review.ModelRouteChain{"reasoner": {Routes: []review.ModelRoute{{Provider: i.Provider, Model: i.Model}}, MaxTokens: 20}}}
+	cpctx, err := review.WithModelCheckpoint(review.WithModelRouting(review.WithModelValidation(ctx, &review.ModelValidation{Version: 1, MinConfidence: 0.45}), routing), &review.Context{Source: aggregate.Source}, review.ModelCursor{Phase: review.ModelReviewBatches, BatchCount: 1})
 	if err != nil {
 		t.Fatal(err)
 	}

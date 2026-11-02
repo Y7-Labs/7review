@@ -1255,6 +1255,40 @@ This is an incremental behavior ledger, not a completion declaration.
   refund, provider/CPU accounting or release qualification completion is claimed.
   Ceilings and alpha remain unfinished.
 
+### 70. Automatic Tool Workers, Live Handoff And Budget-Wait Isolation
+
+- Inbox workers now advance current qualified tool parents through observation
+  acceptance and exact child preparation, then use existing fenced recovery.
+  Canonical live tool proposals hand off before any legacy observation mutation
+  or follow-up model call. Both paths use frozen evidence/routing and retain the
+  original deadline. Ephemeral/noncanonical behavior is unchanged.
+- Restart and duplicate-worker tests cover all three rounds, formatter repair,
+  crashes before/after observation acceptance, paused live/recovery overlap,
+  deferred observation/child commit failure, lost child acknowledgements, missing
+  handoff capability and an unavailable result journal. Recovery reaches local
+  checked drafts without SCM reads, whole-job replay, approval or publication.
+- Red tests caught ordinary live failure/completion rights after sending and
+  after an unsent committed preparation. `FinishInbox` now rejects any reserved
+  model work. Recorded-result handoff errors abandon the frame without falsely
+  completing/failing durable work. No-reservation failures remain finishable;
+  legacy terminal rows still block outstanding claims.
+- Further red tests caught exhausted attempts and prepared actions blocking
+  healthy recovery/inbox progress. Typed known pre-send budget waits now yield
+  bounded scans using scheduling hints only. They change no deadline, grant,
+  lease, state or hold. Post-send provider quota-shaped errors and failed/missing
+  scheduling stores remain failures, not inferred non-execution or free retries.
+  Malformed negative ledger amounts remain integrity errors, not budget waits.
+- Completed tool parents no longer appear as pending continuations. Original
+  reduction artifacts remain immutable; explicit typed links prove progression.
+- Verification: full PostgreSQL-backed tests and the complete PostgreSQL-backed
+  race suite pass, along with vet, formatting, bridge tests and Compose checks.
+  Durability settings remained enabled throughout; controlled providers are not
+  live-provider qualification.
+- No schema change; explicit schema v15 remains required. No deployed store was
+  changed. Authenticated controls, safe cancellation/refund, full tool/CPU and
+  live provider/operational qualification remain open. Ceilings and alpha remain
+  unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

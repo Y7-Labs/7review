@@ -55,7 +55,7 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-69. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-70. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
@@ -77,7 +77,7 @@ Known original live results retain sealed provenance through terminal completion
 Canonical multi-batch execution now freezes all requests and atomically stages
 the sealed set, then hands off without live provider I/O. Restart and paused-live/
 recovery overlap tests retain one execution per slot and authoritative draft views.
-Automatic tool plans still wait for worker creation/live handoff wiring.
+Inbox workers now advance qualified pending tool plans without pipeline replay.
 A versioned snapshot-only renderer now binds ordered observations to parent/input
 and request digests, preserving denials, missing data and explicit truncation.
 Malformed/over-bound proposals cannot silently lose requests. This renderer does
@@ -92,8 +92,13 @@ prepared-claim and sending checks. Guarded reasoner-child creation now consumes
 the exact observation epoch, atomically reserves a child and supports fenced
 prepared recovery through all three rounds. Cross-role lineage checks also stop
 a formatter from preparing/sending on corrupt earlier tool/model evidence.
-Automatic creation and canonical live handoff are not wired yet; end-to-end tool
-continuation, controls and cancellation/refund remain open.
+Automatic creation and canonical live tool handoff now use the same stored proof
+and fenced child protocol. Restart, duplicate-worker and paused-live overlap
+tests reach checked local drafts across all three rounds and formatter repair.
+Ordinary live completion cannot terminate any committed model reservation.
+Known budget waits yield fairly without releasing holds or hiding post-send/
+storage failures. Authenticated controls, cancellation/refund, broader tool/CPU
+accounting and live operational/provider qualification remain open.
 The v8-to-v9 through v14-to-v15 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v15 before restart. No deployed database was changed.

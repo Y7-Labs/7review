@@ -122,7 +122,7 @@ func (s singleDispatchOnly) RecordOutcome(ctx context.Context, p orchestrator.Di
 }
 
 func TestCanonicalLiveBatchHandoffSurvivesRestartAndRecoveryOverlap(t *testing.T) {
-	for _, mode := range []string{"normal", "worker", "repair", "crash", "overlap", "tools_pending", "commit_failure", "missing_authority", "bad_receipt", "lost_ack"} {
+	for _, mode := range []string{"normal", "worker", "repair", "crash", "overlap", "tools", "commit_failure", "missing_authority", "bad_receipt", "lost_ack"} {
 		t.Run(mode, func(t *testing.T) {
 			s, db, dsn := inboxServerDSN(t)
 			s.cfg.MaxDiffTokens = 1
@@ -145,7 +145,7 @@ func TestCanonicalLiveBatchHandoffSurvivesRestartAndRecoveryOverlap(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			provider := &batchHandoffProvider{t: t, db: db, attempt: receipt.AttemptID, repair: mode == "repair", tools: mode == "tools_pending"}
+			provider := &batchHandoffProvider{t: t, db: db, attempt: receipt.AttemptID, repair: mode == "repair", tools: mode == "tools"}
 			build := func(authority orchestrator.BudgetAuthority, model string) *orchestrator.Orchestrator {
 				cfg := orchestrator.DefaultOrchestratorConfig(model, model, provider.Name())
 				for name, role := range cfg.Roles {
@@ -265,9 +265,6 @@ func TestCanonicalLiveBatchHandoffSurvivesRestartAndRecoveryOverlap(t *testing.T
 			terminal := 0
 			for deadline := time.Now().Add(8 * time.Second); time.Now().Before(deadline); {
 				query := `SELECT count(*) FROM budget_jobs WHERE run_id=$1 AND terminal_reduction_id IS NOT NULL`
-				if mode == "tools_pending" {
-					query = `SELECT count(*) FROM budget_model_reductions WHERE run_id=$1 AND state='needs_tools'`
-				}
 				if err = db.QueryRow(query, receipt.RunID).Scan(&terminal); err != nil {
 					t.Fatal(err)
 				}
@@ -292,25 +289,24 @@ func TestCanonicalLiveBatchHandoffSurvivesRestartAndRecoveryOverlap(t *testing.T
 				}
 			}
 			want := int32(2)
-			if mode == "repair" {
+			if mode == "repair" || mode == "tools" {
 				want = 3
 			}
 			if provider.calls.Load() != want {
 				t.Fatalf("batch replay or missing effect: calls=%d want=%d", provider.calls.Load(), want)
 			}
-			if mode == "tools_pending" {
+			if mode == "tools" {
 				var actionID string
-				if err = db.QueryRow(`SELECT id FROM budget_actions ORDER BY id LIMIT 1`).Scan(&actionID); err != nil {
+				if err = db.QueryRow(`SELECT convert_from(manifest,'UTF8')::jsonb #>> '{Slots,0,ActionID}' FROM budget_model_batches LIMIT 1`).Scan(&actionID); err != nil {
 					t.Fatal(err)
 				}
 				artifact, err := a.LookupModelReduction(context.Background(), actionID)
 				if err != nil || artifact.State != review.ModelReductionNeedsTools || len(artifact.ToolRequests) != 1 || len(artifact.Source.ToolObservations) != 0 || artifact.Source.Report.Draft != "" || artifact.Source.Report.Final != "" {
 					t.Fatalf("tool plan invented observations or completion: %#v %v", artifact, err)
 				}
-				if p, err := a.LookupModelJob(context.Background(), receipt.RunID); !errors.Is(err, accounting.ErrModelJobNotFound) || p != nil {
-					t.Fatalf("unfinished tool plan became terminal: %#v %v", p, err)
+				if p, err := a.LookupModelJob(context.Background(), receipt.RunID); err != nil || p == nil || !p.Succeeded || len(p.Source.ToolObservations) != 1 || p.Source.Report.Final != "" {
+					t.Fatalf("sealed tool plan did not reach a checked local draft: %#v %v", p, err)
 				}
-				return
 			}
 			if err = a.FinishInbox(ctx, item.RunID, item.ClaimToken, true); err == nil {
 				t.Fatal("old live frame retained completion authority")

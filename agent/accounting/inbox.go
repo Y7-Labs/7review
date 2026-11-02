@@ -174,7 +174,8 @@ i.deadline,coalesce(j.attempt_id,''),j.phase,
 (SELECT count(*) FROM budget_model_reductions m WHERE m.run_id=j.run_id AND m.state='validated'),
 (SELECT count(*) FROM budget_model_reductions m WHERE m.run_id=j.run_id
 AND m.state IN ('needs_tools','needs_findings_repair','needs_coverage_repair')
-AND NOT EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.parent_reduction_id=m.id)),
+AND NOT EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.parent_reduction_id=m.id)
+AND NOT EXISTS(SELECT 1 FROM budget_model_tool_children c WHERE c.parent_reduction_id=m.id)),
 (SELECT count(*) FROM budget_model_reductions m WHERE m.run_id=j.run_id AND m.state='blocked')
 FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id
 WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.run_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, runID).Scan(&item.RunID, &item.State, &item.Deadline, &item.AttemptID, &item.JobPhase, &item.RecordedUnvalidated, &item.UnresolvedActions, &item.PreparedActions, &item.ValidatedReductions, &item.PendingContinuations, &item.BlockedReductions)
@@ -237,7 +238,7 @@ func (a *Authority) FinishInbox(ctx context.Context, runID, token string, succes
 	if success {
 		state = "completed"
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.recovery_action_id IS NULL AND j.model_batch_id IS NULL AND j.terminal_reduction_id IS NULL AND j.tool_observation_id IS NULL)`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
+	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.phase<>'effect_started' AND j.recovery_action_id IS NULL AND j.model_batch_id IS NULL AND j.terminal_reduction_id IS NULL AND j.tool_observation_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id))`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
 	if err != nil {
 		return err
 	}

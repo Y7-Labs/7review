@@ -1381,6 +1381,9 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 	raw := strings.Join(rc.AllFindings(), "\n")
 	rawForRepair := raw
 	findings, coverage, toolRequests, status := parseReviewResponses(rc.AllFindings())
+	if len(toolRequests) > 0 && canonicalModelContinuation(ctx, rc) {
+		return nil, coverage, "pending_tools", "", p.Orchestrator.HandoffModelTools(ctx, rc, ModelReducerV1{}, ModelToolObserverV1{}, ModelToolContinuationV1{})
+	}
 	for round := 1; len(toolRequests) > 0 && round <= maxReviewToolRounds(); round++ {
 		toolRequests = markToolRequestRound(toolRequests, round)
 		rc.Source.ToolRequests = append(rc.Source.ToolRequests, toolRequests...)

@@ -409,7 +409,7 @@ AND (j.recovery_action_id IS NULL OR EXISTS(SELECT 1 FROM budget_model_batches b
 AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state NOT IN ('prepared','result_recorded'))
 AND NOT EXISTS(SELECT 1 FROM budget_actions e JOIN budget_action_leases owned ON owned.action_id=e.id WHERE e.attempt_id=t.id AND e.state='prepared' AND owned.worker_id IS NOT NULL AND (owned.lease_until IS NULL OR owned.lease_until>clock_timestamp()))
 AND a.id=(SELECT s.slot->>'ActionID' FROM budget_model_batches b CROSS JOIN LATERAL jsonb_array_elements(convert_from(b.manifest,'UTF8')::jsonb->'Slots') WITH ORDINALITY s(slot,ordinal) JOIN budget_actions e ON e.id=s.slot->>'ActionID' WHERE b.id=j.model_batch_id AND e.state='prepared' ORDER BY s.ordinal LIMIT 1)))
-ORDER BY a.created_at,a.id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
+ORDER BY j.updated_at,a.created_at,a.id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
 	if err != nil {
 		return nil, err
 	}

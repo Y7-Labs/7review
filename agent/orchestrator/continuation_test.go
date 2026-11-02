@@ -80,7 +80,7 @@ func TestLiveHandoffNeverFallsBackWhenParentOrAuthorityIsInvalid(t *testing.T) {
 				if !errors.Is(err, ErrDurableContinuation) || a.advances != 1 {
 					t.Fatalf("handoff: advances=%d err=%v", a.advances, err)
 				}
-			} else if err == nil || errors.Is(err, ErrDurableContinuation) || !IsBudgetError(err) {
+			} else if err == nil || !errors.Is(err, ErrDurableContinuation) || !IsBudgetError(err) {
 				t.Fatalf("bad parent handed off: %v", err)
 			}
 			if (fault == "index" || fault == "parent digest" || fault == "parent state" || fault == "run" || fault == "deadline") && a.advances != 0 {
