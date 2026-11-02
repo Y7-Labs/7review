@@ -389,6 +389,27 @@ draft or publication. Durable tool observation/continuation and authenticated
 operator controls remain open. Unsealed legacy siblings remain ineligible after
 external progress.
 
+Snapshot observation sets now expose a bounded `SnapshotUsage` calculation.
+Every ordered logical proposal evaluation counts as one `ToolCalls`, including
+denied, failed and duplicate proposals. `ObservationBytes` is the sum of the
+JSON-encoded observation records, including attribution/status/reason overhead
+and JSON escaping, not just result text. The calculation returns no partial
+usage when any member fails shape, scope or attribution checks. The six-tool
+snapshot vocabulary is shared with the renderer; foreign-run/unsupported inputs
+and policy/skill restrictions cannot be bypassed by reporting a successful read.
+Truncation must retain its canonical incomplete envelope and cannot be `ok`.
+
+This is only a calculation against an already verified parent, not independent
+provenance verification or a durable receipt. It neither persists usage nor
+admits capacity, creates a model child, grants ownership or changes any hold.
+Model/token/money/active-time dimensions remain zero because no provider bill or
+active-time measurement is inferred from snapshot data. General local CPU and
+external tool accounting remain unqualified. A future durable commit must check
+the stored parent and current fenced job, lock all three scopes, include these
+charges in shared capacity totals and revoke the old frame atomically before
+continuation. No schema change is introduced here; explicit schema v13 remains
+required, and ceilings/alpha remain unfinished.
+
 ### Terminal Model Projection
 
 Bounded inbox workers can now commit a terminal job reference for validated or

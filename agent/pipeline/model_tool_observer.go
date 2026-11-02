@@ -127,6 +127,9 @@ func (ModelToolObserverV1) ObserveModelTools(ctx context.Context, parent review.
 	if err != nil || len(encoded) > review.MaxModelToolObservationSetBytes {
 		return empty, errors.New("tool observation set exceeds qualified storage bound")
 	}
+	if _, err = result.SnapshotUsage(frozen); err != nil {
+		return empty, err
+	}
 	return result, nil
 }
 

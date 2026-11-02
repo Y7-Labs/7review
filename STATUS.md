@@ -82,6 +82,10 @@ A versioned snapshot-only renderer now binds ordered observations to parent/inpu
 and request digests, preserving denials, missing data and explicit truncation.
 Malformed/over-bound proposals cannot silently lose requests. This renderer does
 not yet persist or charge observations, or authorize the next model action.
+Its shared usage contract now counts all evaluated proposals and exact encoded
+observation bytes, rejecting changed attribution, scope bypass and ambiguous
+truncation without exposing partial usage. This is not a durable receipt or
+capacity admission; shared-scope charging and fenced tool continuation remain open.
 The v8-to-v9 through v12-to-v13 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v13 before restart. No deployed database was changed.

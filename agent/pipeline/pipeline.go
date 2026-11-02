@@ -2131,16 +2131,7 @@ func observeSnapshotTool(rc *review.Context, request review.ToolRequest) review.
 }
 
 func reviewToolSurface(name string) string {
-	switch strings.TrimSpace(name) {
-	case "get_merge_request", "get_changed_files", "list_discussions", "get_inline_positions":
-		return "scm-api"
-	case "get_diff_summary":
-		return "diff-analyzer"
-	case "get_selected_context":
-		return "corpus-selector"
-	default:
-		return ""
-	}
+	return review.SnapshotToolSurface(strings.TrimSpace(name))
 }
 
 func reviewToolSchemasJSON(rc *review.Context) string {

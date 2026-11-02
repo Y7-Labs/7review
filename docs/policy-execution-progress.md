@@ -1153,6 +1153,29 @@ This is an incremental behavior ledger, not a completion declaration.
   the pure adapter grants no execution or financial rights. Schema remains 13;
   no deployed database was changed. Ceilings and alpha remain incomplete.
 
+### 67. Bounded Snapshot Observation Usage Contract
+
+- Red tests required a shared usage contract before accepting tool observations
+  into durable accounting. `SnapshotUsage` now checks ordered request digests,
+  parent/run/attempt attribution, bounded round transitions, exact tool/surface
+  identity, policy/skill/input confinement and bounded status/result semantics.
+- Every evaluated proposal counts, including denials, errors and duplicates.
+  Observation bytes use the actual encoded record, including metadata and JSON
+  escaping. A later invalid member exposes no partial charge. No provider bill,
+  token usage, active time or settlement is inferred from a local rendering.
+- Scope-bypass tests preserve internally consistent request hashes so rejection
+  exercises enforcement, not just stale digests. Canonical truncation rejects
+  extra/duplicate fields and cannot be relabelled successful evidence. The pure
+  renderer now checks this contract before returning an artifact.
+- Focused review/pipeline tests, their complete race suites, the full
+  PostgreSQL-backed suite, vet, bridge tests and Compose validation pass.
+  This contract is not a durable receipt,
+  capacity admission or independent provenance proof. Durable observation commit,
+  shared-scope charging and fenced reasoner-child continuation remain the next
+  implementation step. No automatic tool continuation or new schema is enabled.
+  Schema remains explicitly v13; controls, cancellation/refund and operational
+  qualification remain open. Ceilings and alpha are not complete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
