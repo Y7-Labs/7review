@@ -125,18 +125,19 @@ func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *tes
 	restarted.pipeline.SCM = unavailableAcceptanceSCM{t}
 	restarted.pipeline.TrustedPolicy = nil
 	restarted.startInboxWorkers()
-	var indexed int
+	var indexed, reduced int
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
 		_ = db.QueryRow(`SELECT count(*) FROM budget_action_results WHERE status='recorded_unvalidated'`).Scan(&indexed)
-		if indexed == 1 {
+		_ = db.QueryRow(`SELECT count(*) FROM budget_model_reductions WHERE state='validated'`).Scan(&reduced)
+		if indexed == 1 && reduced == 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	restarted.inboxCancel()
 	restarted.inboxWorkers.Wait()
-	if indexed != 1 || p.calls.Load() != 1 {
-		t.Fatalf("automatic recovery missing: results=%d calls=%d", indexed, p.calls.Load())
+	if indexed != 1 || reduced != 1 || p.calls.Load() != 1 {
+		t.Fatalf("automatic recovery/reduction missing: results=%d reductions=%d calls=%d", indexed, reduced, p.calls.Load())
 	}
 	if runs, err := restarted.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
 		t.Fatalf("recovery replayed pipeline: %#v %v", runs, err)
@@ -148,6 +149,11 @@ func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *tes
 	_ = db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds)
 	if state != "running" || phase != "effect_started" || actions != 1 || holds != 3 {
 		t.Fatalf("recovery invented continuation/settlement: state=%s phase=%s actions=%d holds=%d", state, phase, actions, holds)
+	}
+	status := httptest.NewRecorder()
+	restarted.handleInbox(status, httptest.NewRequest(http.MethodGet, "/inbox?run_id="+receipt.RunID, nil))
+	if status.Code != 200 || !strings.Contains(status.Body.String(), `"validated_reductions":1`) || strings.Contains(status.Body.String(), "RawResponses") {
+		t.Fatalf("reduction status hidden or response leaked: %d %s", status.Code, status.Body.String())
 	}
 }
 

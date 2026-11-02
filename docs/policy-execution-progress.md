@@ -832,6 +832,61 @@ This is an incremental behavior ledger, not a completion declaration.
   cursors. Responses remain unvalidated; no recovery fence is cleared yet. Operator
   controls, cancellation/refund and full ceiling/release qualification remain open.
 
+### Slice 49: Every Batch Must Be Parsed
+
+- A red live-pipeline test proved that concatenating responses selected only the
+  first JSON candidate, silently losing later findings. Every batch now parses
+  separately before findings, coverage and bounded tool requests are combined.
+- Malformed/empty slots cannot be hidden by valid peers. Missing or duplicate
+  per-batch coverage cannot become meaningful aggregate coverage. The recovery
+  reducer and live path share this parser. Pipeline and focused race tests pass.
+
+### Slice 50: Versioned Pure Local Model Reducer
+
+- Red tests require exact request/response/checkpoint binding, all batch slots,
+  deterministic permutation-independent results and pinned confidence settings.
+- `ModelReducerV1` uses immutable inputs only. It proposes tool/findings-repair/
+  coverage-repair cursors, blocks exhausted tools, and otherwise applies the
+  existing deterministic coverage, location and finding validators before rendering
+  a local draft. Rejected findings and raw input references remain auditable.
+- It never invokes a model, tool, store or publisher. Missing qualification,
+  changed identity, unknown versions and absent changed-file evidence fail closed.
+  Pipeline/review/orchestrator tests and focused race cases pass.
+
+### Slice 51: Formatter Tool Requests Are Not Repaired Findings
+
+- A red regression showed a formatter tool request being interpreted as successful
+  empty findings repair. The live parser now rejects that shape, matching the pure
+  reducer; it cannot bypass the malformed-output gate. Focused race cases pass.
+
+### Slice 52: Exhausted Tools Cannot Complete A Review
+
+- An end-to-end red test found four tool-request responses producing `drafted`
+  despite `tool_loop_incomplete`. This is now a terminal parse failure before
+  further coverage-repair calls, retaining raw audit but never successful status.
+  Live pipeline tests and focused race cases pass.
+
+### Slice 53: Atomic Durable Local Reduction And Schema V10
+
+- Schema v10 stores reduction artifacts and immutable action-input links. Existing
+  inbox workers index committed responses then reduce locally, with one job lock,
+  complete group checks and unique links. `/inbox` reports artifact/continuation/
+  blocked counts without response bodies. Raw journal rows remain separate.
+- Real PostgreSQL tests cover deferred commit failure, concurrent reducers, panic,
+  exact namespace/source/receipt checks, faulty adapters, missing then reverse-order
+  batch arrivals and OS process death before/after reduction commit. Retry repeats
+  local computation only, never a model/tool effect or a hold reservation.
+- The v9-to-v10 populated upgrade rehearsal proves DDL rollback, idempotent retry
+  and reduction of a prior v9 result without resetting request/quote/outcome/holds.
+  Older v1/v6/v8 rehearsals still run through the current explicit migration.
+- Full PostgreSQL suite, broad accounting/app/pipeline/orchestrator/review race
+  suites, focused latest regressions and vet passed. Runtime now requires schema
+  v10; no operator/deployed database was migrated by these tests.
+- Still open: atomic parent-to-child cursor transitions, durable terminal job
+  projection, authenticated operator controls and safe cancellation/refund. No
+  reduction clears `recovery_action_id`, grants current use or approves/publishes
+  a report. Live qualification and complete ceilings/release gates remain open.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

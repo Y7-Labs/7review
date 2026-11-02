@@ -719,6 +719,11 @@ Production route qualification and validated continuation remain open.
 Pipeline actions also freeze versioned pre-call Source/raw-response/cursor and
 default-validation inputs. These are checked immutable continuation inputs, not
 validated results or authority to clear a recovered job's action restriction.
+Schema v10 now commits version-1 local reduction artifacts and exact input links.
+They retain pinned validation, complete batch joins and typed tool/repair plans
+without repeating provider I/O. A local validated draft is not job completion,
+approval, publication, financial settlement or permission to dispatch a child.
+Atomic cursor advancement and operational recovery controls remain open.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

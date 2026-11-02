@@ -124,7 +124,7 @@ func TestLocalModelReducerIsDeterministicAndNeverUsesCurrentProfile(t *testing.T
 }
 
 func TestLocalModelReducerRejectsIncompleteOrContradictoryInputs(t *testing.T) {
-	for _, fault := range []string{"missing batch", "duplicate slot", "response digest", "unknown response", "changed attempt", "unknown version", "unqualified validator"} {
+	for _, fault := range []string{"missing batch", "duplicate slot", "response digest", "unknown response", "changed attempt", "unknown version", "unqualified validator", "missing diff"} {
 		t.Run(fault, func(t *testing.T) {
 			results := recordedReducerFixture(t, 2)
 			switch fault {
@@ -138,12 +138,14 @@ func TestLocalModelReducerRejectsIncompleteOrContradictoryInputs(t *testing.T) {
 				results[0].Outcome.ResponseReceived = false
 			case "changed attempt":
 				results[0].Intent.Attempt.AttemptID = "other"
-			case "unknown version", "unqualified validator":
+			case "unknown version", "unqualified validator", "missing diff":
 				cp, _ := review.DecodeModelCheckpoint(results[0].Intent.ModelCheckpoint)
 				if fault == "unknown version" {
 					cp.Version = 2
-				} else {
+				} else if fault == "unqualified validator" {
 					cp.Validation = nil
+				} else {
+					cp.Source.Diff = nil
 				}
 				results[0].Intent.ModelCheckpoint, _ = json.Marshal(cp)
 			}

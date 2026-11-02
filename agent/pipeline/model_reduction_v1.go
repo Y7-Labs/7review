@@ -59,6 +59,9 @@ func (ModelReducerV1) ReduceModelResults(ctx context.Context, results []orchestr
 		if cp.Validation == nil || cp.Validation.Version != 1 || cp.Source.Report.Final != "" {
 			return empty, errors.New("recorded validation contract unavailable or final authority contaminated")
 		}
+		if cp.Source.Diff == nil || len(cp.Source.Diff.Files) == 0 {
+			return empty, errors.New("model reduction requires frozen changed-file evidence")
+		}
 		var req orchestrator.LLMRequest
 		if err = json.Unmarshal(i.Payload, &req); err != nil {
 			return empty, err

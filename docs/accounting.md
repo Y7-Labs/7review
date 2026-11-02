@@ -40,7 +40,9 @@ result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
 Schemas v8/v9 add prepared-action leases, fenced outcome provenance and confined
-recovery ownership. Schema v7 commits complete accepted aggregates on top of v6 action-result
+recovery ownership. Schema v10 adds immutable local reduction artifacts and exact
+input links. Worker runtime now requires v10; run explicit migration before restart.
+Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
@@ -49,6 +51,9 @@ provenance rollback, idempotent retry, unchanged requests/quotes/holds/tokens an
 deadlines, and live prepared/fenced/unfenced sending receipts. Runtime rejects v8
 instead of migrating it. This is a disposable-schema rehearsal, not an upgrade
 of an operator's deployed database or proof of backup/failover readiness.
+The v9-to-v10 rehearsal also injects commit failure, verifies that both new tables
+roll back, retries idempotently and reduces an existing v9 response without
+rewriting its request, quote, outcome or holds. No deployed store was upgraded.
 
 ## Runtime Intake
 
@@ -200,9 +205,10 @@ Process-death, duplicate-worker, stale-owner and interrupted-commit tests use
 controlled providers. The production catalog remains empty, not implicitly qualified.
 
 Sending/uncertain/result actions are never reclaimed. Responses are indexed as
-`recorded_unvalidated`; recovery does not finish the job, create a draft or clear
-the confined job token. Prepared cancellation/refund, lease renewal, authenticated
-operator recovery and validated continuation remain open. Ephemeral runtime recovery
+`recorded_unvalidated`; the local reducer below may produce a separate validated
+artifact. Neither indexing nor reduction finishes a job or clears its confined
+token. Prepared cancellation/refund, lease renewal, authenticated operator recovery
+and atomic next-action continuation remain open. Ephemeral runtime recovery
 requires acknowledged service handoff; a CI retry cannot masquerade as durable
 service ownership. Unused and unknown holds are retained until a qualified
 settlement or future verified not-executed operation, not released on expiry.
@@ -224,9 +230,42 @@ fail before holds are created. Claim/Begin recheck the stored checkpoint, and
 reclaim returns its exact original bytes. Legacy missing checkpoints are not
 invented from current files and grant no validated-continuation authority.
 
-This is the durable input for a future versioned local reducer, not that reducer
-or an unrestricted scheduling grant. The result journal remains unvalidated, and
-the recovery restriction is not cleared by merely persisting this checkpoint.
+The checkpoint is input to the versioned local reducer below, not an unrestricted
+scheduling grant. Persisting it never clears the recovery restriction.
+
+### Durable Local Reduction
+
+`ModelReducerV1` uses only recorded requests, responses and frozen checkpoints.
+It validates all input digests, complete batch slots and the pinned default
+validator contract. Responses reduce by batch index, not arrival order. Each
+batch is parsed separately; malformed or missing slots cannot be hidden by an
+earlier valid JSON candidate, and coverage missing from a slot remains incomplete.
+
+The output is `validated`, `needs_tools`, `needs_findings_repair`,
+`needs_coverage_repair` or `blocked`. Tool and formatter cursors are proposals,
+never executed by the reducer. Exhausted tools and invalid repaired output cannot
+become successful empty reviews. A validated artifact contains a local draft,
+finding validation/rejection audit and no final report or approval. Current
+profiles are not substituted for stored confidence settings. Missing diff evidence
+or unqualified custom validators fail closed.
+
+Inbox workers index responses, then commit bounded reduction artifacts and their
+exact input links in one transaction. Job-row locking and unique links prevent
+duplicate reducers from applying a group twice. Commit failure/panic/process death
+before commit retries only local computation; a lost receipt after commit reuses
+the artifact without repeating computation or provider I/O. Journal/outcome swaps,
+rewritten evidence or malformed adapter receipts cannot commit. Artifact lookup is
+scoped to the trusted boundary/project and verifies its stored digest and attribution.
+The current bounds are 128 input actions, 64 MiB aggregate input and 32 MiB output;
+incomplete groups wait rather than emitting partial validated artifacts.
+
+`/inbox` exposes validated-artifact, pending-continuation and blocked-reduction
+counts, not model response bodies. Its existing raw `recorded_unvalidated` count
+still reports the raw journal; a separate artifact is the validation record.
+Artifacts can retain attributed historical evidence after a deadline; lookup alone
+does not authorize current use, publication or more spending. No new model/tool
+action is scheduled, recovery ownership is not widened and no hold is released.
+Atomic parent-to-child cursor advancement and durable job completion remain open.
 
 ## Token And Price Qualification
 

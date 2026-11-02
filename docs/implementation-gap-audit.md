@@ -165,11 +165,14 @@ Durable HTTP acceptance and unclaimed pending-work recovery now have PostgreSQL
 fault/replay coverage. Claimed jobs are never replayed as a whole; bounded workers
 can now recover eligible fenced prepared actions into the unvalidated journal.
 Complete/Stream subprocess, duplicate-owner and interrupted-commit cases use
-controlled providers. Live recovery qualification, validated response continuation/provider currentness,
+controlled providers. Pinned local response reducers now commit immutable artifacts
+and exact input links, including complete batch joins and proposed tool/repair
+cursors, with transactional/process-death evidence. They grant no child dispatch
+or job completion. Live recovery qualification, atomic validated continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-44.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-53.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.
