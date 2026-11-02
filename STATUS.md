@@ -55,15 +55,17 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-53. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-57. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
-duplicate-worker tests. They never widen ownership, schedule a child action or
-finish a job. Atomic next-action transitions, authenticated controls and safe
-cancellation/refund remain open. The v8-to-v9 and v9-to-v10 migrations have populated
-PostgreSQL rollback/retry rehearsals; current runtime requires explicit migration
-to schema v10 before restart. No deployed database was changed.
+duplicate-worker tests. Eligible formatter artifacts now advance atomically to
+one confined prepared child, with frozen routing, all holds and a new job epoch.
+They never widen ownership or finish a job. Live/recovered cursor and batch-backlog unification,
+tool continuation, terminal projection, authenticated controls and safe
+cancellation/refund remain open. The v8-to-v9, v9-to-v10 and v10-to-v11 migrations
+have populated PostgreSQL rollback/retry rehearsals; current runtime requires
+explicit migration to schema v11 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

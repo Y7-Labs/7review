@@ -55,6 +55,19 @@ func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestr
 	if recovery.Valid && recovery.String != i.ActionID {
 		return errors.New("recovered job is confined to its prepared action; validated continuation required")
 	}
+	var child bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_continuations WHERE child_action_id=$1)`, i.ActionID).Scan(&child); err != nil {
+		return err
+	}
+	if child {
+		allowed, err := a.confinedContinuationTx(ctx, tx, i)
+		if err != nil {
+			return err
+		}
+		if !allowed {
+			return errors.New("prepared child lacks current parent authority")
+		}
+	}
 	return nil
 }
 

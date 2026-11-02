@@ -887,6 +887,57 @@ This is an incremental behavior ledger, not a completion declaration.
   reduction clears `recovery_action_id`, grants current use or approves/publishes
   a report. Live qualification and complete ceilings/release gates remain open.
 
+### Slice 54: Frozen Role Routing For Continuation
+
+- Red tests require reasoner/formatter route chains and output limits to survive
+  later configuration changes. Pipeline checkpoints now freeze this host contract;
+  dispatch must match its role. Reducer artifacts preserve it without reinterpretation.
+- Optional fields keep legacy checkpoint/group digests stable; absent old routing
+  is never filled from current settings. Configuration detachment, role-bound
+  substitution and real-service pre-I/O checkpoint tests pass with race coverage.
+
+### Slice 55: Caller-Owned Reservation Transaction
+
+- A red caller-rollback test required action/lease/all three holds to participate
+  in the same transaction as a confined job pointer. The private reservation helper
+  now composes without committing; public wrappers still return only after commit.
+- Rollback leaves no action, holds, lease or grant, and does not consume capacity.
+  Existing reservation/concurrency/commit-fault race tests remain green.
+
+### Slice 56: Pure Formatter Child Construction
+
+- A red parent-context test requires the exact original formatter, output bound,
+  prompt template, prior raw responses and validation settings. The versioned
+  builder consumes the stored artifact only, not current role/profile configuration.
+- It proposes no action identity/token/permission. Missing legacy routing and
+  terminal/tool states cannot guess a billable child or fabricate observations.
+  Pure builder/reducer tests pass under the race detector.
+
+### Slice 57: Atomic Confined Formatter Children
+
+- Schema v11 links a parent reduction to one deterministic child. Current job,
+  parent input/response proof and immutable source checks precede rotation of the
+  job token and restriction to that exact child. Reservation and link commit
+  together; deferred FK enforcement forbids a dangling committed child grant.
+- The inbox loop advances eligible formatter plans, then the existing fenced
+  recovery path handles the linked child. Parent proof is rechecked at claim/Begin;
+  unrelated/unresolved work remains non-reclaimable. No whole pipeline is replayed.
+- PostgreSQL tests cover duplicate advancement, deferred commit failure, bad
+  builders, changed evidence/deadlines/catalog/attempt/job epoch, parent revocation after
+  claim and OS process death after child prepare/claim/sending. Sending children
+  are not resent, holds are retained, and parent replay keeps the same child ID.
+- The fresh-service test now follows a malformed recovered parent through exactly
+  one formatter child into a validated local artifact without memory-store replay.
+  Consumed plans no longer appear as pending continuations.
+- Explicit v10-to-v11 migration rehearses DDL/FK rollback, idempotent retry and
+  rejection of dangling grants; older rehearsals remain green through v11.
+  Full PostgreSQL, broad race, latest focused race, vet and format checks pass.
+- Still required: direct live-pipeline/canonical child unification, prepared batch
+  backlog manifests/ownership, committed tool
+  observations and tool continuation, durable terminal projection, authenticated
+  operator controls and safe cancellation/refund. No job completion, approval,
+  publication or hold refund is claimed; ceilings and alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

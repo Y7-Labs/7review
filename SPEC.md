@@ -723,7 +723,13 @@ Schema v10 now commits version-1 local reduction artifacts and exact input links
 They retain pinned validation, complete batch joins and typed tool/repair plans
 without repeating provider I/O. A local validated draft is not job completion,
 approval, publication, financial settlement or permission to dispatch a child.
-Atomic cursor advancement and operational recovery controls remain open.
+General cursor advancement and operational recovery controls remain open.
+Schema v11 now links a checked formatter parent to exactly one prepared child,
+all reservations and an action-confined job epoch in one commit. The role route,
+output limit and prior context are frozen rather than reselected from current
+configuration. Linked child reclaim and Begin recheck the parent proof. General
+tool/live-pipeline cursor unification, terminal projection and operator controls
+remain open; formatter advancement does not complete or publish a job.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

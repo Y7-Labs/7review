@@ -41,7 +41,8 @@ of ordinary worker credentials. Backup/restore and deployment failover still nee
 qualification before coordinated release.
 Schemas v8/v9 add prepared-action leases, fenced outcome provenance and confined
 recovery ownership. Schema v10 adds immutable local reduction artifacts and exact
-input links. Worker runtime now requires v10; run explicit migration before restart.
+input links. Schema v11 adds parent-to-child links and a deferred child-grant FK.
+Worker runtime now requires v11; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -54,6 +55,9 @@ of an operator's deployed database or proof of backup/failover readiness.
 The v9-to-v10 rehearsal also injects commit failure, verifies that both new tables
 roll back, retries idempotently and reduces an existing v9 response without
 rewriting its request, quote, outcome or holds. No deployed store was upgraded.
+The v10-to-v11 rehearsal proves atomic DDL/constraint rollback and retry, and that
+a dangling child restriction cannot commit. No temporary unrestricted grant is
+needed to create a child and reserve its three scope holds in one transaction.
 
 ## Runtime Intake
 
@@ -220,7 +224,8 @@ immutable action digest. It contains the detached pre-call `Source`, prior raw
 responses and a typed batch/tool-round/findings-repair/coverage-repair cursor.
 Batch slots share one frozen pre-batch input, and live responses merge by batch
 index rather than completion order. Serial mode processes every batch too.
-Default validator version/confidence settings are frozen; custom validators have
+Default validator version/confidence settings and reasoner/formatter route chains
+with output limits are frozen; custom validators have
 no qualified deterministic validation contract. No current profile is substituted
 for a stored validation setting during recovery.
 
@@ -263,9 +268,47 @@ incomplete groups wait rather than emitting partial validated artifacts.
 counts, not model response bodies. Its existing raw `recorded_unvalidated` count
 still reports the raw journal; a separate artifact is the validation record.
 Artifacts can retain attributed historical evidence after a deadline; lookup alone
-does not authorize current use, publication or more spending. No new model/tool
-action is scheduled, recovery ownership is not widened and no hold is released.
-Atomic parent-to-child cursor advancement and durable job completion remain open.
+does not authorize current use, publication or more spending. Reduction by itself
+schedules no model/tool action, widens no recovery grant and releases no hold.
+Formatter parent-to-child advancement is described below. Durable job completion
+and the complete tool/live-pipeline continuation path remain open.
+
+### Confined Formatter Advancement
+
+New checkpoints include versioned host routing for reasoner and formatter roles.
+Dispatch must match its role's frozen route and output limit. Optional routing
+fields preserve old checkpoint/group identities; old artifacts never acquire a
+formatter route from current configuration. No new model/provider qualification
+is implied, and the production catalog remains empty.
+
+`ModelContinuationV1` builds only the typed findings/coverage formatter request
+from the parent artifact, pinned route and exact prior context. It supplies no
+action ID, job token, reservation or send permission. Tools require committed
+observations and are not synthesized as empty successful tool results.
+
+`AdvanceModelContinuation` rechecks the current job, full parent input proof,
+the parent's sending job epoch, source identity, generation, limits and route qualification, then commits exactly
+one deterministic prepared child, all holds, parent link and rotated job token.
+The new token is restricted to that child before commit. The deferred FK allows
+the exact pointer to be set before child insertion, but forbids a missing child at
+commit. Failure rolls back token, pointer, action, lease and holds together.
+Parent replay returns the existing descriptor, never a new paid action.
+
+Inbox workers automatically advance eligible formatter artifacts. Recovery can
+reclaim the linked child after external progress only with its intact parent proof
+and no unresolved/unreduced sibling effects. Every later claim/Begin rechecks that
+proof and original deadlines; sending children never become retryable. Process
+death after prepare/claim/sending, competing workers and changed proofs/config
+are exercised against PostgreSQL and controlled providers. Consumed parent plans
+are excluded from `/inbox` pending-continuation counts.
+
+This does not complete general continuation. Direct live-pipeline child creation
+must be unified with the same durable cursor protocol; unlinked prepared work after
+external progress still fails closed. Prepared batch backlogs need the same
+cursor/manifest ownership rather than broad job replay. Tool observations/continuations and durable
+terminal run projection also remain open, alongside authenticated controls and
+safe cancellation/refund. No formatter transition finishes, approves or publishes
+the review, and existing usage holds are not refunded.
 
 ## Token And Price Qualification
 

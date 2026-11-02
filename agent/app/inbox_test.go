@@ -81,6 +81,14 @@ func (a crashAfterPreparation) PrepareAction(ctx context.Context, i orchestrator
 }
 
 func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *testing.T) {
+	exercisePreparedActionRecovery(t, false)
+}
+
+func TestInboxAutomaticallyContinuesRecoveredFindingsRepairWithoutPipelineReplay(t *testing.T) {
+	exercisePreparedActionRecovery(t, true)
+}
+
+func exercisePreparedActionRecovery(t *testing.T, repair bool) {
 	s, db, dsn := inboxServerDSN(t)
 	w := inboxWebhook(t, s, inboxBody, "prepared-restart")
 	if w.Code != 202 {
@@ -102,6 +110,7 @@ func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *tes
 	s.accountingRuntime.Authority = a
 	s.pipeline.Canonical.Authority = a
 	p := &aggregateQualifiedProvider{t: t, db: db, attempt: receipt.AttemptID}
+	p.malformedFirst = repair
 	build := func(authority orchestrator.BudgetAuthority) *orchestrator.Orchestrator {
 		return orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("pinned", "pinned", p.Name()), map[string]orchestrator.LLMProvider{p.Name(): p}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(authority))
 	}
@@ -125,18 +134,22 @@ func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *tes
 	restarted.pipeline.SCM = unavailableAcceptanceSCM{t}
 	restarted.pipeline.TrustedPolicy = nil
 	restarted.startInboxWorkers()
+	want := 1
+	if repair {
+		want = 2
+	}
 	var indexed, reduced int
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
 		_ = db.QueryRow(`SELECT count(*) FROM budget_action_results WHERE status='recorded_unvalidated'`).Scan(&indexed)
 		_ = db.QueryRow(`SELECT count(*) FROM budget_model_reductions WHERE state='validated'`).Scan(&reduced)
-		if indexed == 1 && reduced == 1 {
+		if indexed == want && reduced == 1 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	restarted.inboxCancel()
 	restarted.inboxWorkers.Wait()
-	if indexed != 1 || reduced != 1 || p.calls.Load() != 1 {
+	if indexed != want || reduced != 1 || p.calls.Load() != int32(want) {
 		t.Fatalf("automatic recovery/reduction missing: results=%d reductions=%d calls=%d", indexed, reduced, p.calls.Load())
 	}
 	if runs, err := restarted.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
@@ -147,12 +160,12 @@ func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *tes
 	_ = db.QueryRow(`SELECT i.state,j.phase FROM budget_inbox i JOIN budget_jobs j USING(run_id)`).Scan(&state, &phase)
 	_ = db.QueryRow(`SELECT count(*) FROM budget_actions`).Scan(&actions)
 	_ = db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds)
-	if state != "running" || phase != "effect_started" || actions != 1 || holds != 3 {
+	if state != "running" || phase != "effect_started" || actions != want || holds != 3*want {
 		t.Fatalf("recovery invented continuation/settlement: state=%s phase=%s actions=%d holds=%d", state, phase, actions, holds)
 	}
 	status := httptest.NewRecorder()
 	restarted.handleInbox(status, httptest.NewRequest(http.MethodGet, "/inbox?run_id="+receipt.RunID, nil))
-	if status.Code != 200 || !strings.Contains(status.Body.String(), `"validated_reductions":1`) || strings.Contains(status.Body.String(), "RawResponses") {
+	if status.Code != 200 || !strings.Contains(status.Body.String(), `"validated_reductions":1`) || !strings.Contains(status.Body.String(), `"pending_continuations":0`) || strings.Contains(status.Body.String(), "RawResponses") {
 		t.Fatalf("reduction status hidden or response leaked: %d %s", status.Code, status.Body.String())
 	}
 }
@@ -329,15 +342,16 @@ func crashAcceptedHTTP(t *testing.T, dsn string) {
 }
 
 type aggregateQualifiedProvider struct {
-	t       *testing.T
-	db      *sql.DB
-	attempt string
-	calls   atomic.Int32
+	t              *testing.T
+	db             *sql.DB
+	attempt        string
+	calls          atomic.Int32
+	malformedFirst bool
 }
 
 func (*aggregateQualifiedProvider) Name() string { return "aggregate-fixture" }
 func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrator.LLMRequest) (string, error) {
-	p.calls.Add(1)
+	call := p.calls.Add(1)
 	var actions, holds int
 	if err := p.db.QueryRowContext(ctx, `SELECT count(*) FROM budget_actions WHERE attempt_id=$1 AND state='sending'`, p.attempt).Scan(&actions); err != nil {
 		return "", err
@@ -345,11 +359,11 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 	if err := p.db.QueryRowContext(ctx, `SELECT count(*) FROM budget_holds h JOIN budget_actions a ON a.id=h.action_id WHERE a.attempt_id=$1`, p.attempt).Scan(&holds); err != nil {
 		return "", err
 	}
-	if actions != 1 || holds != 3 {
+	if actions != 1 || holds != 3*int(call) {
 		p.t.Errorf("provider preceded atomic sending/holds: actions=%d holds=%d", actions, holds)
 	}
 	var fenced int
-	if err := p.db.QueryRowContext(ctx, `SELECT count(*) FROM budget_actions a JOIN budget_action_leases l ON l.action_id=a.id WHERE a.attempt_id=$1 AND a.fenced AND l.sending_fence=l.fence AND l.fence>0 AND l.worker_id IS NOT NULL`, p.attempt).Scan(&fenced); err != nil {
+	if err := p.db.QueryRowContext(ctx, `SELECT count(*) FROM budget_actions a JOIN budget_action_leases l ON l.action_id=a.id WHERE a.attempt_id=$1 AND a.state='sending' AND a.fenced AND l.sending_fence=l.fence AND l.fence>0 AND l.worker_id IS NOT NULL`, p.attempt).Scan(&fenced); err != nil {
 		return "", err
 	}
 	if fenced != 1 {
@@ -364,8 +378,15 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 		return "", err
 	}
 	cp, err := review.DecodeModelCheckpoint(intent.ModelCheckpoint)
-	if err != nil || cp.Source.Attempt.AttemptID != p.attempt || cp.Cursor.Phase != review.ModelReviewBatches || cp.Cursor.BatchCount != 1 || cp.Cursor.BatchIndex != 0 || cp.Validation == nil || cp.Validation.MinConfidence != 0.45 || cp.Routing == nil || cp.Routing.Roles["formatter"].Routes[0].Model != "pinned" {
+	wantPhase := review.ModelReviewBatches
+	if p.malformedFirst && call == 2 {
+		wantPhase = review.ModelRepairFindings
+	}
+	if err != nil || cp.Source.Attempt.AttemptID != p.attempt || cp.Cursor.Phase != wantPhase || (wantPhase == review.ModelReviewBatches && cp.Cursor.BatchCount != 1) || cp.Cursor.BatchIndex != 0 || cp.Validation == nil || cp.Validation.MinConfidence != 0.45 || cp.Routing == nil || cp.Routing.Roles["formatter"].Routes[0].Model != "pinned" {
 		p.t.Errorf("provider preceded immutable continuation checkpoint: %#v %v", cp.Cursor, err)
+	}
+	if p.malformedFirst && call == 1 {
+		return "malformed parent response", nil
 	}
 	return "[]", nil
 }

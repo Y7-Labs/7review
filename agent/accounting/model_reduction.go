@@ -238,9 +238,21 @@ func (a *Authority) LookupModelReduction(ctx context.Context, actionID string) (
 		return artifact, err
 	}
 	defer tx.Rollback()
+	artifact, err = a.readModelReductionTx(ctx, tx, actionID)
+	if err != nil {
+		return review.ModelReduction{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return review.ModelReduction{}, err
+	}
+	return artifact, nil
+}
+
+func (a *Authority) readModelReductionTx(ctx context.Context, tx *sql.Tx, actionID string) (review.ModelReduction, error) {
+	var artifact review.ModelReduction
 	var raw []byte
 	var digest, group, inputDigest, state, runID, attemptID string
-	err = tx.QueryRowContext(ctx, `SELECT m.artifact,m.artifact_digest,m.group_digest,m.input_digest,m.state,m.run_id,m.attempt_id FROM budget_model_reductions m JOIN budget_model_reduction_inputs x ON x.reduction_id=m.id JOIN budget_inbox i ON i.run_id=m.run_id WHERE x.action_id=$1 AND i.boundary_id=$2 AND i.project_id=$3`, actionID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&raw, &digest, &group, &inputDigest, &state, &runID, &attemptID)
+	err := tx.QueryRowContext(ctx, `SELECT m.artifact,m.artifact_digest,m.group_digest,m.input_digest,m.state,m.run_id,m.attempt_id FROM budget_model_reductions m JOIN budget_model_reduction_inputs x ON x.reduction_id=m.id JOIN budget_inbox i ON i.run_id=m.run_id WHERE x.action_id=$1 AND i.boundary_id=$2 AND i.project_id=$3`, actionID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&raw, &digest, &group, &inputDigest, &state, &runID, &attemptID)
 	if err != nil {
 		return artifact, err
 	}
@@ -253,9 +265,6 @@ func (a *Authority) LookupModelReduction(ctx context.Context, actionID string) (
 	refs, _ := json.Marshal(artifact.Inputs)
 	if artifact.Version != 1 || artifact.GroupDigest != group || artifact.InputDigest != inputDigest || hash(refs) != inputDigest || string(artifact.State) != state || artifact.Source.Run.ID != runID || artifact.Source.Attempt.AttemptID != attemptID {
 		return review.ModelReduction{}, errors.New("model reduction artifact attribution failure")
-	}
-	if err = tx.Commit(); err != nil {
-		return review.ModelReduction{}, err
 	}
 	return artifact, nil
 }

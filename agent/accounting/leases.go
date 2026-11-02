@@ -160,7 +160,7 @@ func (a *Authority) claimPrepared(ctx context.Context, p orchestrator.PreparedAc
 	}
 	if reclaim && i.Job != nil {
 		var token string
-		err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
+		err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND ((j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5)) OR (j.phase='effect_started' AND j.recovery_action_id=$5 AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=$5))) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
 		if err != nil {
 			return empty, errors.New("recovery job authority unavailable")
 		}
@@ -212,7 +212,13 @@ func (a *Authority) claimPrepared(ctx context.Context, p orchestrator.PreparedAc
 			return empty, err
 		}
 		if external {
-			return empty, errors.New("job has external progress; validated continuation required")
+			allowed, e := a.confinedContinuationTx(ctx, tx, i)
+			if e != nil {
+				return empty, e
+			}
+			if !allowed {
+				return empty, errors.New("job has external progress; validated continuation required")
+			}
 		}
 		token, e := review.NewOpaqueID("recovered-job-")
 		if e != nil {
@@ -368,7 +374,21 @@ func (a *Authority) PreparedRecoveryCandidates(ctx context.Context, limit int) (
 		return nil, err
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT a.id,a.request_digest,l.fence FROM budget_actions a JOIN budget_action_leases l ON l.action_id=a.id JOIN budget_jobs j ON j.attempt_id=a.attempt_id JOIN budget_inbox i ON i.run_id=j.run_id JOIN budget_attempts t ON t.id=a.attempt_id WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.state='running' AND i.deadline>clock_timestamp() AND j.phase='admitted' AND j.dispatch_allowed AND t.active AND a.state='prepared' AND a.fenced AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id AND (l.lease_until IS NULL OR l.lease_until<=clock_timestamp()) AND (t.tracking_id IS NULL OR EXISTS(SELECT 1 FROM budget_heads h WHERE h.id=t.tracking_id AND h.current_attempt_id=t.id)) AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state<>'prepared') ORDER BY a.created_at,a.id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
+	rows, err := tx.QueryContext(ctx, `SELECT a.id,a.request_digest,l.fence
+FROM budget_actions a JOIN budget_action_leases l ON l.action_id=a.id
+JOIN budget_jobs j ON j.attempt_id=a.attempt_id JOIN budget_inbox i ON i.run_id=j.run_id
+JOIN budget_attempts t ON t.id=a.attempt_id
+WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.state='running' AND i.deadline>clock_timestamp()
+AND j.dispatch_allowed AND t.active AND a.state='prepared' AND a.fenced
+AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id
+AND (l.lease_until IS NULL OR l.lease_until<=clock_timestamp())
+AND (t.tracking_id IS NULL OR EXISTS(SELECT 1 FROM budget_heads h WHERE h.id=t.tracking_id AND h.current_attempt_id=t.id))
+AND ((j.phase='admitted' AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state<>'prepared'))
+OR (j.phase='effect_started' AND j.recovery_action_id=a.id
+AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=a.id)
+AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.id<>a.id
+AND (e.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=e.id)))))
+ORDER BY a.created_at,a.id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
 	if err != nil {
 		return nil, err
 	}
