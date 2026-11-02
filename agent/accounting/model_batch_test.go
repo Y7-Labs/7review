@@ -163,6 +163,25 @@ func TestSealedModelBatchRejectsAdditionalActions(t *testing.T) {
 	assertPreparedBatchCounts(t, a, 2)
 }
 
+func TestSealedBatchOwnerCannotFinishInboxBeforeTakeover(t *testing.T) {
+	for _, success := range []bool{false, true} {
+		t.Run(map[bool]string{false: "failure", true: "success"}[success], func(t *testing.T) {
+			a, intents := modelBatchFixture(t)
+			ctx := context.Background()
+			if _, err := a.PrepareModelBatch(ctx, intents); err != nil {
+				t.Fatal(err)
+			}
+			if err := a.FinishInbox(ctx, intents[0].Job.RunID, intents[0].Job.Token, success); err == nil {
+				t.Fatal("sealed live token finished unvalidated batch")
+			}
+			var state, phase string
+			if err := a.db.QueryRow(`SELECT i.state,j.phase FROM budget_inbox i JOIN budget_jobs j USING(run_id)`).Scan(&state, &phase); err != nil || state != "running" || phase != "admitted" {
+				t.Fatalf("seal lost recovery authority: %s %s %v", state, phase, err)
+			}
+		})
+	}
+}
+
 func TestModelBatchPreparationRejectsIncompleteOrMixedPlans(t *testing.T) {
 	for _, fault := range []string{"missing", "duplicate", "reordered", "job", "checkpoint", "source", "validator", "preexisting_partial", "preexisting_foreign", "preexisting_full"} {
 		t.Run(fault, func(t *testing.T) {

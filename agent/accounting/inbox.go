@@ -231,7 +231,7 @@ func (a *Authority) FinishInbox(ctx context.Context, runID, token string, succes
 	if success {
 		state = "completed"
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.recovery_action_id IS NULL AND j.terminal_reduction_id IS NULL)`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
+	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.recovery_action_id IS NULL AND j.model_batch_id IS NULL AND j.terminal_reduction_id IS NULL)`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
 	if err != nil {
 		return err
 	}
