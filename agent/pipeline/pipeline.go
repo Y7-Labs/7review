@@ -1475,7 +1475,11 @@ func (p *Pipeline) modelCheckpointContext(ctx context.Context, rc *review.Contex
 		}
 		contract = &review.ModelValidation{Version: 1, MinConfidence: min}
 	}
-	return review.WithModelCheckpoint(review.WithModelValidation(ctx, contract), rc, cursor)
+	routing, err := p.Orchestrator.RoutingSnapshot()
+	if err != nil {
+		return nil, err
+	}
+	return review.WithModelCheckpoint(review.WithModelRouting(review.WithModelValidation(ctx, contract), routing), rc, cursor)
 }
 
 func markToolRequestRound(requests []review.ToolRequest, round int) []review.ToolRequest {

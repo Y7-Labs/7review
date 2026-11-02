@@ -50,5 +50,21 @@ func ValidateModelCheckpoint(i DispatchIntent) error {
 	if i.Role != string(wantRole) || i.Step != wantStep {
 		return errors.New("model checkpoint cursor does not match dispatched stage")
 	}
+	if cp.Routing != nil {
+		chain, ok := cp.Routing.Roles[i.Role]
+		var req LLMRequest
+		if err := json.Unmarshal(i.Payload, &req); err != nil {
+			return err
+		}
+		matched := false
+		for _, route := range chain.Routes {
+			if route.Provider == i.Provider && route.Model == i.Model {
+				matched = true
+			}
+		}
+		if !ok || !matched || req.Model != i.Model || req.MaxTokens != chain.MaxTokens {
+			return errors.New("dispatched model or output bound changed frozen role routing")
+		}
+	}
 	return nil
 }

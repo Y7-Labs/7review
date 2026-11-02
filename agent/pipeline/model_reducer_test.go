@@ -124,7 +124,7 @@ func TestLocalModelReducerIsDeterministicAndNeverUsesCurrentProfile(t *testing.T
 }
 
 func TestLocalModelReducerRejectsIncompleteOrContradictoryInputs(t *testing.T) {
-	for _, fault := range []string{"missing batch", "duplicate slot", "response digest", "unknown response", "changed attempt", "unknown version", "unqualified validator", "missing diff"} {
+	for _, fault := range []string{"missing batch", "duplicate slot", "response digest", "unknown response", "changed attempt", "unknown version", "unqualified validator", "missing diff", "route bound"} {
 		t.Run(fault, func(t *testing.T) {
 			results := recordedReducerFixture(t, 2)
 			switch fault {
@@ -138,14 +138,16 @@ func TestLocalModelReducerRejectsIncompleteOrContradictoryInputs(t *testing.T) {
 				results[0].Outcome.ResponseReceived = false
 			case "changed attempt":
 				results[0].Intent.Attempt.AttemptID = "other"
-			case "unknown version", "unqualified validator", "missing diff":
+			case "unknown version", "unqualified validator", "missing diff", "route bound":
 				cp, _ := review.DecodeModelCheckpoint(results[0].Intent.ModelCheckpoint)
 				if fault == "unknown version" {
 					cp.Version = 2
 				} else if fault == "unqualified validator" {
 					cp.Validation = nil
-				} else {
+				} else if fault == "missing diff" {
 					cp.Source.Diff = nil
+				} else {
+					cp.Routing = &review.ModelRouting{Version: 1, Roles: map[string]review.ModelRouteChain{"reasoner": {Routes: []review.ModelRoute{{Provider: "fake", Model: "pinned"}}, MaxTokens: 21}}}
 				}
 				results[0].Intent.ModelCheckpoint, _ = json.Marshal(cp)
 			}

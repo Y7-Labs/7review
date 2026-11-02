@@ -40,6 +40,7 @@ type ModelReduction struct {
 	ToolRequests             []ToolRequest
 	RepairInput, Reason      string
 	Rejected                 []ModelFindingRejection
+	Routing                  *ModelRouting `json:",omitempty"`
 }
 
 func ModelCheckpointGroupDigest(raw []byte) (string, error) {

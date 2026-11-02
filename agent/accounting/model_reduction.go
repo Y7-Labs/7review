@@ -170,7 +170,7 @@ func validateModelReduction(artifact review.ModelReduction, refs []review.ModelR
 		return e == nil && f == nil && bytes.Equal(x, y)
 	}
 	encodedRefs, _ := json.Marshal(refs)
-	if artifact.Version != 1 || artifact.GroupDigest != group || artifact.InputDigest != hash(encodedRefs) || !equal(artifact.Inputs, refs) || !equal(artifact.RawResponses, rawResponses) || !equal(artifact.Cursor, cp.Cursor) || cp.Validation == nil || !equal(artifact.Validation, *cp.Validation) {
+	if artifact.Version != 1 || artifact.GroupDigest != group || artifact.InputDigest != hash(encodedRefs) || !equal(artifact.Inputs, refs) || !equal(artifact.RawResponses, rawResponses) || !equal(artifact.Cursor, cp.Cursor) || cp.Validation == nil || !equal(artifact.Validation, *cp.Validation) || !equal(artifact.Routing, cp.Routing) {
 		return errors.New("local reduction changed its immutable inputs")
 	}
 	s := artifact.Source

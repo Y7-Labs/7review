@@ -35,6 +35,7 @@ type ModelCheckpoint struct {
 	Source       Source
 	RawResponses []string
 	Validation   *ModelValidation
+	Routing      *ModelRouting `json:",omitempty"`
 }
 
 type ModelValidation struct {
@@ -97,6 +98,9 @@ func DecodeModelCheckpoint(raw []byte) (ModelCheckpoint, error) {
 	if cp.Validation != nil && (cp.Validation.Version != 1 || math.IsNaN(cp.Validation.MinConfidence) || cp.Validation.MinConfidence < 0 || cp.Validation.MinConfidence > 1) {
 		return cp, errors.New("unsupported model validation contract")
 	}
+	if err := cp.Routing.Validate(); err != nil {
+		return cp, err
+	}
 	return cp, cp.Cursor.validate()
 }
 
@@ -109,7 +113,8 @@ func WithModelCheckpoint(ctx context.Context, rc *Context, cursor ModelCursor) (
 	}
 	frozen := rc.Clone()
 	validation, _ := ctx.Value(modelValidationKey{}).(*ModelValidation)
-	raw, err := json.Marshal(ModelCheckpoint{Version: 1, Cursor: cursor, Source: frozen.Source, RawResponses: frozen.AllFindings(), Validation: validation})
+	routing, _ := ctx.Value(modelRoutingKey{}).(*ModelRouting)
+	raw, err := json.Marshal(ModelCheckpoint{Version: 1, Cursor: cursor, Source: frozen.Source, RawResponses: frozen.AllFindings(), Validation: validation, Routing: routing})
 	if err != nil {
 		return nil, err
 	}

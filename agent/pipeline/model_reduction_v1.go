@@ -102,7 +102,7 @@ func (ModelReducerV1) ReduceModelResults(ctx context.Context, results []orchestr
 	for _, raw := range cp.RawResponses {
 		rc.AddFindings(raw)
 	}
-	reduced := review.ModelReduction{Version: 1, GroupDigest: group, Cursor: cp.Cursor, Validation: *cp.Validation}
+	reduced := review.ModelReduction{Version: 1, GroupDigest: group, Cursor: cp.Cursor, Validation: *cp.Validation, Routing: cp.Routing.Clone()}
 	var responses []string
 	for _, s := range slots {
 		i, o := s.result.Intent, s.result.Outcome

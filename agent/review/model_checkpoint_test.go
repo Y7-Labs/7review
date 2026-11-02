@@ -2,6 +2,9 @@ package review
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -60,5 +63,44 @@ func TestModelCheckpointRejectsUnknownOrContradictoryCursors(t *testing.T) {
 	rc.AddFindings(strings.Repeat("x", MaxModelCheckpointBytes))
 	if _, err := WithModelCheckpoint(context.Background(), rc, ModelCursor{Phase: ModelRepairFindings}); err == nil {
 		t.Fatal("oversized checkpoint accepted")
+	}
+}
+
+func TestRoutingIsDetachedAndLegacyCheckpointGroupDigestsRemainStable(t *testing.T) {
+	rc := NewContext(Request{})
+	ctx, err := WithModelCheckpoint(context.Background(), rc, ModelCursor{Phase: ModelReviewBatches, BatchCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := ModelCheckpointFromContext(ctx)
+	cp, err := DecodeModelCheckpoint(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := struct {
+		Version      int
+		Cursor       ModelCursor
+		Source       Source
+		RawResponses []string
+		Validation   *ModelValidation
+	}{cp.Version, cp.Cursor, cp.Source, cp.RawResponses, cp.Validation}
+	oldBytes, _ := json.Marshal(legacy)
+	digest := sha256.Sum256(oldBytes)
+	group, err := ModelCheckpointGroupDigest(raw)
+	if err != nil || group != "sha256:"+hex.EncodeToString(digest[:]) {
+		t.Fatalf("optional routing rewrote legacy group identity: %s %v", group, err)
+	}
+	routing := &ModelRouting{Version: 1, Roles: map[string]ModelRouteChain{"reasoner": {Routes: []ModelRoute{{Provider: "old", Model: "pinned"}}, MaxTokens: 20}}}
+	frozen := WithModelRouting(context.Background(), routing)
+	chain := routing.Roles["reasoner"]
+	chain.Routes[0].Model = "changed"
+	routing.Roles["reasoner"] = chain
+	ctx, err = WithModelCheckpoint(frozen, rc, ModelCursor{Phase: ModelReviewBatches, BatchCount: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp, err = DecodeModelCheckpoint(ModelCheckpointFromContext(ctx))
+	if err != nil || cp.Routing.Roles["reasoner"].Routes[0].Model != "pinned" {
+		t.Fatalf("routing context aliases mutable config: %#v %v", cp.Routing, err)
 	}
 }

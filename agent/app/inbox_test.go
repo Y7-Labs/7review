@@ -364,7 +364,7 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 		return "", err
 	}
 	cp, err := review.DecodeModelCheckpoint(intent.ModelCheckpoint)
-	if err != nil || cp.Source.Attempt.AttemptID != p.attempt || cp.Cursor.Phase != review.ModelReviewBatches || cp.Cursor.BatchCount != 1 || cp.Cursor.BatchIndex != 0 || cp.Validation == nil || cp.Validation.MinConfidence != 0.45 {
+	if err != nil || cp.Source.Attempt.AttemptID != p.attempt || cp.Cursor.Phase != review.ModelReviewBatches || cp.Cursor.BatchCount != 1 || cp.Cursor.BatchIndex != 0 || cp.Validation == nil || cp.Validation.MinConfidence != 0.45 || cp.Routing == nil || cp.Routing.Roles["formatter"].Routes[0].Model != "pinned" {
 		p.t.Errorf("provider preceded immutable continuation checkpoint: %#v %v", cp.Cursor, err)
 	}
 	return "[]", nil

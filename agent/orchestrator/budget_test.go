@@ -17,6 +17,22 @@ func budgetTestLimits() review.ResourceLimits {
 	return review.ResourceLimits{Currency: "USD", Attempt: s, Change: s, Project: s}
 }
 
+func TestRoutingSnapshotCannotBeChangedByLaterRoleConfiguration(t *testing.T) {
+	cfg := DefaultOrchestratorConfig("review-v1", "formatter-v1", "fake")
+	o := NewOrchestrator(cfg, nil)
+	routing, err := o.RoutingSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	role := cfg.Roles[RoleFormatter]
+	role.Primary.Model = "formatter-v2"
+	role.MaxTokens = 999
+	cfg.Roles[RoleFormatter] = role
+	if routing.Version != 1 || routing.Roles["formatter"].Routes[0].Model != "formatter-v1" || routing.Roles["formatter"].MaxTokens != 2048 {
+		t.Fatalf("frozen route changed: %#v", routing)
+	}
+}
+
 func TestEveryBatchBindsItsSlotToTheSameFrozenCheckpoint(t *testing.T) {
 	for _, parallel := range []bool{false, true} {
 		limits := budgetTestLimits()
