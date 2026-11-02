@@ -1176,6 +1176,47 @@ This is an incremental behavior ledger, not a completion declaration.
   Schema remains explicitly v13; controls, cancellation/refund and operational
   qualification remain open. Ceilings and alpha are not complete.
 
+### 68. Durable Snapshot Charges And Confined Observation Epoch
+
+- Snapshot acceptance now commits one immutable private receipt, its three scope
+  links and old-owner revocation together. Parent lineage, current job/head/
+  attempt, sending fences and the original model holds are verified before a
+  trusted pure renderer runs. No model child or provider usage receipt is created.
+- A red missing-hold case caught incomplete scope locking; acceptance now rejects
+  missing/foreign parent holds before rendering. Further red claim/Begin cases
+  caught empty shared-period IDs that hid newly committed charges. Those checks
+  now use fresh database time after route locking and include snapshot usage.
+  A final red sealed-batch case rejected reconstruction of a missing recovery
+  cursor from recorded results; original, recovered and mixed ownership remain
+  separately covered.
+- Denials/errors count as accepted logical evaluations. Exact rendered bytes are
+  checked on all three scopes before acceptance. Pure render rollback may repeat
+  computation; local CPU/external tool active-time qualification remains open.
+  Known local charges use their recorded periods; unknown model holds stay intact.
+- Duplicate committers converge once, and historical replay returns only checked
+  data, never new ownership. Deferred commit failure, renderer error/panic,
+  cancellation, stale epochs/heads/attempts/operator authority, unrelated siblings,
+  process death during rendering and immediately after commit have regression
+  coverage. An original unconfined live frame loses completion/failure and
+  unlinked-dispatch rights at observation commit. Tampered or missing charge
+  links cannot silently erase capacity. Rehashed origin-period edits are checked
+  against accounting time, not accepted as a free renewal. Shared charges also
+  constrain a later attempt's model admission, claim and Begin. Competing PRs
+  cannot each consume the project's last local tool-call allowance.
+- Explicit schema v14 migration has populated rollback/retry coverage; it
+  preserves existing requests/outcomes/reductions/holds/tokens and invents no
+  legacy observations or grants. Earlier migration fixtures retain their rollback
+  coverage through the new schema. No deployed database was changed.
+- Verification: the full PostgreSQL-backed suite and full race suite pass,
+  followed by a full-suite rerun and focused race checks for the final sealed
+  cursor and historical-read cases. Vet, formatting, bridge tests and Compose
+  validation pass. PostgreSQL durability settings remained enabled.
+- Guarded reasoner-child authorization, full round lineage and automatic worker
+  use remain next. The canonical worker still leaves tool plans pending rather
+  than sending an unlinked child. Authenticated controls, safe cancellation/refund
+  and remaining provider/operational qualification remain open. Ceilings and alpha
+  are unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

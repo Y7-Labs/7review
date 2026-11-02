@@ -35,7 +35,17 @@ func recordedReductionFixtureDSN(t *testing.T) (*Authority, orchestrator.Dispatc
 
 func recordedReductionFixtureResponse(t *testing.T, response []byte) (*Authority, orchestrator.DispatchIntent, *review.JobClaim, string) {
 	t.Helper()
-	a, i, dsn := preparedActionFixture(t)
+	return recordedReductionFixtureResponseWithLimits(t, response, ledgerLimits())
+}
+
+func recordedReductionFixtureResponseWithLimits(t *testing.T, response []byte, limits review.ResourceLimits) (*Authority, orchestrator.DispatchIntent, *review.JobClaim, string) {
+	t.Helper()
+	return recordedReductionFixtureResponseMode(t, response, limits, true)
+}
+
+func recordedReductionFixtureResponseMode(t *testing.T, response []byte, limits review.ResourceLimits, reclaim bool) (*Authority, orchestrator.DispatchIntent, *review.JobClaim, string) {
+	t.Helper()
+	a, i, dsn := preparedActionFixtureWithLimits(t, limits)
 	ctx := context.Background()
 	agg, err := a.LoadAggregate(ctx, *i.Job)
 	if err != nil {
@@ -53,7 +63,12 @@ func recordedReductionFixtureResponse(t *testing.T, response []byte) (*Authority
 	if err != nil {
 		t.Fatal(err)
 	}
-	c, err := a.ReclaimPrepared(ctx, p, "recovery", time.Minute)
+	var c orchestrator.ActionClaim
+	if reclaim {
+		c, err = a.ReclaimPrepared(ctx, p, "recovery", time.Minute)
+	} else {
+		c, err = a.ClaimPrepared(ctx, p, "live-owner", time.Minute)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

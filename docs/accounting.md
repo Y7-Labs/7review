@@ -44,7 +44,9 @@ recovery ownership. Schema v10 adds immutable local reduction artifacts and exac
 input links. Schema v11 adds parent-to-child links and a deferred child-grant FK.
 Schema v12 adds the terminal reduction reference on owned jobs.
 Schema v13 adds immutable batch membership seals and their job references.
-Worker runtime now requires v13; run explicit migration before restart.
+Schema v14 adds immutable snapshot observation receipts, three scope links and
+the current observation reference on owned jobs.
+Worker runtime now requires v14; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -65,6 +67,10 @@ rollback, retries idempotently and completes a pre-existing reduction afterward.
 The v12-to-v13 rehearsal preserves fenced sending requests/quotes/holds and
 outcome attribution across deferred DDL failure and idempotent retry. It never
 infers seals or recovery rights for existing unsealed batches.
+The v13-to-v14 rehearsal rolls back both observation tables, their index and the
+job reference on deferred commit failure, then retries idempotently. Existing
+requests, outcomes, reductions, holds and ownership remain unchanged. Migration
+does not infer observations, charges or continuation rights from old tool plans.
 
 ## Runtime Intake
 
@@ -385,8 +391,8 @@ on the latter paths; canonical multi-batch I/O is action-confined and sequential
 
 This is not complete general continuation: tool-request results persist as
 `needs_tools`, without fabricated observations, additional model calls, terminal
-draft or publication. Durable tool observation/continuation and authenticated
-operator controls remain open. Unsealed legacy siblings remain ineligible after
+draft or publication. Automatic tool continuation and authenticated operator
+controls remain open. Unsealed legacy siblings remain ineligible after
 external progress.
 
 Snapshot observation sets now expose a bounded `SnapshotUsage` calculation.
@@ -399,16 +405,46 @@ snapshot vocabulary is shared with the renderer; foreign-run/unsupported inputs
 and policy/skill restrictions cannot be bypassed by reporting a successful read.
 Truncation must retain its canonical incomplete envelope and cannot be `ok`.
 
-This is only a calculation against an already verified parent, not independent
-provenance verification or a durable receipt. It neither persists usage nor
-admits capacity, creates a model child, grants ownership or changes any hold.
+The calculation alone is not independent provenance verification, a durable
+receipt, capacity admission or a continuation grant.
 Model/token/money/active-time dimensions remain zero because no provider bill or
 active-time measurement is inferred from snapshot data. General local CPU and
-external tool accounting remain unqualified. A future durable commit must check
-the stored parent and current fenced job, lock all three scopes, include these
-charges in shared capacity totals and revoke the old frame atomically before
-continuation. No schema change is introduced here; explicit schema v13 remains
-required, and ceilings/alpha remain unfinished.
+external tool accounting remain unqualified.
+
+`CommitModelToolObservations` now performs the durable acceptance against a
+verified stored pending parent. It verifies the complete job lineage, current
+job/head/attempt, positive sending fences and all three original model holds,
+then uses the existing attempt/change/project locks. Tool-call capacity is checked
+before pure rendering; exact encoded-byte capacity is checked before acceptance.
+One transaction stores the immutable private receipt and all scope links, rotates
+the job token and confines it to the already-recorded parent. The public artifact
+contains no job token or dispatch permit. No model hold is settled or released.
+Recovered sealed groups must retain their action cursor: a missing cursor cannot
+be guessed from recorded results. Intact original, recovered and mixed-epoch
+groups retain their proven provenance.
+
+Receipt identity is deterministic per parent/renderer version. Duplicate workers,
+restarts and lost acknowledgements converge on the same stored data, without
+re-rendering accepted observations or reacquiring job authority. Historical reads
+verify parent evidence, sending epochs, frozen authority and scope attribution;
+they do not reopen a closed/expired/superseded attempt. Pure rendering interrupted
+before acceptance may repeat, but its transaction commits no charge or owner
+change. Charges count accepted logical evaluations, not physical local CPU retries.
+
+Every subsequent model or observation capacity check includes the stored local
+charges. Missing/moved links cannot hide a receipt from its hashed scope IDs;
+changed receipt digests, amounts or link attribution fail closed. Prepared claim
+and sending checks also assign the current shared period using fresh database
+time after route locking. Known snapshot charges count only in their recorded
+origin periods; unknown model holds continue across renewals. Snapshot accounting
+time is read inside the locked transaction after rendering, rather than retaining
+a pre-render period.
+
+The canonical worker does not yet invoke this operation: it still leaves
+`needs_tools` pending until guarded reasoner-child creation and lineage/recovery
+are implemented together. This is not complete tool continuation, external tool
+accounting, authenticated operator control, cancellation/refund or operational
+qualification. Explicit schema v14 is required; ceilings and alpha remain unfinished.
 
 ### Terminal Model Projection
 

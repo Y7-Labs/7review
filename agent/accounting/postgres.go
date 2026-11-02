@@ -86,6 +86,9 @@ var migration012 string
 //go:embed migration013.sql
 var migration013 string
 
+//go:embed migration014.sql
+var migration014 string
+
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, setting := range []string{"fsync", "full_page_writes"} {
@@ -275,13 +278,28 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 13
 	}
-	if version != 13 {
+	if version == 13 {
+		if err = checkModelBatchStorage(ctx, tx); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, migration014); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_schema SET version=14 WHERE singleton=true`); err != nil {
+			return err
+		}
+		version = 14
+	}
+	if version != 14 {
 		return errors.New("incompatible accounting schema")
 	}
 	if err = checkModelCompletionStorage(ctx, tx); err != nil {
 		return err
 	}
 	if err = checkModelBatchStorage(ctx, tx); err != nil {
+		return err
+	}
+	if err = checkToolObservationStorage(ctx, tx); err != nil {
 		return err
 	}
 	for _, table := range []string{"budget_receipts", "budget_quarantine"} {
@@ -663,7 +681,27 @@ func checkCapacity(ctx context.Context, tx *sql.Tx, ref scopeRef, requested revi
 		}
 		used = fromAmounts(current)
 	}
-	return rows.Err()
+	if err = rows.Err(); err != nil {
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	charges, err := snapshotChargesTx(ctx, tx, ref)
+	if err != nil {
+		return err
+	}
+	for _, amount := range charges {
+		current, additional, cap := amounts(used), amounts(amount), amounts(ref.limit)
+		for n := range current {
+			if additional[n] < 0 || additional[n] > cap[n]-current[n] {
+				return fmt.Errorf("%s budget exhausted", ref.kind)
+			}
+			current[n] += additional[n]
+		}
+		used = fromAmounts(current)
+	}
+	return nil
 }
 
 func (a *Authority) RecordOutcome(ctx context.Context, p orchestrator.DispatchPermit, o orchestrator.DispatchOutcome) error {
@@ -774,7 +812,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 13 {
+	if version != 14 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

@@ -192,6 +192,10 @@ func (a *Authority) lookupModelJobTx(ctx context.Context, tx *sql.Tx, runID stri
 // Historical projection verifies evidence, not current dispatch authority. Each
 // formatter edge must still bind the exact parent proof and frozen child plan.
 func (a *Authority) checkTerminalLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction) error {
+	return a.checkModelLineageTx(ctx, tx, id, artifact, true)
+}
+
+func (a *Authority) checkModelLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction, requireAllActions bool) error {
 	if _, err := a.readModelBatchSealTx(ctx, tx, artifact.Source.Run.ID); err != nil {
 		return err
 	}
@@ -256,6 +260,9 @@ func (a *Authority) checkTerminalLineageTx(ctx context.Context, tx *sql.Tx, id s
 			}
 			pending = append(pending, group{parentID, parent})
 		}
+	}
+	if !requireAllActions {
+		return nil
 	}
 	var unlinked bool
 	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=$1 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=$2 AND NOT (a.id=ANY($3::text[])))`, artifact.Source.Attempt.AttemptID, artifact.Source.Run.ID, actions).Scan(&unlinked); err != nil {

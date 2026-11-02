@@ -1,7 +1,6 @@
 package accounting
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -77,6 +76,19 @@ func (a *Authority) lockPreparedAuthority(ctx context.Context, tx *sql.Tx, i orc
 }
 
 func (a *Authority) checkPreparedQuote(ctx context.Context, tx *sql.Tx, i orchestrator.DispatchIntent, q Quote, now time.Time) error {
+	routeID, _ := json.Marshal([]string{q.Qualification.Provider, q.Qualification.Model, q.RouteVersion})
+	var routeDigest string
+	var qualification []byte
+	if err := tx.QueryRowContext(ctx, `SELECT qualification_digest,qualification FROM budget_routes WHERE id=$1 FOR SHARE`, hash(routeID)).Scan(&routeDigest, &qualification); err != nil {
+		return err
+	}
+	if routeDigest != q.QualificationDigest || hash(qualification) != routeDigest {
+		return errors.New("prepared route registry integrity failure")
+	}
+	// Route locking can wait across a deadline, price expiry or period boundary.
+	if err := tx.QueryRowContext(ctx, `SELECT clock_timestamp()`).Scan(&now); err != nil {
+		return err
+	}
 	if !now.Before(i.Execution.DeadlineAt) {
 		return errors.New("prepared execution deadline expired")
 	}
@@ -84,31 +96,20 @@ func (a *Authority) checkPreparedQuote(ctx context.Context, tx *sql.Tx, i orches
 	if err != nil {
 		return err
 	}
-	currentJSON, err := json.Marshal(current)
-	if err != nil {
-		return err
-	}
-	storedJSON, err := json.Marshal(q)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(currentJSON, storedJSON) {
+	if !sameModelJSON(current, q) {
 		return errors.New("prepared route/price qualification changed")
-	}
-	routeID, _ := json.Marshal([]string{q.Qualification.Provider, q.Qualification.Model, q.RouteVersion})
-	var routeDigest string
-	var qualification []byte
-	if err = tx.QueryRowContext(ctx, `SELECT qualification_digest,qualification FROM budget_routes WHERE id=$1 FOR SHARE`, hash(routeID)).Scan(&routeDigest, &qualification); err != nil {
-		return err
-	}
-	if routeDigest != q.QualificationDigest || hash(qualification) != routeDigest {
-		return errors.New("prepared route registry integrity failure")
 	}
 	binding, err := a.binding(i)
 	if err != nil {
 		return err
 	}
 	for _, ref := range a.scopeRefs(i, binding) {
+		if ref.kind != "attempt" {
+			ref.origin, err = periodID(ref.limit.Period, now)
+			if err != nil {
+				return err
+			}
+		}
 		var authority string
 		if err = tx.QueryRowContext(ctx, `SELECT authority_digest FROM budget_scopes WHERE id=$1`, ref.id).Scan(&authority); err != nil {
 			return err

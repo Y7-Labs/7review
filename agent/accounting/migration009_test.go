@@ -61,7 +61,7 @@ func TestPostgresV9UpgradePreservesPreparedSendingAndLegacyAuthority(t *testing.
 		return raw
 	}
 	before := snapshot()
-	if _, err = a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_jobs DROP COLUMN recovery_action_id; UPDATE budget_schema SET version=8`); err != nil {
+	if _, err = a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN tool_observation_id; DROP TABLE budget_tool_observation_scopes,budget_model_tool_observations; ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_jobs DROP COLUMN recovery_action_id; UPDATE budget_schema SET version=8`); err != nil {
 		t.Fatal(err)
 	}
 	if tx, err := a.begin(ctx); err == nil {

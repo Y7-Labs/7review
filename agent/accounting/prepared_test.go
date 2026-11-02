@@ -13,9 +13,17 @@ import (
 
 func preparedActionFixture(t *testing.T) (*Authority, orchestrator.DispatchIntent, string) {
 	t.Helper()
+	return preparedActionFixtureWithLimits(t, ledgerLimits())
+}
+
+func preparedActionFixtureWithLimits(t *testing.T, limits review.ResourceLimits) (*Authority, orchestrator.DispatchIntent, string) {
+	t.Helper()
 	db, dsn := postgresFixture(t)
-	a := ledgerAuthority(t, db, ledgerLimits())
+	a := ledgerAuthority(t, db, limits)
 	req, input, source := preparedAggregate(t, a)
+	input.Policy.Limits = &limits
+	input.Policy.OperatorCeilings = &limits
+	source.Policy = input.Policy
 	if _, err := a.AcceptAggregate(context.Background(), req, input, source, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +36,7 @@ func preparedActionFixture(t *testing.T) (*Authority, orchestrator.DispatchInten
 	if err != nil {
 		t.Fatal(err)
 	}
-	i := dispatchForReceipt(ledgerIntent(t, db, "prepared-fixture", "7", ledgerLimits()), aggregate.Receipt)
+	i := dispatchForReceipt(ledgerIntent(t, db, "prepared-fixture", "7", limits), aggregate.Receipt)
 	i.Job = &claim
 	return a, i, dsn
 }

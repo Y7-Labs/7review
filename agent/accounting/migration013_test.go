@@ -28,7 +28,7 @@ func TestV13MigrationRollsBackAndDoesNotInventLegacyBatchAuthority(t *testing.T)
 	if err = a.db.QueryRow(`SELECT request,quote FROM budget_actions WHERE id=$1`, prepared[0].ID).Scan(&request, &quote); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; UPDATE budget_schema SET version=12; CREATE FUNCTION fail_v13_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=13 THEN RAISE EXCEPTION 'injected v13 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v13_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v13_commit()`); err != nil {
+	if _, err = a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN tool_observation_id; DROP TABLE budget_tool_observation_scopes,budget_model_tool_observations; ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; UPDATE budget_schema SET version=12; CREATE FUNCTION fail_v13_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=13 THEN RAISE EXCEPTION 'injected v13 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v13_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v13_commit()`); err != nil {
 		t.Fatal(err)
 	}
 	if tx, err := a.begin(ctx); err == nil {
