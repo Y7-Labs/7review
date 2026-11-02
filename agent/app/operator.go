@@ -137,9 +137,14 @@ func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, http.StatusText(status), status)
 		return
 	}
-	c, err := review.DecodeCancelAttemptCommand(data)
-	if err != nil {
-		http.Error(w, "invalid cancel_attempt envelope", http.StatusBadRequest)
+	var cancelCommand *review.CancelAttemptCommand
+	var publicationCommand *review.AuthorizePublicationCommand
+	if c, decodeErr := review.DecodeCancelAttemptCommand(data); decodeErr == nil {
+		cancelCommand = &c
+	} else if c, decodeErr := review.DecodeAuthorizePublicationCommand(data); decodeErr == nil {
+		publicationCommand = &c
+	} else {
+		http.Error(w, "invalid operator command envelope", http.StatusBadRequest)
 		return
 	}
 	if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
@@ -148,7 +153,12 @@ func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	receipt, err := s.accountingRuntime.Authority.CancelAttempt(ctx, actor, c)
+	var receipt any
+	if cancelCommand != nil {
+		receipt, err = s.accountingRuntime.Authority.CancelAttempt(ctx, actor, *cancelCommand)
+	} else {
+		receipt, err = s.accountingRuntime.Authority.AuthorizePublication(ctx, actor, *publicationCommand)
+	}
 	if err != nil {
 		var conflict *accounting.OperatorCommandConflict
 		if errors.As(err, &conflict) {

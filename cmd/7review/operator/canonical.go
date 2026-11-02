@@ -40,7 +40,7 @@ func (e *CanonicalRequestError) Error() string {
 		message += fmt.Sprintf("; current attempt %s, control version %d; inspect explicitly, command was not retargeted", e.Conflict.CurrentAttemptID, e.Conflict.ControlVersion)
 	}
 	if e.MayHaveCommitted {
-		message += "; cancellation outcome unconfirmed: retry the identical command ID and payload with the same principal"
+		message += "; operator command outcome unconfirmed: retry the identical command ID and payload with the same principal"
 	}
 	return message
 }
@@ -85,6 +85,33 @@ func (c Client) CancelAttempt(ctx context.Context, command review.CancelAttemptC
 	r, err := review.DecodeCancelAttemptReceipt(raw, command)
 	if err != nil {
 		return empty, &CanonicalRequestError{StatusCode: 200, MayHaveCommitted: true, CommandID: command.CommandID, message: "operator returned an unproven cancellation receipt"}
+	}
+	return r, nil
+}
+
+func (c Client) AuthorizePublication(ctx context.Context, command review.AuthorizePublicationCommand) (review.PublicationAuthorizationReceipt, error) {
+	var empty review.PublicationAuthorizationReceipt
+	if err := command.Validate(); err != nil {
+		return empty, err
+	}
+	payload, err := json.Marshal(command)
+	if err != nil {
+		return empty, err
+	}
+	if len(payload) > review.MaxOperatorCommandBytes {
+		return empty, errors.New("operator command exceeds transport bound")
+	}
+	_, raw, err := c.canonicalRequest(ctx, http.MethodPost, "commands", nil, payload)
+	if err != nil {
+		var failure *CanonicalRequestError
+		if errors.As(err, &failure) {
+			failure.CommandID = command.CommandID
+		}
+		return empty, err
+	}
+	r, err := review.DecodePublicationAuthorizationReceipt(raw, command)
+	if err != nil {
+		return empty, &CanonicalRequestError{StatusCode: http.StatusOK, MayHaveCommitted: true, CommandID: command.CommandID, message: "operator returned an unproven publication authorization receipt"}
 	}
 	return r, nil
 }

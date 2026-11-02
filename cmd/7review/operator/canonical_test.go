@@ -25,6 +25,23 @@ func canonicalReceipt(c review.CancelAttemptCommand) string {
 	return string(raw)
 }
 
+func canonicalPublicationCommand() review.AuthorizePublicationCommand {
+	return review.AuthorizePublicationCommand{
+		SchemaVersion: 1, CommandID: "publish-1", AttemptID: "attempt-1", ExpectedVersion: 2, Revision: "head", Kind: "authorize_publication",
+		Payload: review.AuthorizePublicationPayload{
+			AssessmentDigest: "sha256:" + strings.Repeat("a", 64),
+			ArtifactDigest:   "sha256:" + strings.Repeat("b", 64),
+			Destination:      review.PublicationDestination{Provider: "github", Host: "github.com", RepositoryID: "org/repo", ChangeNumber: "7", ArtifactClass: "assessment"},
+			Reason:           "reviewed exact assessment",
+		},
+	}
+}
+
+func canonicalPublicationReceipt(c review.AuthorizePublicationCommand) string {
+	raw, _ := json.Marshal(review.PublicationAuthorizationReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: "sha256:" + strings.Repeat("c", 64), AttemptID: c.AttemptID, ActorID: "alice", Kind: c.Kind, Revision: c.Revision, ControlVersion: c.ExpectedVersion + 1, AssessmentDigest: c.Payload.AssessmentDigest, ArtifactDigest: c.Payload.ArtifactDigest, Destination: c.Payload.Destination, State: "authorized", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	return string(raw)
+}
+
 func TestCanonicalClientUsesOnlyMappedOperatorCredentialAndExactJSONCommand(t *testing.T) {
 	t.Setenv("REVIEW_API_TOKEN", "legacy-secret")
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
@@ -58,6 +75,58 @@ func TestCanonicalClientUsesOnlyMappedOperatorCredentialAndExactJSONCommand(t *t
 	r, err := client.CancelAttempt(context.Background(), c)
 	if err != nil || r.CommandID != c.CommandID || calls != 2 {
 		t.Fatalf("cancel: %+v %d %v", r, calls, err)
+	}
+}
+
+func TestCanonicalClientSendsExactPublicationAuthorizationAndRequiresExactReceipt(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	c := canonicalPublicationCommand()
+	calls := 0
+	client := NewClient("https://agent/prefix", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/prefix/operator/commands" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer operator-secret" || r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("wrong publication transport: %s %s %#v", r.Method, r.URL.String(), r.Header)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		got, err := review.DecodeAuthorizePublicationCommand(raw)
+		if err != nil || got != c || strings.Contains(string(raw), "actor") {
+			t.Fatalf("publication command changed: %+v %v", got, err)
+		}
+		return jsonResponse(http.StatusOK, canonicalPublicationReceipt(c)), nil
+	})})
+	r, err := client.AuthorizePublication(context.Background(), c)
+	if err != nil || r.CommandID != c.CommandID || r.ControlVersion != 3 || calls != 1 {
+		t.Fatalf("publication authorization: %+v calls=%d err=%v", r, calls, err)
+	}
+}
+
+func TestCanonicalPublicationClientNeverRetriesRetargetsOrAcknowledgesUnprovenReceipt(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	c := canonicalPublicationCommand()
+	for _, body := range []string{"{}", canonicalPublicationReceipt(c) + `{}`, strings.Replace(canonicalPublicationReceipt(c), `"artifact_digest":"`+c.Payload.ArtifactDigest+`"`, `"artifact_digest":"sha256:`+strings.Repeat("d", 64)+`"`, 1)} {
+		calls := 0
+		client := NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			calls++
+			return jsonResponse(http.StatusOK, body), nil
+		})})
+		_, err := client.AuthorizePublication(context.Background(), c)
+		var failure *CanonicalRequestError
+		if !errors.As(err, &failure) || !failure.MayHaveCommitted || failure.CommandID != c.CommandID || calls != 1 || strings.Contains(err.Error(), "cancellation outcome") {
+			t.Fatalf("unproven publication response acknowledged/retried: failure=%+v calls=%d err=%v", failure, calls, err)
+		}
+	}
+	calls := 0
+	client := NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost {
+			t.Fatal("publication conflict fetched a newer attempt")
+		}
+		return jsonResponse(http.StatusConflict, `{"current_attempt_id":"attempt-2","control_version":7,"reason":"stale revision","current_attempt_url":"/operator/attempt?attempt_id=attempt-2"}`), nil
+	})})
+	_, err := client.AuthorizePublication(context.Background(), c)
+	var failure *CanonicalRequestError
+	if !errors.As(err, &failure) || failure.StatusCode != http.StatusConflict || failure.Conflict == nil || failure.Conflict.CurrentAttemptID != "attempt-2" || failure.MayHaveCommitted || failure.CommandID != c.CommandID || calls != 1 {
+		t.Fatalf("publication conflict: %+v calls=%d err=%v", failure, calls, err)
 	}
 }
 
