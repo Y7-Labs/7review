@@ -271,12 +271,13 @@ func (o *Orchestrator) CompleteParallel(
 		maxParallel = len(batches)
 	}
 	jobs := make(chan int)
+	results := make([]*string, len(batches))
 	for worker := 0; worker < maxParallel; worker++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for batchIdx := range jobs {
-				processBatch(ctx, o, rc, roleCfg, chain, systemPrompt, buildUserMsg, batchIdx, len(batches), batches[batchIdx], append([]ToolDefinition(nil), tools...), &mu, &firstErr)
+				processBatch(ctx, o, rc, roleCfg, chain, systemPrompt, buildUserMsg, batchIdx, len(batches), batches[batchIdx], append([]ToolDefinition(nil), tools...), results, &mu, &firstErr)
 			}
 		}()
 	}
@@ -286,6 +287,11 @@ func (o *Orchestrator) CompleteParallel(
 	close(jobs)
 
 	wg.Wait()
+	for _, result := range results {
+		if result != nil {
+			rc.AddFindings(*result)
+		}
+	}
 	return firstErr
 }
 
@@ -301,6 +307,7 @@ func processBatch(
 	batchCount int,
 	batch []review.FileDiff,
 	tools []ToolDefinition,
+	results []*string,
 	mu *sync.Mutex,
 	firstErr *error,
 ) {
@@ -335,7 +342,7 @@ func processBatch(
 		return
 	}
 
-	rc.AddFindings(result)
+	results[batchIdx] = &result
 	rc.RecordProvider(
 		fmt.Sprintf("step5_batch%d", batchIdx+1),
 		fmt.Sprintf("%s/%s", spec.Provider, spec.Model),

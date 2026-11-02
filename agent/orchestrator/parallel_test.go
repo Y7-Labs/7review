@@ -47,6 +47,24 @@ func TestSerialBatchesReviewEveryBatchAndRejectEmptyWork(t *testing.T) {
 	}
 }
 
+func TestParallelResponsesReduceInBatchOrderNotCompletionOrder(t *testing.T) {
+	secondDone := make(chan struct{})
+	p := budgetProvider{call: func(_ context.Context, req LLMRequest) (string, error) {
+		if req.UserMessage == "a.go" {
+			<-secondDone
+		} else {
+			close(secondDone)
+		}
+		return req.UserMessage, nil
+	}}
+	o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": p})
+	rc := review.NewContext(review.Request{})
+	err := o.CompleteParallel(context.Background(), rc, "sys", [][]review.FileDiff{{{Path: "a.go"}}, {{Path: "b.go"}}}, func(batch []review.FileDiff) string { return batch[0].Path })
+	if err != nil || strings.Join(rc.AllFindings(), ",") != "a.go,b.go" {
+		t.Fatalf("arrival-dependent reduction: %v %#v", err, rc.AllFindings())
+	}
+}
+
 func TestCompleteParallelUsesRegisteredFallbackWhenPrimaryUnavailable(t *testing.T) {
 	orch := NewOrchestrator(&OrchestratorConfig{
 		Roles: map[ModelRole]RoleConfig{
