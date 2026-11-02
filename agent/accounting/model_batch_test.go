@@ -13,8 +13,13 @@ import (
 )
 
 func modelBatchFixture(t *testing.T) (*Authority, []orchestrator.DispatchIntent) {
+	a, intents, _ := modelBatchFixtureDSN(t)
+	return a, intents
+}
+
+func modelBatchFixtureDSN(t *testing.T) (*Authority, []orchestrator.DispatchIntent, string) {
 	t.Helper()
-	a, original, _ := preparedActionFixture(t)
+	a, original, dsn := preparedActionFixture(t)
 	ctx := context.Background()
 	agg, err := a.LoadAggregate(ctx, *original.Job)
 	if err != nil {
@@ -38,7 +43,7 @@ func modelBatchFixture(t *testing.T) (*Authority, []orchestrator.DispatchIntent)
 		i.ModelCheckpoint = review.ModelCheckpointFromContext(batchCtx)
 		intents = append(intents, i)
 	}
-	return a, intents
+	return a, intents, dsn
 }
 
 func assertPreparedBatchCounts(t *testing.T, a *Authority, want int) {

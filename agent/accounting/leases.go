@@ -155,16 +155,26 @@ func (a *Authority) claimPrepared(ctx context.Context, p orchestrator.PreparedAc
 		return empty, err
 	}
 	i := original
+	batchRecovery := false
 	if i.RequestDigest != p.RequestDigest {
 		return empty, errors.New("claim request digest mismatch")
 	}
 	if reclaim && i.Job != nil {
-		var token string
-		err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND ((j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5)) OR (j.phase='effect_started' AND j.recovery_action_id=$5 AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=$5))) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
-		if err != nil {
-			return empty, errors.New("recovery job authority unavailable")
+		job, handled, batchErr := a.reclaimBatchCursorTx(ctx, tx, i)
+		if batchErr != nil {
+			return empty, batchErr
 		}
-		i.Job = &review.JobClaim{RunID: i.Job.RunID, Token: token}
+		if handled {
+			i.Job = job
+			batchRecovery = true
+		} else {
+			var token string
+			err = tx.QueryRowContext(ctx, `SELECT i.claim_token FROM budget_inbox i JOIN budget_jobs j USING(run_id) WHERE i.run_id=$1 AND i.boundary_id=$2 AND i.project_id=$3 AND i.state='running' AND i.deadline>clock_timestamp() AND j.attempt_id=$4 AND j.dispatch_allowed AND ((j.phase='admitted' AND (j.recovery_action_id IS NULL OR j.recovery_action_id=$5)) OR (j.phase='effect_started' AND j.recovery_action_id=$5 AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=$5))) FOR UPDATE OF i,j`, i.Job.RunID, a.cfg.BoundaryID, a.cfg.ProjectID, i.Attempt.AttemptID, p.ID).Scan(&token)
+			if err != nil {
+				return empty, errors.New("recovery job authority unavailable")
+			}
+			i.Job = &review.JobClaim{RunID: i.Job.RunID, Token: token}
+		}
 	} else if reclaim && a.cfg.RequireServiceJobs {
 		return empty, errors.New("ephemeral recovery requires an acknowledged service handoff")
 	}
@@ -204,7 +214,7 @@ func (a *Authority) claimPrepared(ctx context.Context, p orchestrator.PreparedAc
 	if err = a.checkPreparedQuote(ctx, tx, i, q, now); err != nil {
 		return empty, err
 	}
-	if reclaim && i.Job != nil {
+	if reclaim && i.Job != nil && !batchRecovery {
 		// Any possible external progress needs its own continuation/reconciliation,
 		// not a broad takeover of this job's execution authority.
 		var external bool
@@ -383,11 +393,16 @@ AND j.dispatch_allowed AND t.active AND a.state='prepared' AND a.fenced
 AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id
 AND (l.lease_until IS NULL OR l.lease_until<=clock_timestamp())
 AND (t.tracking_id IS NULL OR EXISTS(SELECT 1 FROM budget_heads h WHERE h.id=t.tracking_id AND h.current_attempt_id=t.id))
-AND ((j.phase='admitted' AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state<>'prepared'))
+AND ((j.phase='admitted' AND j.model_batch_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state<>'prepared'))
 OR (j.phase='effect_started' AND j.recovery_action_id=a.id
 AND EXISTS(SELECT 1 FROM budget_model_continuations c WHERE c.child_action_id=a.id)
 AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.id<>a.id
-AND (e.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=e.id)))))
+AND (e.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x WHERE x.action_id=e.id))))
+OR (j.model_batch_id IS NOT NULL AND j.phase IN ('admitted','effect_started')
+AND (j.recovery_action_id IS NULL OR EXISTS(SELECT 1 FROM budget_model_batches b CROSS JOIN LATERAL jsonb_array_elements(convert_from(b.manifest,'UTF8')::jsonb->'Slots') s(slot) WHERE b.id=j.model_batch_id AND s.slot->>'ActionID'=j.recovery_action_id))
+AND NOT EXISTS(SELECT 1 FROM budget_actions e WHERE e.attempt_id=t.id AND e.state NOT IN ('prepared','result_recorded'))
+AND NOT EXISTS(SELECT 1 FROM budget_actions e JOIN budget_action_leases owned ON owned.action_id=e.id WHERE e.attempt_id=t.id AND e.state='prepared' AND owned.worker_id IS NOT NULL AND (owned.lease_until IS NULL OR owned.lease_until>clock_timestamp()))
+AND a.id=(SELECT s.slot->>'ActionID' FROM budget_model_batches b CROSS JOIN LATERAL jsonb_array_elements(convert_from(b.manifest,'UTF8')::jsonb->'Slots') WITH ORDINALITY s(slot,ordinal) JOIN budget_actions e ON e.id=s.slot->>'ActionID' WHERE b.id=j.model_batch_id AND e.state='prepared' ORDER BY s.ordinal LIMIT 1)))
 ORDER BY a.created_at,a.id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
 	if err != nil {
 		return nil, err

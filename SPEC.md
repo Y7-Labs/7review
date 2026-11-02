@@ -744,8 +744,11 @@ Schema v13 now seals atomic initial-batch membership alongside the job reference
 Additional initial actions cannot spend outside that set; claim, Begin and
 terminal reads recheck the complete frozen membership. Only the exact proven
 formatter continuation may extend it. Upgrades preserve legacy evidence without
-inventing seals or new reclaim authority. Live batch integration and group-scoped
-recovery remain open; this does not relax the no-sending-retry invariant.
+inventing seals or new reclaim authority. Sealed initial groups now permit
+action-confined recovery in slot order under a stable takeover epoch, with
+per-action fences and checked original/live-result provenance. Sending/uncertain
+progress and active prepared leases block recovery. Live batch integration
+remains open; this does not relax the no-sending-retry invariant.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

@@ -344,10 +344,27 @@ and original job epoch. Missing/duplicated slots, changed artifacts or a detache
 job binding fail closed. Terminal projection also rechecks the seal. Normal
 current-epoch replacement during reclaim does not rewrite immutable intents.
 
+Recovery can now move the action-confined cursor through this sealed set in slot
+order. First takeover revokes the original live job token; subsequent slots retain
+that recovery epoch while action fences revoke expired workers. It checks every
+slot: all prepared leases must be unowned/expired; known results must retain intact
+response and sending-fence provenance; sending, uncertain, foreign or unsealed
+progress blocks further dispatch. No new action or whole-job takeover is granted.
+The automatic scanner exposes only the first unfinished eligible slot.
+
+Mixed live/recovery results may finish only when the original token is proven by
+the seal, and the final cursor's sending lease binds the current recovery epoch.
+No arbitrary stale token is accepted. Finalization retains all unknown-usage holds.
+Process exits at claim/sending/recorded boundaries and competing recovery workers
+exercise these transitions; deferred claim commit failure preserves the original
+live token, null cursor and fencing state.
+Action-only recovery tokens cannot call `FinishInbox` to finish or fail the whole
+job; terminal completion must use the checked reduction proof instead.
+
 This API is not yet wired into `CompleteParallel`; live batching still prepares
-individual actions. Group-confined recovery ownership must still be implemented
-before integration. The seal does not loosen action-only reclaim or
-make prepared siblings after external progress eligible for broad job takeover.
+individual actions. Live batch planning/handoff and live/recovery overlap must be
+integrated before calling general batching recoverable. Unsealed legacy siblings
+remain ineligible after external progress.
 
 ### Terminal Model Projection
 

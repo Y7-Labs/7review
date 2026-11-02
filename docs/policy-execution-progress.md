@@ -1043,6 +1043,40 @@ This is an incremental behavior ledger, not a completion declaration.
   operator controls and safe cancellation/refund. Schema v13 requires explicit
   migration; no deployed store was changed. Ceilings and alpha remain incomplete.
 
+### 63. Action-Confined Recovery Across A Sealed Batch
+
+- Red PostgreSQL tests reproduced a stranded second slot and epoch rotation on
+  expired-lease reclaim. First takeover now revokes the live owner once; later
+  slots retain that epoch and use increasing per-action fences. The cursor moves
+  only to the first unfinished sealed slot, never to arbitrary job work.
+- Every slot is checked before takeover: active prepared owners, unsealed sibling
+  actions, sending/uncertain progress, integrity incidents, changed proof or
+  foreign result epochs block dispatch. Existing attempt/deadline/route/capacity
+  checks still apply transactionally. Failed claim commit preserves original
+  token/cursor/fences; stale owners cannot Begin or finish the job.
+- The automatic scanner now selects a single eligible slot per sealed group.
+  Competing recovery workers and reopened authorities converge without duplicate
+  calls. A separate red test caught the scanner excluding groups with a known
+  live result; mixed groups now progress and finalize with checked original-token
+  provenance, not arbitrary stale-token acceptance.
+- Additional red proof tests found that matching zero fences could masquerade as
+  sending provenance. Recovery and terminal ancestry now require positive fences
+  plus recorded worker/lease metadata; equality alone grants no authority.
+- A separate boundary regression caught `FinishInbox` accepting action-only
+  recovery tokens. Verified commit `9d7ab73` denies both success/failure completion
+  by confined owners and disables dispatch on ordinary inbox completion.
+- Subprocess exits after claim, sending and recorded response verify that restart
+  recovers prepared work, never retries sending, and skips recorded effects. Holds
+  remain intact and unknown usage is not settled/refunded. Automatic local
+  indexing/reduction/finalization also completes mixed live/recovery groups.
+- Verification: full PostgreSQL-backed suite, broad accounting/app/pipeline/
+  orchestrator/review race suite, latest focused race regressions, vet, formatting,
+  bridge tests and Compose configuration validation pass.
+- Still open: canonical live batch planning/handoff and live/recovery overlap,
+  durable tool continuation, authenticated operator controls and safe
+  cancellation/refund. `CompleteParallel` still uses individual preparation.
+  No schema change; explicit version remains 13. Ceilings and alpha are incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

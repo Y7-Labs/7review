@@ -55,7 +55,7 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-62. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-63. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
@@ -71,7 +71,10 @@ changed terminal/ancestor evidence fails closed. Batch-backlog and tool-cursor
 unification, tool continuation, authenticated controls and safe
 cancellation/refund remain open. Atomic batch preparation now seals its complete
 membership; extra reservations and changed seals fail at claim/Begin and terminal
-reads. Live batch integration and group-confined recovery remain open.
+reads. Sealed initial groups now recover one unfinished slot at a time, with one
+takeover epoch and per-action fencing; sending/uncertain progress blocks recovery.
+Known original live results retain sealed provenance through terminal completion.
+Live batch integration remains open.
 The v8-to-v9 through v12-to-v13 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v13 before restart. No deployed database was changed.

@@ -84,7 +84,25 @@ func (a *Authority) CompleteModelJob(ctx context.Context, actionID string) (*rev
 		return nil, err
 	}
 	var changed bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x LEFT JOIN budget_action_leases l ON l.action_id=x.action_id WHERE x.reduction_id=$1 AND (l.action_id IS NULL OR l.job_token IS DISTINCT FROM $2 OR l.sending_fence IS NULL OR l.sending_fence<>l.fence))`, id, token).Scan(&changed)
+	origin, err := a.batchOriginEpochTx(ctx, tx, artifact)
+	if err != nil {
+		return nil, err
+	}
+	if origin.Valid {
+		if !grant.Valid && token != origin.String {
+			return nil, errors.New("unconfined terminal batch changed original epoch")
+		}
+		if grant.Valid {
+			var bound bool
+			if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x JOIN budget_action_leases l ON l.action_id=x.action_id WHERE x.reduction_id=$1 AND x.action_id=$2 AND l.job_token=$3)`, id, grant.String, token).Scan(&bound); err != nil {
+				return nil, err
+			}
+			if !bound {
+				return nil, errors.New("terminal batch cursor has no current sending epoch")
+			}
+		}
+	}
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_model_reduction_inputs x LEFT JOIN budget_action_leases l ON l.action_id=x.action_id WHERE x.reduction_id=$1 AND (l.action_id IS NULL OR l.job_token IS NULL OR (l.job_token IS DISTINCT FROM $2 AND l.job_token IS DISTINCT FROM $3) OR l.sending_fence IS NULL OR l.sending_fence<>l.fence))`, id, token, origin).Scan(&changed)
 	if err != nil {
 		return nil, err
 	}
@@ -200,6 +218,13 @@ func (a *Authority) checkTerminalLineageTx(ctx context.Context, tx *sql.Tx, id s
 			return err
 		}
 		for _, input := range current.artifact.Inputs {
+			var sent bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM budget_action_leases l JOIN budget_actions a ON a.id=l.action_id WHERE l.action_id=$1 AND a.fenced AND a.state='result_recorded' AND l.fence>0 AND l.sending_fence=l.fence AND l.worker_id IS NOT NULL AND l.lease_until IS NOT NULL AND l.job_token IS NOT NULL)`, input.ActionID).Scan(&sent); err != nil {
+				return err
+			}
+			if !sent {
+				return errors.New("terminal ancestry has no proven sending fence")
+			}
 			actions = append(actions, input.ActionID)
 			i, _, err := a.storedAction(ctx, tx, input.ActionID)
 			if err != nil {
@@ -262,7 +287,7 @@ AND (t.tracking_id IS NULL OR EXISTS(SELECT 1 FROM budget_heads h WHERE h.id=t.t
 OR (j.phase='finished' AND ((i.state='completed' AND m.state='validated') OR (i.state='failed' AND m.state='blocked'))))
 AND (j.recovery_action_id IS NULL OR EXISTS(SELECT 1 FROM budget_model_reduction_inputs own WHERE own.reduction_id=m.id AND own.action_id=j.recovery_action_id))
 AND NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs e LEFT JOIN budget_action_leases l ON l.action_id=e.action_id
-WHERE e.reduction_id=m.id AND (l.action_id IS NULL OR l.job_token IS DISTINCT FROM i.claim_token OR l.sending_fence IS NULL OR l.sending_fence<>l.fence))
+WHERE e.reduction_id=m.id AND (l.action_id IS NULL OR l.job_token IS NULL OR (l.job_token IS DISTINCT FROM i.claim_token AND NOT EXISTS(SELECT 1 FROM budget_model_batches b JOIN budget_actions origin ON origin.id=(convert_from(b.manifest,'UTF8')::jsonb #>> '{Slots,0,ActionID}') WHERE b.id=j.model_batch_id AND b.group_digest=m.group_digest AND l.job_token=(convert_from(origin.request,'UTF8')::jsonb #>> '{Job,Token}'))) OR l.sending_fence IS NULL OR l.sending_fence<>l.fence))
 AND NOT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id AND convert_from(a.request,'UTF8')::jsonb #>> '{Job,RunID}'=j.run_id
 AND (a.state<>'result_recorded' OR NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs done WHERE done.action_id=a.id)
 OR (j.recovery_action_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_model_reduction_inputs own WHERE own.action_id=a.id AND own.reduction_id=m.id))))
