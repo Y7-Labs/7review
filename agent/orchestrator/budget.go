@@ -189,7 +189,12 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 	if permit.AlreadyStarted {
 		return deny("action already started; reconcile without resending")
 	}
-	return o.invokeReserved(ctx, permit, active, invoke)
+	result, err := o.invokeReserved(ctx, permit, active, invoke)
+	if err == nil && rc != nil {
+		digest := sha256.Sum256([]byte(result))
+		rc.RecordModelResult(review.ModelCallRef{ActionID: permit.ID, RequestDigest: permit.RequestDigest, ResponseDigest: "sha256:" + hex.EncodeToString(digest[:]), Step: step})
+	}
+	return result, err
 }
 
 func (o *Orchestrator) invokeReserved(ctx context.Context, permit DispatchPermit, active int64, invoke func(context.Context) (string, error)) (string, error) {

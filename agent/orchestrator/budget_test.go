@@ -17,6 +17,30 @@ func budgetTestLimits() review.ResourceLimits {
 	return review.ResourceLimits{Currency: "USD", Attempt: s, Change: s, Project: s}
 }
 
+func TestLiveResultReferenceExistsOnlyAfterDurableOutcome(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		limits := budgetTestLimits()
+		a := &recordingBudget{}
+		if fail {
+			a.recordErr = errors.New("outcome commit failed")
+		}
+		rc := fundedContext(limits)
+		p := budgetProvider{call: func(context.Context, LLMRequest) (string, error) { return "[]", nil }}
+		o := NewOrchestrator(DefaultOrchestratorConfig("review", "small", "fake"), map[string]LLMProvider{"fake": p}, WithOperatorCeilings(&limits), WithBudgetAuthority(a))
+		_, err := o.Complete(context.Background(), rc, RoleReasoner, "step5", "sys", "user")
+		ref := rc.LatestModelResult()
+		if fail {
+			if err == nil || ref != nil {
+				t.Fatalf("uncommitted result reference escaped: %#v %v", ref, err)
+			}
+		} else {
+			if err != nil || ref == nil || ref.ActionID != "1" || ref.RequestDigest != a.intents[0].RequestDigest || ref.ResponseDigest != a.outcomes[0].ResponseDigest || ref.Step != "step5" {
+				t.Fatalf("committed result not referenced: %#v %v", ref, err)
+			}
+		}
+	}
+}
+
 func TestRoutingSnapshotCannotBeChangedByLaterRoleConfiguration(t *testing.T) {
 	cfg := DefaultOrchestratorConfig("review-v1", "formatter-v1", "fake")
 	o := NewOrchestrator(cfg, nil)

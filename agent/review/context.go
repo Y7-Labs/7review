@@ -150,13 +150,34 @@ type Context struct {
 
 	// ── Review findings (populated by Step 5, thread-safe) ───────────────
 	// Each parallel batch appends its raw findings string here.
-	rawFindings []string
+	rawFindings       []string
+	latestModelResult *ModelCallRef
 
 	// ── HIL decision (populated by HIL gate) ─────────────────────────────
 	HILApproved bool
 	// HILEdits are finding IDs the human marked as false positives or added.
 	HILRejectedIDs []string
 	HILAddedNotes  []string
+}
+
+// ModelCallRef names a committed outcome, not permission to call a provider.
+type ModelCallRef struct{ ActionID, RequestDigest, ResponseDigest, Step string }
+
+func (rc *Context) RecordModelResult(ref ModelCallRef) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	copy := ref
+	rc.latestModelResult = &copy
+}
+
+func (rc *Context) LatestModelResult() *ModelCallRef {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.latestModelResult == nil {
+		return nil
+	}
+	copy := *rc.latestModelResult
+	return &copy
 }
 
 // NewContext initialises the canonical source and transient helpers for one run.
@@ -249,12 +270,18 @@ func (rc *Context) Clone() *Context {
 	}
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
+	var latest *ModelCallRef
+	if rc.latestModelResult != nil {
+		copy := *rc.latestModelResult
+		latest = &copy
+	}
 	return &Context{
-		Source:         rc.Source.Clone(),
-		rawFindings:    append([]string(nil), rc.rawFindings...),
-		HILApproved:    rc.HILApproved,
-		HILRejectedIDs: append([]string(nil), rc.HILRejectedIDs...),
-		HILAddedNotes:  append([]string(nil), rc.HILAddedNotes...),
+		latestModelResult: latest,
+		Source:            rc.Source.Clone(),
+		rawFindings:       append([]string(nil), rc.rawFindings...),
+		HILApproved:       rc.HILApproved,
+		HILRejectedIDs:    append([]string(nil), rc.HILRejectedIDs...),
+		HILAddedNotes:     append([]string(nil), rc.HILAddedNotes...),
 	}
 }
 
