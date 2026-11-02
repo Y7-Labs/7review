@@ -19,6 +19,34 @@ func (p recordingProvider) Complete(_ context.Context, req llm.LLMRequest) (stri
 	return p.prefix + ":" + req.Model, nil
 }
 
+func TestSerialBatchesReviewEveryBatchAndRejectEmptyWork(t *testing.T) {
+	for _, empty := range []bool{false, true} {
+		cfg := DefaultOrchestratorConfig("review", "small", "fake")
+		role := cfg.Roles[RoleReasoner]
+		role.Parallel = false
+		cfg.Roles[RoleReasoner] = role
+		var seen []string
+		provider := budgetProvider{call: func(_ context.Context, req LLMRequest) (string, error) {
+			seen = append(seen, req.UserMessage)
+			return req.UserMessage, nil
+		}}
+		o := NewOrchestrator(cfg, map[string]LLMProvider{"fake": provider})
+		rc := review.NewContext(review.Request{})
+		batches := [][]review.FileDiff{{{Path: "a.go"}}, {{Path: "b.go"}}}
+		if empty {
+			batches = nil
+		}
+		err := o.CompleteParallel(context.Background(), rc, "sys", batches, func(batch []review.FileDiff) string { return batch[0].Path })
+		if empty {
+			if err == nil || len(seen) != 0 {
+				t.Fatalf("empty review reported coverage: %v %#v", err, seen)
+			}
+		} else if err != nil || strings.Join(seen, ",") != "a.go,b.go" || len(rc.AllFindings()) != 2 {
+			t.Fatalf("serial review omitted batches: %v %#v", err, seen)
+		}
+	}
+}
+
 func TestCompleteParallelUsesRegisteredFallbackWhenPrimaryUnavailable(t *testing.T) {
 	orch := NewOrchestrator(&OrchestratorConfig{
 		Roles: map[ModelRole]RoleConfig{

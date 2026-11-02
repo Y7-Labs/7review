@@ -236,14 +236,22 @@ func (o *Orchestrator) CompleteParallel(
 	if !ok {
 		return errors.New("orchestrator: parallel: reasoner role not configured")
 	}
+	if len(batches) == 0 {
+		return errors.New("orchestrator: no review batches")
+	}
 
 	if !roleCfg.Parallel || len(batches) == 1 {
-		// Serial fallback — either parallel disabled or only one batch.
-		result, err := o.Complete(ctx, rc, RoleReasoner, "step5", systemPrompt, buildUserMsg(batches[0]), tools...)
-		if err != nil {
-			return err
+		for index, batch := range batches {
+			step := "step5"
+			if len(batches) > 1 {
+				step = fmt.Sprintf("step5_batch%d", index+1)
+			}
+			result, err := o.Complete(ctx, rc, RoleReasoner, step, systemPrompt, buildUserMsg(batch), tools...)
+			if err != nil {
+				return err
+			}
+			rc.AddFindings(result)
 		}
-		rc.AddFindings(result)
 		return nil
 	}
 
