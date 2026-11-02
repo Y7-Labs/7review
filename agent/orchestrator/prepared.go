@@ -53,7 +53,7 @@ func (o *Orchestrator) reserveDispatch(ctx context.Context, i DispatchIntent) (D
 	if err != nil {
 		return DispatchPermit{}, err
 	}
-	if permit.ID != p.ID || permit.RequestDigest != p.RequestDigest || permit.Fence != c.Fence || permit.WorkerID != worker || permit.NotAfter.IsZero() || permit.NotAfter.After(c.LeaseUntil) || (!i.Execution.DeadlineAt.IsZero() && permit.NotAfter.After(i.Execution.DeadlineAt)) {
+	if permit.ID != p.ID || permit.RequestDigest != p.RequestDigest || permit.Fence != c.Fence || permit.WorkerID != worker || permit.NotAfter.IsZero() || (!i.Execution.DeadlineAt.IsZero() && permit.NotAfter.After(i.Execution.DeadlineAt)) {
 		return DispatchPermit{}, errors.New("invalid fenced sending receipt")
 	}
 	return permit, nil

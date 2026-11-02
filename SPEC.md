@@ -120,8 +120,10 @@ Known delivery retries resolve original identity/deadline before new SCM reads.
 `GET /inbox?run_id=...` exposes limited status under the API token policy.
 Controlled PostgreSQL fault/subprocess S15 cases are executed; production release
 is not thereby qualified. Claimed crashes remain non-retryable/uncertain; local
-recorded responses remain unvalidated. Prepared reclaim, validated continuation,
-durable final artifacts and operator recovery are separate open acceptance gates.
+recorded responses remain unvalidated. Prepared actions now support bounded
+fenced claims and confined reclaim before any sending commit; stale owners lose
+both action and job authority. Qualified recovery adapters, validated continuation,
+durable final artifacts and operator recovery remain open acceptance gates.
 
 Local/CI application calls return typed receipts or errors, not HTTP responses.
 They checkpoint before dispatch in the selected store. An ephemeral receipt is
@@ -704,6 +706,13 @@ dimensions. A recorded response can have unknown usage, invalid content or stale
 revision. Persist what is known, retain conservative usage holds, and reduce only
 eligible evidence once logically. Never call the model again merely because local
 reduction or delivery failed.
+
+Implementation checkpoint (2026-11-02): PostgreSQL configured dispatch now uses
+prepare/claim/begin with database-clock leases and monotonic fencing epochs.
+Explicit prepared reclaim rotates and confines service job ownership. Any prior
+external progress blocks job takeover; sending/uncertain actions never become
+retryable on lease expiry. Process-crash and stale-owner races are exercised with
+controlled providers. This is not autonomous recovery or provider qualification.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

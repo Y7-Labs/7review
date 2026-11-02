@@ -127,8 +127,10 @@ receipt, Source/continuation and initial event before 202 in PostgreSQL. Deferre
 commit faults leave no partial acceptance or generation change. Subprocess exit
 at the response boundary, replay without SCM, pending restart and one guarded
 test-provider call are covered, with unresolved usage holds retained. This closes
-the initial before-202 transaction gap, not prepared-action reclaim, validated
-continuation, durable final artifacts or operational release qualification.
+the initial before-202 transaction gap. Prepared-action leases/reclaim now have
+real-DB and process-crash evidence, including stale job-token revocation and
+action-only recovery authority. Qualified recovery adapters, validated
+continuation, durable final artifacts and operational release qualification remain open.
 
 Exit: real database/process-crash tests S15-S17/S35/S43 and all ENG-DUR cases.
 Kill processes at each specified boundary; verify receipts and actual action counts.
@@ -161,11 +163,11 @@ connects through opt-in runtime settings, with durable generation fencing and
 pre-dispatch identity checkpoints. Default production routes remain fail-closed.
 Durable HTTP acceptance and unclaimed pending-work recovery now have PostgreSQL
 fault/replay coverage. Claimed crashes are never automatically retried. Full
-prepared-action recovery, validated response continuation/provider currentness,
+qualified recovery adapters, validated response continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-39.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-43.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

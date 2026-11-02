@@ -16,10 +16,10 @@ scope is shared across repositories assigned to that project. Change keys includ
 provider, host and repository. Attempts have lifetime limits; shared scopes use
 fixed half-open periods assigned by the database clock after scope locks.
 
-One transaction commits immutable request bytes, the qualified upper amount,
-three scope holds and a sending marker. The synchronous first implementation has
-no prepared queue, lease reclaim or automatic resend. Returning a replay receipt
-does not authorize provider I/O. Provider calls run outside SQL transactions.
+One transaction prepares immutable request bytes, the qualified upper amount,
+three scope holds and lease storage. A separate fenced claim and sending commit
+must precede provider I/O. Returning a preparation/replay receipt never authorizes
+I/O. Provider calls run outside SQL transactions; there is no automatic resend.
 Unknown usage and recorded responses without usage retain full holds, including
 across renewal periods. SQL failures never create an in-process allowance.
 
@@ -39,7 +39,8 @@ compatibility and forces synchronous commit. Migration requires `fsync` and
 result artifacts contain sensitive review context. Keep migration privileges out
 of ordinary worker credentials. Backup/restore and deployment failover still need
 qualification before coordinated release.
-Schema v7 commits complete accepted aggregates on top of v6 action-result
+Schemas v8/v9 add prepared-action leases, fenced outcome provenance and confined
+recovery ownership. Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
@@ -114,8 +115,7 @@ I/O, finding approval, job completion or financial settlement. Response hashes
 and originating action/job links are retained; unknown/corrupt outcomes are not
 promoted. Recovery storage failure blocks new inbox claims for that poll.
 
-This conservative recovery intentionally sacrifices automatic progress after a
-claimed crash. Prepared-action reclaim, validated-result continuation,
+This conservative recovery does not replay a claimed job wholesale. Validated-result continuation,
 authenticated operator recovery, durable final run artifacts and the complete
 mutable assessment/action state machine remain unimplemented. Before-202 initial
 aggregate atomicity is not completion of those separate recovery/release gates.
@@ -151,10 +151,44 @@ service rather than the renamable `CI_PROJECT_PATH`. Existing path-keyed policy 
 accounting records need deliberate migration/alias reconciliation before enabling
 live coordinated spending; historical holds are not rewritten automatically.
 
-Important boundary: HTTP enqueue acknowledgement is still the legacy in-process
-queue, not a durable inbox receipt. Worker intake durability does not qualify
-HTTP crash recovery. Full action ownership/recovery, provider revocation/currentness
-and governed native delivery remain separate open work.
+Important boundary: only the opt-in canonical runtime has the before-202 aggregate
+contract. Legacy mode still uses the in-process queue. Full action continuation,
+provider revocation/currentness and governed native delivery remain open work.
+
+## Prepared Actions and Leases
+
+Configured PostgreSQL model dispatch follows `PrepareAction`, `ClaimPrepared`,
+`BeginPrepared`, then provider I/O and fenced `RecordOutcome`. Preparation is
+idempotent by exact action/request identity and never repeats reservations.
+Claims use database time, an expected epoch, a monotonically increasing fence and
+a 1 ms to 5 minute lease (normal dispatch requests 30 seconds). Leases are capped
+by the original execution and qualification deadlines, never renewed implicitly.
+
+Begin rechecks current attempt/job authority, scope integrity, existing holds,
+budget incidents, route/price qualification, worker/fence and lease. The sending
+marker and sending fence commit together. The lease gates beginning; once sending
+commits it cannot be reclaimed, and inference retains its qualified active-time,
+execution and price deadlines rather than a new implicit 30-second timeout.
+A replay is non-executable. Late attributable responses may be recorded after
+lease expiry, but only under the fence issued to the sending owner. Prepared
+actions cannot have outcomes or final usage before sending. Missing lease data
+on a fenced action is an error, not a downgrade to legacy authorization.
+
+`PreparedRecoveryCandidates` is bounded host-only discovery, not dispatch
+authority. `ReclaimPrepared` may adopt an unclaimed action or one whose lease has
+expired, only while it remains prepared and the original service job is current,
+within deadline and without external progress. Reclaim rotates the service job
+token and confines the new token to that action. Old workers cannot begin or
+schedule another ID; the recovery owner cannot rerun the whole pipeline either.
+Reclaim returns the original immutable input for a qualified recovery adapter.
+
+Sending/uncertain/result actions are never reclaimed. No automatic background
+model resumer, prepared cancellation/refund, lease-renewal command or authenticated
+operator recovery surface is added here. Native/stream recovery adapters and
+validated continuation still require qualification. Ephemeral runtime recovery
+requires acknowledged service handoff; a CI retry cannot masquerade as durable
+service ownership. Unused and unknown holds are retained until a qualified
+settlement or future verified not-executed operation, not released on expiry.
 
 ## Token And Price Qualification
 
@@ -197,7 +231,7 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 - Production receipt-verifier adapters and authenticated operator settlement
   commands; library-level reconciliation tests use an explicit test verifier.
-- Full action-level recovery/ownership and provider currentness
+- Qualified recovery adapters, prepared cancellation, validated continuation and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
 - Complete stable-provider-ID/alias migration and rename qualification, including
   historical path-keyed records; new identity checks are not proof of that exit.

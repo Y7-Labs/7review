@@ -47,11 +47,13 @@ and original deadlines; claimed crashes remain non-retryable/uncertain.
 The complete initial inbox/attempt/job/Source/event aggregate now commits before
 202, with controlled PostgreSQL/process-crash evidence. Workers use the frozen
 checkpoint; lost-response replay retains identity without new SCM reads. Local
-unvalidated response recovery remains separate. Full G01-G03 prepared-action recovery,
-validated continuation/currentness, non-model
+unvalidated response recovery remains separate. Prepared actions now have bounded
+fenced leases, explicit confined reclaim and stale-job-owner revocation. Sending
+actions remain non-retryable. Qualified recovery adapters, validated continuation,
+provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-39.
+[Accounting](docs/accounting.md) and progress slices 20-43.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

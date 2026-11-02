@@ -283,7 +283,11 @@ func (a *Authority) BeginPrepared(ctx context.Context, c orchestrator.ActionClai
 	if uint64(fence) != c.Fence || worker.String != c.WorkerID || !until.Valid || !until.Time.Equal(c.LeaseUntil) || c.RequestDigest != i.RequestDigest || (i.Job != nil && token.String != i.Job.Token) {
 		return empty, errors.New("sending claim is stale or mismatched")
 	}
-	permit := orchestrator.DispatchPermit{ID: c.ID, RequestDigest: c.RequestDigest, Fence: c.Fence, WorkerID: c.WorkerID, ActiveMS: q.ActiveMS, NotAfter: until.Time}
+	notAfter := i.Execution.DeadlineAt
+	if q.Qualification.ValidUntil.Before(notAfter) {
+		notAfter = q.Qualification.ValidUntil
+	}
+	permit := orchestrator.DispatchPermit{ID: c.ID, RequestDigest: c.RequestDigest, Fence: c.Fence, WorkerID: c.WorkerID, ActiveMS: q.ActiveMS, NotAfter: notAfter}
 	if state != "prepared" {
 		if !sent.Valid || sent.Int64 != fence {
 			return empty, errors.New("sending fence is inconsistent")

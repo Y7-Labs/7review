@@ -335,6 +335,26 @@ func TestPostgresDurableSendingFenceOverridesInconsistentPreparedState(t *testin
 	}
 }
 
+func TestPostgresSendingLeaseDoesNotReplaceQualifiedInferenceDeadline(t *testing.T) {
+	a, i, _ := preparedActionFixture(t)
+	ctx := context.Background()
+	p, err := a.PrepareAction(ctx, i)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := a.ClaimPrepared(ctx, p, "owner", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	permit, err := a.BeginPrepared(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !permit.NotAfter.Equal(i.Execution.DeadlineAt) || !permit.NotAfter.After(c.LeaseUntil) {
+		t.Fatalf("prepared ownership lease silently shortened inference contract: permit=%s lease=%s", permit.NotAfter, c.LeaseUntil)
+	}
+}
+
 // REC-01: prepared work is durable but never permission to invoke a provider.
 func TestPostgresPreparationReservesOnceWithoutSending(t *testing.T) {
 	a, i, _ := preparedActionFixture(t)

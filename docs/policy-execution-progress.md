@@ -742,6 +742,26 @@ This is an incremental behavior ledger, not a completion declaration.
   checks lease storage too. Production catalog remains empty; no provider or
   autonomous recovery adapter is implicitly qualified by enabling leases.
 
+### Slice 43: Process Death and Expired-Owner Race Qualification
+
+- REC-01/REC-02/S15 subprocesses exit after preparation, lease claim and sending
+  commit, skipping all callbacks and deferred cleanup. Lost prepared receipts are
+  discoverable, and only their original immutable bytes are recovered.
+- Expiry waits on the authoritative database lease. A stale original owner races
+  a newly fenced owner; exactly one controlled provider effect is permitted.
+  Sending commit followed by process death grants no new owner or resend even
+  when no provider callback ran. All three holds survive; no usage is invented.
+- Boundaries remain explicit: no automatic whole-job replay, no unqualified
+  native/stream recovery, no operator recovery command, no prepared cancellation
+  refund, no validated continuation or completed ceilings. Scoped conflicts are
+  untouched and production route/receipt qualification remains fail-closed.
+- A red deadline test caught the ownership lease accidentally shortening the
+  existing inference contract. Lease validity gates Begin; committed sends keep
+  their qualified active-time/execution/price bounds and cannot be reclaimed.
+- Verification: `scripts/test-accounting-postgres.sh ./...` and the real-PostgreSQL
+  race suite for accounting, orchestrator, app, CI, pipeline and CLI passed.
+  `go vet ./...`, formatting, diff checks and Compose configuration also passed.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
