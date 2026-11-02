@@ -125,7 +125,36 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 	if !enforced && o.operatorCeilings == nil {
 		return invoke(ctx)
 	}
-	deny := func(message string) (string, error) { return "", &budgetError{errors.New(message)} }
+	intent, active, err := o.newDispatchIntent(ctx, rc, spec, role, step, req, invocation)
+	if err != nil {
+		return "", err
+	}
+	permit, err := o.reserveDispatch(ctx, intent)
+	if err != nil {
+		return "", &budgetError{fmt.Errorf("reservation denied: %w", err)}
+	}
+	if permit.ID == "" || permit.RequestDigest != intent.RequestDigest {
+		return "", &budgetError{errors.New("invalid reservation receipt")}
+	}
+	if permit.AlreadyStarted {
+		return "", &budgetError{errors.New("action already started; reconcile without resending")}
+	}
+	result, err := o.invokeReserved(ctx, permit, active, invoke)
+	if err == nil && rc != nil {
+		digest := sha256.Sum256([]byte(result))
+		rc.RecordModelResult(review.ModelCallRef{ActionID: permit.ID, RequestDigest: permit.RequestDigest, ResponseDigest: "sha256:" + hex.EncodeToString(digest[:]), Step: step})
+	}
+	return result, err
+}
+
+func (o *Orchestrator) newDispatchIntent(ctx context.Context, rc *review.Context, spec ModelSpec, role ModelRole, step string, req LLMRequest, invocation string) (DispatchIntent, int64, error) {
+	deny := func(message string) (DispatchIntent, int64, error) {
+		return DispatchIntent{}, 0, &budgetError{errors.New(message)}
+	}
+	if err := ctx.Err(); err != nil {
+		return DispatchIntent{}, 0, err
+	}
+	enforced := rc != nil && (rc.Source.Policy.Enforced || rc.Source.Policy.Mode == "enforce")
 	if o.operatorCeilings == nil || o.budgetAuthority == nil {
 		return deny("durable reservation authority and operator ceilings are required")
 	}
@@ -179,22 +208,7 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 		}
 		intent.PolicyDigest = rc.Source.Policy.Digest
 	}
-	permit, err := o.reserveDispatch(ctx, intent)
-	if err != nil {
-		return "", &budgetError{fmt.Errorf("reservation denied: %w", err)}
-	}
-	if permit.ID == "" || permit.RequestDigest != requestDigest {
-		return deny("invalid reservation receipt")
-	}
-	if permit.AlreadyStarted {
-		return deny("action already started; reconcile without resending")
-	}
-	result, err := o.invokeReserved(ctx, permit, active, invoke)
-	if err == nil && rc != nil {
-		digest := sha256.Sum256([]byte(result))
-		rc.RecordModelResult(review.ModelCallRef{ActionID: permit.ID, RequestDigest: permit.RequestDigest, ResponseDigest: "sha256:" + hex.EncodeToString(digest[:]), Step: step})
-	}
-	return result, err
+	return intent, active, nil
 }
 
 func (o *Orchestrator) invokeReserved(ctx context.Context, permit DispatchPermit, active int64, invoke func(context.Context) (string, error)) (string, error) {

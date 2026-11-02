@@ -360,11 +360,34 @@ exercise these transitions; deferred claim commit failure preserves the original
 live token, null cursor and fencing state.
 Action-only recovery tokens cannot call `FinishInbox` to finish or fail the whole
 job; terminal completion must use the checked reduction proof instead.
+The same restriction applies immediately when a batch seal commits, before any
+takeover: a lost acknowledgement or invalid returned receipt cannot let the old
+live frame strand an intact stored plan by marking the inbox failed/completed.
 
-This API is not yet wired into `CompleteParallel`; live batching still prepares
-individual actions. Live batch planning/handoff and live/recovery overlap must be
-integrated before calling general batching recoverable. Unsealed legacy siblings
-remain ineligible after external progress.
+Canonical durable-service `CompleteParallel` calls with multiple batches now use
+this API before any provider call. The planner checks that the ordered partition
+exactly matches the frozen diff, and pins provider/model/output bounds from the
+checkpoint's routing snapshot. It uses the same host/policy ceiling preflight as
+individual dispatch. Every request is built before the atomic prepare operation;
+changed live source, unavailable atomic authority, invalid receipts or failed
+commit fail closed without individual-call fallback. Tool-schema JSON numbers
+retain their exact value through argument cloning.
+Prompt builders cannot mutate the validated source or ordered partition.
+
+After a checked commit the live frame returns the durable-handoff result. Inbox
+workers execute the sealed slots through the existing sequential recovery cursor;
+the old frame neither sends calls nor finishes the job. Recovery does not reselect
+routes from later configuration. Paused-after-commit overlap, restart with no SCM
+or policy reader, formatter repair and the normal HTTP-to-worker journey are
+covered with controlled providers and PostgreSQL. Single-batch and ephemeral
+execution keep their existing paths. The legacy parallel dispatcher remains only
+on the latter paths; canonical multi-batch I/O is action-confined and sequential.
+
+This is not complete general continuation: tool-request results persist as
+`needs_tools`, without fabricated observations, additional model calls, terminal
+draft or publication. Durable tool observation/continuation and authenticated
+operator controls remain open. Unsealed legacy siblings remain ineligible after
+external progress.
 
 ### Terminal Model Projection
 

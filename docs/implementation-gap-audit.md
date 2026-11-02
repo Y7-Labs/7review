@@ -178,14 +178,16 @@ proofs and all job actions must belong to the same checked lineage. Tool/batch
 cursor unification remains incomplete. Atomic initial-batch preparation now has a
 tested storage API and durable membership seal. The automatic recovery cursor now
 advances through eligible sealed slots without whole-job takeover, including
-mixed live/recovered result provenance. Live batch dispatch integration remains
-open. Extra reservations and changed membership fail closed
+mixed live/recovered result provenance. Canonical multi-batch planning now stages
+the whole set and hands off before I/O; restart, paused-live overlap, formatter
+repair and HTTP-to-worker tests use that same cursor without pipeline replay.
+Tool observation/continuation remains open. Extra reservations and changed membership fail closed
 at reservation/claim/Begin and terminal projection. Live
 recovery qualification, complete validated continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-63.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-64.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

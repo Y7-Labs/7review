@@ -747,8 +747,13 @@ formatter continuation may extend it. Upgrades preserve legacy evidence without
 inventing seals or new reclaim authority. Sealed initial groups now permit
 action-confined recovery in slot order under a stable takeover epoch, with
 per-action fences and checked original/live-result provenance. Sending/uncertain
-progress and active prepared leases block recovery. Live batch integration
-remains open; this does not relax the no-sending-retry invariant.
+progress and active prepared leases block recovery. Canonical multi-batch live
+execution now pins the complete request set, atomically prepares/seals it and
+hands off before provider I/O. The recovery cursor, not the abandoned frame,
+executes each slot sequentially. Frozen routing/output bounds survive later role
+configuration changes. Failed planning/commit/receipt checks never fall back to
+individual calls. Tool observations and continuation remain open; a `needs_tools`
+artifact is pending, not successful empty evidence or a final assessment.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

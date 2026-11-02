@@ -1077,6 +1077,43 @@ This is an incremental behavior ledger, not a completion declaration.
   cancellation/refund. `CompleteParallel` still uses individual preparation.
   No schema change; explicit version remains 13. Ceilings and alpha are incomplete.
 
+### 64. Canonical Live Batch Planning And Durable Handoff
+
+- Red service tests caught multi-batch execution issuing individual live calls
+  without a seal. Canonical durable-service multi-batch calls now freeze the full
+  ordered partition and request set, reserve/seal atomically, and return the
+  existing durable-handoff result before provider I/O.
+- The planner binds the checkpoint's complete diff, source, qualified validation,
+  routing and output bounds. Shared intent preflight preserves host/policy ceiling
+  checks. Missing authority, stale partition/source, builder mutation, cancellation,
+  failed commit or invalid receipt cannot fall back to individual dispatch.
+  The prompt builder cannot mutate either source or partition after validation.
+  A red exact-data test also caught large tool-schema integers being rounded by
+  cloning; structured decoding now preserves JSON numbers.
+- PostgreSQL service tests cover fresh-service restart after batch commit, a
+  post-commit panic, recovery finishing while the live frame is paused, formatter
+  repair and normal HTTP acceptance -> inbox workers -> terminal draft. Later
+  role/model/output configuration changes cannot reselect stored requests.
+  Every provider call observes the complete seal/holds and its sending fence.
+- Red completion tests caught the old live token still able to fail a committed
+  seal before takeover. Verified fix `9daaeb6` removes whole-job completion rights
+  at seal commit. Invalid receipts and a lost prepare acknowledgement after a real
+  PostgreSQL commit now leave the intact stored plan recoverable; no live resend
+  or whole-pipeline replay is granted.
+- The abandoned frame cannot finish or publish. Durable run views report drafted
+  results without approval; the restarted in-memory store remains empty. Tool
+  responses persist as pending `needs_tools` plans with no invented observations,
+  extra model effects or terminal success.
+- Canonical multi-batch I/O now uses the sequential action-confined recovery
+  cursor. Single-batch and ephemeral/legacy dispatch keep their existing paths.
+  Full PostgreSQL-backed tests, broad accounting/app/pipeline/orchestrator/review
+  race tests, vet, formatting, bridge tests and Compose configuration validation
+  pass on the integrated tree.
+  Still open: durable tool observation/continuation, authenticated operator
+  controls and safe cancellation/refund, plus remaining operational/provider
+  qualification. No schema change; current explicit version is 13. Ceilings and
+  alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

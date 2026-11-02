@@ -239,6 +239,9 @@ func (o *Orchestrator) CompleteParallel(
 	if len(batches) == 0 {
 		return errors.New("orchestrator: no review batches")
 	}
+	if len(batches) > 1 && rc != nil && rc.Source.Execution.Mode == review.ExecutionService && rc.Source.Execution.Persistence == review.PersistenceDurableService {
+		return o.handoffModelBatch(ctx, rc, roleCfg, systemPrompt, batches, buildUserMsg, tools)
+	}
 
 	if !roleCfg.Parallel || len(batches) == 1 {
 		for index, batch := range batches {
