@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Y4NN777/7review/agent/policy"
+	"github.com/Y4NN777/7review/agent/review"
 )
 
 // Config holds all runtime settings, loaded from environment variables.
@@ -26,6 +27,7 @@ type Config struct {
 	WriteTimeout                int
 	IdleTimeout                 int
 	APIToken                    string
+	Operators                   *review.OperatorDirectory
 	WebhookWorkers              int
 	WebhookQueueSize            int
 	WebhookJobTimeout           int
@@ -159,6 +161,13 @@ func LoadConfig() (*Config, error) {
 	}
 	if c.ReviewModel == "" {
 		c.ReviewModel = defaultModel(c.Provider, true)
+	}
+	if raw := os.Getenv("REVIEW_OPERATOR_GRANTS_JSON"); raw != "" {
+		directory, err := review.DecodeOperatorDirectory([]byte(raw), os.Getenv)
+		if err != nil {
+			return nil, fmt.Errorf("REVIEW_OPERATOR_GRANTS_JSON: %w", err)
+		}
+		c.Operators = directory
 	}
 	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {
 		limits, err := policy.DecodeOperatorCeilings([]byte(raw))

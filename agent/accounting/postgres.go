@@ -30,6 +30,7 @@ type Config struct {
 	ProjectID          string
 	Limits             review.ResourceLimits
 	Catalog            *Catalog
+	Operators          *review.OperatorDirectory
 }
 type Authority struct {
 	db  *sql.DB

@@ -1289,6 +1289,34 @@ This is an incremental behavior ledger, not a completion declaration.
   live provider/operational qualification remain open. Ceilings and alpha remain
   unfinished.
 
+### 71. Explicit Operator Principals And Scoped Durable Reads
+
+- Red: tests first required a host-mapped principal rather than the legacy
+  optional/shared-token guard, exact boundary/project/provider/host/repository
+  roles, and an actor that could not be forged by supplying an ID or roles.
+  HTTP/accounting tests initially failed on the absent contracts and route.
+- Green: a bounded closed V1 host document resolves environment-secret
+  references into an immutable directory, rejecting ambiguous credentials,
+  duplicate/unknown fields and grants, missing secrets and wildcard scopes.
+  Tokens are not serialized or persisted. Authentication issues an opaque actor
+  pinned to that directory; accounting independently checks its provenance and
+  repository role. No identity is inferred from `REVIEW_API_TOKEN`.
+- Green: `GET /operator/attempt` requires an exact attempt ID and a reviewer or
+  operator grant. It rejects repeated/conflicting credential headers, body
+  claims, extra/duplicate query fields and oversized queries. Repository scope
+  comes from the checksummed durable binding, never the client. Durable
+  aggregate integrity is checked before returning the small status projection;
+  expired/inactive records remain inspectable without granting dispatch.
+- Verification: the complete PostgreSQL-backed suite, focused PostgreSQL-backed
+  operator/runtime race tests, vet, formatting and diff checks pass. Tests cover
+  missing/unmapped authentication, foreign-directory actors, wrong repository,
+  namespace and role, run aliases, historical status, corrupt checkpoints and
+  concurrent authentication. PostgreSQL was disposable; no deployed store changed.
+- No schema change; explicit schema v15 remains required. This is read-only
+  operator access, not command execution or a mutable command version.
+  Authenticated mutation receipts, cancellation/refund, broader tool/CPU and live
+  operational/provider qualification remain open. Ceilings remain unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

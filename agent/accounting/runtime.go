@@ -10,7 +10,10 @@ import (
 	"github.com/Y4NN777/7review/agent/review"
 )
 
-type RuntimeSettings struct{ DatabaseURL, BoundaryID, ProjectID string }
+type RuntimeSettings struct {
+	DatabaseURL, BoundaryID, ProjectID string
+	Operators                          *review.OperatorDirectory
+}
 
 func (s RuntimeSettings) Enabled() bool { return s.DatabaseURL != "" }
 
@@ -27,7 +30,7 @@ func (r *Runtime) Close() error {
 	return r.db.Close()
 }
 func ReadRuntimeSettings(getenv func(string) string) (RuntimeSettings, error) {
-	s := RuntimeSettings{strings.TrimSpace(getenv("ACCOUNTING_DATABASE_URL")), strings.TrimSpace(getenv("ACCOUNTING_BOUNDARY_ID")), strings.TrimSpace(getenv("ACCOUNTING_PROJECT_ID"))}
+	s := RuntimeSettings{DatabaseURL: strings.TrimSpace(getenv("ACCOUNTING_DATABASE_URL")), BoundaryID: strings.TrimSpace(getenv("ACCOUNTING_BOUNDARY_ID")), ProjectID: strings.TrimSpace(getenv("ACCOUNTING_PROJECT_ID"))}
 	return s, s.validate()
 }
 func (s RuntimeSettings) validate() error {
@@ -75,7 +78,7 @@ func OpenRuntime(ctx context.Context, settings RuntimeSettings, limits *review.R
 		db.Close()
 		return nil, err
 	}
-	a, err := NewAuthority(db, Config{RequireServiceJobs: true, BoundaryID: settings.BoundaryID, ProjectID: settings.ProjectID, Limits: *limits, Catalog: catalog})
+	a, err := NewAuthority(db, Config{RequireServiceJobs: true, BoundaryID: settings.BoundaryID, ProjectID: settings.ProjectID, Limits: *limits, Catalog: catalog, Operators: settings.Operators})
 	if err != nil {
 		db.Close()
 		return nil, err

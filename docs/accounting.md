@@ -96,6 +96,52 @@ optional ungoverned memory/context side effects disabled. The runtime factory ha
 an empty qualified-route catalog and no receipt verifier: enabling intake alone
 cannot spend on any production model. Real-provider qualification remains required.
 
+### Authenticated Operator Access
+
+Canonical operator access is separate from the legacy shared service token.
+`REVIEW_API_TOKEN` does not implicitly identify a human or grant repository roles.
+Set `REVIEW_OPERATOR_GRANTS_JSON` in trusted host configuration, with secrets
+referenced by environment variable rather than embedded in the JSON:
+
+```json
+{"schema_version":1,"principals":[{"id":"alice","token_env":"ALICE_OPERATOR_TOKEN","grants":[{"boundary_id":"service","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["operator"]}]}]}
+```
+
+Generate a high-entropy secret (for example, `openssl rand -hex 32`), set it as
+`ALICE_OPERATOR_TOKEN`, and restart the service. Never commit the secret. The
+boundary and project must exactly match accounting host configuration; provider,
+host and repository ID must exactly match the attested change identity. No
+wildcards, inferred host aliases or implicit role inheritance are accepted.
+Known roles are `operator`, `reviewer`, `publisher`, `participant` and
+`memory_curator`; each endpoint still requires its specific role. One local
+principal may explicitly receive several roles. Credentials must not be shared
+between principals. Duplicate/unknown fields, duplicate grants, missing secrets
+and ambiguous credential mappings fail configuration loading. The document is
+bounded to 64 KiB and is not repository policy.
+
+`GET /operator/attempt?attempt_id=<exact-attempt-id>` requires `operator` or
+`reviewer` for that repository. Supply the mapped principal's credential in
+`Authorization: Bearer <secret>` (or `X-7review-Token`). Identical values in both
+headers are supported; repeated or conflicting headers are rejected. The actor
+comes only from this mapping; request bodies and extra query fields, including
+actor/repository claims, are rejected. Missing configuration or unmapped
+credentials return 401; an authenticated actor without the repository role
+receives 403. A legacy run alias does not resolve as an attempt ID.
+
+The response contains only durable attempt/run IDs, analysis revision, inbox
+state, job phase, currentness, active flag and deadline. It verifies stored
+binding and aggregate integrity and never falls back to memory/legacy drafts.
+It exposes no claim tokens, prompts or credentials. Historical/expired attempts
+remain inspectable with the same repository authority. This projection is not
+a dispatch permit, validated assessment, or mutable command version.
+
+Leave the mapping unset to disable this canonical endpoint. The immutable
+directory is shared by the HTTP and accounting boundaries; an actor issued by
+another directory is rejected. Credential/grant changes require restart. Use
+HTTPS or a trusted local transport; do not expose bearer credentials over public
+plain HTTP. This step does not implement cancellation, refunds or publication
+commands, and does not upgrade legacy approval routes into canonical authority.
+
 ### HTTP Acceptance and Recovery
 
 Canonical GitHub/GitLab review requests first acquire trusted SCM/base policy and

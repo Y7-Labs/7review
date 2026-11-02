@@ -25,7 +25,7 @@ func TestRuntimeSettingsCannotSilentlyEnablePartialAccounting(t *testing.T) {
 func TestPostgresRuntimeChecksSchemaWithoutAuthorizingDefaultRoutes(t *testing.T) {
 	_, dsn := postgresFixture(t)
 	limits := ledgerLimits()
-	runtime, err := OpenRuntime(context.Background(), RuntimeSettings{dsn, "test-authority", "team"}, &limits)
+	runtime, err := OpenRuntime(context.Background(), RuntimeSettings{DatabaseURL: dsn, BoundaryID: "test-authority", ProjectID: "team"}, &limits)
 	if err != nil || runtime == nil || runtime.Authority == nil {
 		t.Fatalf("runtime not connected: %#v %v", runtime, err)
 	}
@@ -51,7 +51,7 @@ func TestRuntimeDatabaseErrorsNeverExposeCredentials(t *testing.T) {
 func TestPostgresRuntimeNeverMigratesImplicitly(t *testing.T) {
 	db, dsn := testpostgres.OpenDSN(t)
 	limits := ledgerLimits()
-	if runtime, err := OpenRuntime(context.Background(), RuntimeSettings{dsn, "test-authority", "team"}, &limits); err == nil || runtime != nil {
+	if runtime, err := OpenRuntime(context.Background(), RuntimeSettings{DatabaseURL: dsn, BoundaryID: "test-authority", ProjectID: "team"}, &limits); err == nil || runtime != nil {
 		if runtime != nil {
 			runtime.Close()
 		}

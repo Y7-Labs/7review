@@ -5,6 +5,40 @@ import (
 	"testing"
 )
 
+func TestLoadConfigOperatorDirectoryIsExplicitAndRejectsInvalidGrants(t *testing.T) {
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "service-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("POLICY_V2_MODE", "legacy")
+	t.Setenv("REVIEW_OPERATOR_GRANTS_JSON", "")
+	c, err := LoadConfig()
+	if err != nil || c.Operators != nil {
+		t.Fatalf("implicit operator: %v %v", c, err)
+	}
+	for _, raw := range []string{"{}", "null", `{"token":"service-token"}`} {
+		t.Setenv("REVIEW_OPERATOR_GRANTS_JSON", raw)
+		if _, err = LoadConfig(); err == nil || !strings.Contains(err.Error(), "REVIEW_OPERATOR_GRANTS_JSON") {
+			t.Fatalf("bad grants accepted: %v", err)
+		}
+	}
+	t.Setenv("ALICE_TOKEN", "alice-secret")
+	t.Setenv("REVIEW_OPERATOR_GRANTS_JSON", `{"schema_version":1,"principals":[{"id":"alice","token_env":"ALICE_TOKEN","grants":[{"boundary_id":"service","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["operator"]}]}]}`)
+	c, err = LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	actor, err := c.Operators.Authenticate("alice-secret")
+	if err != nil || actor.PrincipalID() != "alice" {
+		t.Fatalf("configured actor: %v %v", actor, err)
+	}
+	if _, err = c.Operators.Authenticate("service-token"); err == nil {
+		t.Fatal("service token implicitly mapped")
+	}
+}
+
 func TestEnforcedRuntimeRequiresValidOperatorCeilings(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "token")
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")

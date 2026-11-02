@@ -76,6 +76,7 @@ func newServer(cfg *config.Config) (*Server, error) {
 	if settings.Enabled() && cfg.PolicyV2Mode != "enforce" {
 		return nil, fmt.Errorf("canonical accounting runtime requires POLICY_V2_MODE=enforce")
 	}
+	settings.Operators = cfg.Operators
 	runtime, err := accounting.OpenRuntime(context.Background(), settings, cfg.PolicyRuntimeCeilings)
 	if err != nil {
 		return nil, err

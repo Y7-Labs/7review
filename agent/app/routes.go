@@ -31,6 +31,7 @@ func (s *Server) routes() {
 	}
 
 	s.mux.HandleFunc("/approve", s.requireAuth(s.handleApprove))
+	s.mux.HandleFunc("/operator/attempt", s.handleOperatorAttempt)
 	s.mux.HandleFunc("/publish/final", s.requireAuth(s.handlePublishFinal))
 	s.mux.HandleFunc("/runs", s.requireAuth(s.handleRuns))
 	s.mux.HandleFunc("/inbox", s.requireAuth(s.handleInbox))
