@@ -728,8 +728,11 @@ Schema v11 now links a checked formatter parent to exactly one prepared child,
 all reservations and an action-confined job epoch in one commit. The role route,
 output limit and prior context are frozen rather than reselected from current
 configuration. Linked child reclaim and Begin recheck the parent proof. General
-tool/live-pipeline cursor unification, terminal projection and operator controls
+tool/batch cursor unification, terminal projection and operator controls
 remain open; formatter advancement does not complete or publish a job.
+Canonical live formatter paths now reference only committed parent results and
+hand off through the same durable transition as recovery. The old frame cannot
+send a parallel legacy formatter request or finish the job with its revoked epoch.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

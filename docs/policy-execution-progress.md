@@ -938,6 +938,34 @@ This is an incremental behavior ledger, not a completion declaration.
   operator controls and safe cancellation/refund. No job completion, approval,
   publication or hold refund is claimed; ceilings and alpha remain incomplete.
 
+### Slice 58: Committed Live Result References
+
+- A red test requires a live action/request/response reference only after durable
+  outcome recording succeeds. Failed outcome commits cannot leave a reference
+  that might authorize continuation. Parallel callers use the context mutex.
+- References are detached across context clones and are transient, not serialized
+  into Source, prompts or authority. Orchestrator/review race tests pass.
+
+### Slice 59: Live Formatter Handoff Uses The Recovery Cursor
+
+- A red service test requires normal canonical execution to hand off at formatter
+  repair, not issue a new random legacy call. Findings/coverage repair now use the
+  committed parent reference, shared local reducer and guarded advancement API.
+- Parent digests, phase, run, attempt and execution deadline must match. Missing
+  authority or bad receipts are terminal budget errors, never fallback authority.
+  Handoff is a distinct result: the live frame is not falsely failed/completed,
+  and the inbox worker does not call FinishInbox with a revoked parent token.
+- The fresh-service test completes the stored child without SCM/pipeline replay.
+  A barrier-controlled overlap pauses live advancement while recovery creates and
+  executes the child, then releases the old frame. Two total calls, one child,
+  exact holds and refusal of old-token completion are verified under the race detector.
+- Full PostgreSQL, broad app/pipeline/orchestrator/review/accounting race suites,
+  vet and formatting pass. No schema change; current explicit version remains 11.
+- Still open: durable terminal projection, batch manifests/backlog ownership,
+  committed tool observations/continuation, authenticated operator controls and
+  safe cancellation/refund. Handed-off frames must be replaced by authoritative
+  stored results, never replayed. Ceilings and alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

@@ -55,13 +55,16 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-57. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-59. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
 duplicate-worker tests. Eligible formatter artifacts now advance atomically to
 one confined prepared child, with frozen routing, all holds and a new job epoch.
-They never widen ownership or finish a job. Live/recovered cursor and batch-backlog unification,
+They never widen ownership or finish a job. Canonical live formatter calls now
+hand off through the same durable parent/child transition instead of sending a
+legacy duplicate. A live/recovery overlap test verifies one child and revoked
+old-owner completion. Batch-backlog and tool-cursor unification,
 tool continuation, terminal projection, authenticated controls and safe
 cancellation/refund remain open. The v8-to-v9, v9-to-v10 and v10-to-v11 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires

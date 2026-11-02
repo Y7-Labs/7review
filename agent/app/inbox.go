@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/review"
 )
@@ -157,6 +158,10 @@ func (s *Server) startInboxWorkers() {
 				}
 				if errors.Is(err, errInboxPanic) {
 					log.Printf("[inbox] worker panic left execution uncertain: run=%s", item.RunID)
+					timer.Reset(time.Millisecond)
+					continue
+				}
+				if errors.Is(err, orchestrator.ErrDurableContinuation) {
 					timer.Reset(time.Millisecond)
 					continue
 				}

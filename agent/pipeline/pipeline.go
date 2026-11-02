@@ -259,6 +259,9 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string, accep
 
 	findings, coverage, parseStatus, parseWarning, err := p.runReview(ctx, run.ID, rc)
 	if err != nil {
+		if errors.Is(err, orchestrator.ErrDurableContinuation) {
+			return err
+		}
 		rc.Source.Model = modelReviewAudit(rc, nil, nil, parseStatus, err.Error())
 		return p.failModelReview(ctx, run.ID, rc, err)
 	}
@@ -285,6 +288,9 @@ func (p *Pipeline) run(ctx context.Context, req review.Request, id string, accep
 	coverageErrors := coreSkillCoverageErrors(rc.Source.SkillActivations, rc.Source.SkillCoverage)
 	if len(coverageErrors) > 0 {
 		repairedCoverage, repairErr := p.repairSkillCoverage(ctx, rc)
+		if errors.Is(repairErr, orchestrator.ErrDurableContinuation) {
+			return repairErr
+		}
 		if terminalModelError(repairErr) {
 			return p.failModelReview(ctx, run.ID, rc, repairErr)
 		}
@@ -422,7 +428,7 @@ func mergeEffectivePolicyActivation(activations []review.SkillActivation, projec
 }
 
 func terminalModelError(err error) bool {
-	return orchestrator.IsBudgetError(err) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+	return orchestrator.IsBudgetError(err) || errors.Is(err, orchestrator.ErrDurableContinuation) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (p *Pipeline) failModelReview(ctx context.Context, runID string, rc *review.Context, cause error) error {
@@ -1431,6 +1437,9 @@ func (p *Pipeline) repairFindingsJSON(ctx context.Context, rc *review.Context, r
 	if p.Orchestrator == nil {
 		return "", "", fmt.Errorf("pipeline: orchestrator is not configured")
 	}
+	if canonicalModelContinuation(ctx, rc) {
+		return "", "", p.Orchestrator.HandoffModelContinuation(ctx, rc, review.ModelReductionNeedsFindingsRepair, ModelReducerV1{}, ModelContinuationV1{})
+	}
 	checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelRepairFindings, PriorCoverage: coverage})
 	if err != nil {
 		return "", "", err
@@ -1446,6 +1455,9 @@ func (p *Pipeline) repairFindingsJSON(ctx context.Context, rc *review.Context, r
 func (p *Pipeline) repairSkillCoverage(ctx context.Context, rc *review.Context) ([]review.SkillCoverage, error) {
 	if p.Orchestrator == nil {
 		return nil, fmt.Errorf("pipeline: orchestrator is not configured")
+	}
+	if canonicalModelContinuation(ctx, rc) {
+		return nil, p.Orchestrator.HandoffModelContinuation(ctx, rc, review.ModelReductionNeedsCoverageRepair, ModelReducerV1{}, ModelContinuationV1{})
 	}
 	checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelRepairCoverage, PriorCoverage: rc.Source.SkillCoverage})
 	if err != nil {
@@ -1464,6 +1476,10 @@ func (p *Pipeline) repairSkillCoverage(ctx context.Context, rc *review.Context) 
 
 func maxReviewToolRounds() int {
 	return review.MaxModelToolRounds
+}
+
+func canonicalModelContinuation(ctx context.Context, rc *review.Context) bool {
+	return rc != nil && rc.Source.Execution.Mode == review.ExecutionService && rc.Source.Execution.Persistence == review.PersistenceDurableService && review.JobClaimFromContext(ctx) != nil
 }
 
 func (p *Pipeline) modelCheckpointContext(ctx context.Context, rc *review.Context, cursor review.ModelCursor) (context.Context, error) {

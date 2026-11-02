@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -89,6 +90,34 @@ func TestInboxAutomaticallyContinuesRecoveredFindingsRepairWithoutPipelineReplay
 }
 
 func exercisePreparedActionRecovery(t *testing.T, repair bool) {
+	exerciseModelContinuation(t, repair, true, false)
+}
+
+func TestInboxLiveFormatterHandsOffToSameDurableChildAsRecovery(t *testing.T) {
+	exerciseModelContinuation(t, true, false, false)
+}
+
+func TestInboxLiveAndRecoveryRaceReuseOneFormatterChild(t *testing.T) {
+	exerciseModelContinuation(t, true, false, true)
+}
+
+type pausedContinuationAuthority struct {
+	*accounting.Authority
+	ready, release chan struct{}
+	once           sync.Once
+}
+
+func (a *pausedContinuationAuthority) AdvanceModelContinuation(ctx context.Context, id string, builder orchestrator.ModelContinuationBuilder) (orchestrator.PreparedAction, error) {
+	a.once.Do(func() { close(a.ready) })
+	select {
+	case <-ctx.Done():
+		return orchestrator.PreparedAction{}, ctx.Err()
+	case <-a.release:
+	}
+	return a.Authority.AdvanceModelContinuation(ctx, id, builder)
+}
+
+func exerciseModelContinuation(t *testing.T, repair, crash, race bool) {
 	s, db, dsn := inboxServerDSN(t)
 	w := inboxWebhook(t, s, inboxBody, "prepared-restart")
 	if w.Code != 202 {
@@ -114,17 +143,53 @@ func exercisePreparedActionRecovery(t *testing.T, repair bool) {
 	build := func(authority orchestrator.BudgetAuthority) *orchestrator.Orchestrator {
 		return orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("pinned", "pinned", p.Name()), map[string]orchestrator.LLMProvider{p.Name(): p}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(authority))
 	}
-	s.pipeline.Orchestrator = build(crashAfterPreparation{a})
+	var paused *pausedContinuationAuthority
+	if race {
+		paused = &pausedContinuationAuthority{Authority: a, ready: make(chan struct{}), release: make(chan struct{})}
+		s.pipeline.Orchestrator = build(paused)
+	} else if crash {
+		s.pipeline.Orchestrator = build(crashAfterPreparation{a})
+	} else {
+		s.pipeline.Orchestrator = build(a)
+	}
 	item, err := a.ClaimInbox(context.Background())
 	if err != nil || item == nil {
 		t.Fatalf("claim: %#v %v", item, err)
 	}
 	ctx := review.WithJobClaim(context.Background(), review.JobClaim{RunID: item.RunID, Token: item.ClaimToken})
-	if err = s.runInboxItem(ctx, item.Request, item.RunID); !errors.Is(err, errInboxPanic) {
-		t.Fatalf("missing crash: %v", err)
+	var liveDone chan error
+	joined := false
+	if race {
+		liveDone = make(chan error, 1)
+		go func() { liveDone <- s.runInboxItem(ctx, item.Request, item.RunID) }()
+		defer func() {
+			if !joined {
+				close(paused.release)
+				select {
+				case <-liveDone:
+				case <-time.After(5 * time.Second):
+					t.Error("live frame did not stop")
+				}
+			}
+		}()
+		select {
+		case <-paused.ready:
+		case <-time.After(5 * time.Second):
+			t.Fatal("live frame did not reach shared advancement")
+		}
+	} else {
+		err = s.runInboxItem(ctx, item.Request, item.RunID)
 	}
-	if p.calls.Load() != 0 {
-		t.Fatal("preparation invoked provider")
+	if race {
+		if p.calls.Load() != 1 {
+			t.Fatal("live frame sent child before shared advancement")
+		}
+	} else if crash {
+		if !errors.Is(err, errInboxPanic) || p.calls.Load() != 0 {
+			t.Fatalf("missing preparation crash: calls=%d err=%v", p.calls.Load(), err)
+		}
+	} else if !errors.Is(err, orchestrator.ErrDurableContinuation) || p.calls.Load() != 1 {
+		t.Fatalf("live formatter bypassed durable handoff: calls=%d err=%v", p.calls.Load(), err)
 	}
 	// Fresh service and empty memory store: only the stored action is executable.
 	restarted := newInboxServer(t, dsn)
@@ -149,6 +214,23 @@ func exercisePreparedActionRecovery(t *testing.T, repair bool) {
 	}
 	restarted.inboxCancel()
 	restarted.inboxWorkers.Wait()
+	if race {
+		close(paused.release)
+		err = <-liveDone
+		joined = true
+		if !errors.Is(err, orchestrator.ErrDurableContinuation) {
+			t.Fatalf("losing live frame did not hand off: %v", err)
+		}
+		if err = a.FinishInbox(context.Background(), item.RunID, item.ClaimToken, true); err == nil {
+			t.Fatal("old live epoch finished continued work")
+		}
+	}
+	if !crash {
+		live, err := s.pipeline.Jobs.Get(context.Background(), item.RunID)
+		if err != nil || live.Status != pipeline.StatusRunning || live.HILApproved || live.FinalReport != "" {
+			t.Fatalf("handed-off frame falsely failed, completed or approved: %#v %v", live, err)
+		}
+	}
 	if indexed != want || reduced != 1 || p.calls.Load() != int32(want) {
 		t.Fatalf("automatic recovery/reduction missing: results=%d reductions=%d calls=%d", indexed, reduced, p.calls.Load())
 	}

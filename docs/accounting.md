@@ -302,12 +302,28 @@ death after prepare/claim/sending, competing workers and changed proofs/config
 are exercised against PostgreSQL and controlled providers. Consumed parent plans
 are excluded from `/inbox` pending-continuation counts.
 
-This does not complete general continuation. Direct live-pipeline child creation
-must be unified with the same durable cursor protocol; unlinked prepared work after
+Canonical live formatter calls now use the same durable transition as recovery.
+After a response is durably recorded, the live context retains a detached transient
+action/request/response reference. When findings or coverage repair is needed,
+the live path indexes/reduces that parent, verifies the matching stored artifact
+and advances through the shared builder. It does not issue a separate formatter
+call or substitute a changed role configuration. If recovery already advanced,
+the same child descriptor is reused.
+
+The live frame then hands off rather than pretending it still owns the job.
+The inbox worker must not finish or fail the job with the revoked token, and the
+frame stays nonterminal without approval/publication. A barrier-controlled race
+lets recovery advance/execute first, then releases the old live frame; only one
+child, two total calls and the original holds are retained. Invalid references,
+parent phase/digests/run/deadline or missing authority fail closed without legacy
+reservation fallback. Ephemeral/legacy execution retains its separate path.
+
+This does not complete general continuation. Unlinked prepared work after
 external progress still fails closed. Prepared batch backlogs need the same
 cursor/manifest ownership rather than broad job replay. Tool observations/continuations and durable
 terminal run projection also remain open, alongside authenticated controls and
-safe cancellation/refund. No formatter transition finishes, approves or publishes
+safe cancellation/refund. Durable terminal projection must replace handed-off
+frames with the authoritative result, not resume the old frame. No formatter transition finishes, approves or publishes
 the review, and existing usage holds are not refunded.
 
 ## Token And Price Qualification
