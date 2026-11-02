@@ -107,6 +107,9 @@ var migration016 string
 //go:embed migration017.sql
 var migration017 string
 
+//go:embed migration018.sql
+var migration018 string
+
 // Migrate is an explicit operator operation, not a fallback on runtime failure.
 func Migrate(ctx context.Context, db *sql.DB) error {
 	for _, setting := range []string{"fsync", "full_page_writes"} {
@@ -344,7 +347,21 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		}
 		version = 17
 	}
-	if version != 17 {
+	if version == 17 {
+		for _, table := range []string{"budget_unused_releases", "budget_unused_release_scopes"} {
+			if err = requireRelation(ctx, tx, table); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.ExecContext(ctx, migration018); err != nil {
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_schema SET version=18 WHERE singleton=true`); err != nil {
+			return err
+		}
+		version = 18
+	}
+	if version != 18 {
 		return errors.New("incompatible accounting schema")
 	}
 	if err = checkModelCompletionStorage(ctx, tx); err != nil {
@@ -906,7 +923,7 @@ func (a *Authority) begin(ctx context.Context) (*sql.Tx, error) {
 		tx.Rollback()
 		return nil, err
 	}
-	if version != 17 {
+	if version != 18 {
 		tx.Rollback()
 		return nil, errors.New("incompatible accounting schema")
 	}

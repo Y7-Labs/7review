@@ -20,7 +20,14 @@ import (
 type canonicalServiceSCM struct{}
 
 func (canonicalServiceSCM) Enrich(_ context.Context, r review.Request) (*review.SCMContext, error) {
-	return &review.SCMContext{Provider: r.Provider, ProjectID: r.ProjectID, ChangeID: r.ChangeID, DiffRefs: review.DiffRefs{BaseSHA: "base", HeadSHA: "head"}, Files: []review.ChangedFile{{NewPath: "service.go", Patch: "+change", Status: "modified"}}}, nil
+	base, head := r.TargetSHA, r.SourceSHA
+	if base == "" {
+		base = "base"
+	}
+	if head == "" {
+		head = "head"
+	}
+	return &review.SCMContext{Provider: r.Provider, ProjectID: r.ProjectID, ChangeID: r.ChangeID, DiffRefs: review.DiffRefs{BaseSHA: base, HeadSHA: head}, Files: []review.ChangedFile{{NewPath: "service.go", Patch: "+change", Status: "modified"}}}, nil
 }
 
 type canonicalServicePolicy struct{ limits review.ResourceLimits }

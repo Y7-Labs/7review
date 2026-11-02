@@ -208,16 +208,6 @@ func (a *Authority) admitTx(ctx context.Context, tx *sql.Tx, input review.Admiss
 	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_attempts(id,binding_digest,binding,tracking_id) VALUES($1,$2,$3,$4)`, id, hash(binding), binding, nullableTracking(tracking, trackID)); err != nil {
 		return review.IntakeReceipt{}, err
 	}
-	if tracking {
-		if predecessor.Valid {
-			if _, err = tx.ExecContext(ctx, `UPDATE budget_attempts SET active=false WHERE id=$1`, predecessor.String); err != nil {
-				return review.IntakeReceipt{}, err
-			}
-		}
-		if _, err = tx.ExecContext(ctx, `UPDATE budget_heads SET generation=$2,current_attempt_id=$3 WHERE id=$1`, trackID, attempt.Generation, id); err != nil {
-			return review.IntakeReceipt{}, err
-		}
-	}
 	receipt := review.IntakeReceipt{Attempt: attempt, Execution: input.Execution, Attestation: input.Attestation, Policy: review.Source{Policy: input.Policy}.Clone().Policy}
 	receiptJSON, err = json.Marshal(receipt)
 	if err != nil {
@@ -225,6 +215,20 @@ func (a *Authority) admitTx(ctx context.Context, tx *sql.Tx, input review.Admiss
 	}
 	if _, err = tx.ExecContext(ctx, `INSERT INTO budget_intakes(id,fingerprint,attempt_id,receipt) VALUES($1,$2,$3,$4)`, key, fingerprint, id, receiptJSON); err != nil {
 		return review.IntakeReceipt{}, err
+	}
+	if tracking {
+		if predecessor.Valid {
+			result, updateErr := tx.ExecContext(ctx, `UPDATE budget_attempts SET active=false,superseded_by_attempt_id=$2,supersession_intake_id=$3 WHERE id=$1 AND superseded_by_attempt_id IS NULL AND supersession_intake_id IS NULL`, predecessor.String, id, key)
+			if updateErr != nil {
+				return review.IntakeReceipt{}, updateErr
+			}
+			if affected, affectedErr := result.RowsAffected(); affectedErr != nil || affected != 1 {
+				return review.IntakeReceipt{}, ErrIntegrity
+			}
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_heads SET generation=$2,current_attempt_id=$3 WHERE id=$1`, trackID, attempt.Generation, id); err != nil {
+			return review.IntakeReceipt{}, err
+		}
 	}
 	if err = linkJob(ctx, tx, input, receipt); err != nil {
 		return review.IntakeReceipt{}, err

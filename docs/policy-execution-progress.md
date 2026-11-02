@@ -1389,7 +1389,7 @@ This is an incremental behavior ledger, not a completion declaration.
   outcome, expired work/current config changes, damaged evidence, and preserved
   other model holds/snapshot charges. Qualified usage contradicting a released
   action is quarantined and blocks all original scopes, never silently settled.
-- Explicit schema v17 has a populated rollback/retry rehearsal preserving
+- At this phase, explicit schema v17 had a populated rollback/retry rehearsal preserving
   cancellation receipts, sending/prepared states, ownership and original holds.
   Migration never infers release or credits old reservations. Historical upgrade
   fixtures, including v8-to-v9, remove later objects before rehearsal. No deployed
@@ -1429,15 +1429,40 @@ This is an incremental behavior ledger, not a completion declaration.
 - A Compose contract test caught missing mapping forwarding. The explicit service
   environment now forwards the mapping and dedicated credential, never the full
   host environment. HTTPS is required for remote canonical clients; local HTTP
-  remains loopback-only. No schema change: explicit schema v17 is still required,
-  and no deployed database/container was changed.
+  remains loopback-only. This phase made no schema change; section 75 advances
+  the explicit runtime requirement to v18. No deployed database/container was changed.
 - Verification: the full PostgreSQL-backed suite, final focused PostgreSQL-backed
   canonical/handler/client race tests, complete CLI/client/domain race tests,
   vet, formatting, diff checks and both base/local Compose validation pass.
   No live provider qualification or deployed-container upgrade is implied.
-- Other canonical human commands, superseded-only release, incident adjustments
+- Other canonical human commands, incident adjustments
   and broader tool/CPU/live operational/provider qualification remain open.
   Ceilings and alpha remain unfinished.
+
+### 75. Exact Supersession Proof And Unused Reservation Release
+
+- Red/green PostgreSQL tests create a real successor aggregate and require the old
+  prepared action to release only through its exact immutable successor attempt
+  and intake receipt. `active=false` and a merely newer head are not authority.
+- Intake now commits predecessor closure, exact successor/intake links and the
+  generation pointer in one transaction. Automatic maintenance verifies that
+  chain, frozen route and upper bound, aggregate binding, all three original
+  scopes, and an unsent fenced lease before recording `not_executed`.
+- The same transaction terminalizes only the old job/inbox as `superseded`, clears
+  stale ownership, records a version-2 release proof and preserves original holds.
+  Sending, uncertain, recorded and settled actions remain charged and are never
+  converted to unused work. Late attributable accounting remains permitted.
+- Restart replay, duplicate recovery workers, stale owners, deferred commit
+  failure and app-level restart are covered. The app test accepts two real webhook
+  generations and observes no provider call or whole-job replay during cleanup.
+- Schema v18 adds the exact predecessor/successor evidence and typed release cause.
+  Its v17 upgrade rehearsal rolls back all DDL on deferred commit failure, retries
+  idempotently, preserves legacy v17 cancellation receipt bytes and infers no
+  historical supersession authority. No deployed database was migrated.
+- Existing cancellation proof/corruption/process-death tests remain green. Other
+  canonical human commands, arbitrary/incident adjustments, broader tool/CPU and
+  live operational/provider qualification remain open. Ceilings and alpha remain
+  unfinished.
 
 ## Method File Example
 

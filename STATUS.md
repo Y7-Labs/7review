@@ -108,7 +108,10 @@ versioned receipt, revokes the claim, disables dispatch and closes the attempt
 atomically. Sending/completion races, duplicate workers, interrupted reclaim,
 restart replay and process death/unknown commit acknowledgments are tested.
 Bounded automatic maintenance now releases the effective reservation only for
-cancelled preparations with a verified local non-execution proof. It preserves
+cancelled or exactly superseded preparations with a verified local non-execution
+proof. Supersession authority is the immutable successor attempt and exact intake
+receipt committed with the generation pointer; inactive status alone grants no
+credit. It preserves
 original scope rows and lease evidence; every budget read verifies the proof
 before treating that exact amount as unused. Damaged attribution/proof and
 contradictory qualified usage fail closed across all three scopes. Sending and
@@ -120,11 +123,11 @@ fallback, alias resolution, redirects or conflict retargeting. Lost HTTP
 acknowledgment is reconciled through exact command replay; console interruptions
 and late model events do not assert rollback or overwrite operator receipts.
 Compose now forwards the mapping and dedicated credential explicitly. Other
-canonical commands, superseded-only release and qualification remain open; this
+canonical commands and qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v16-to-v17 migrations
+The v8-to-v9 through v17-to-v18 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v17 before restart. No deployed database was changed.
+explicit migration to schema v18 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

@@ -112,7 +112,7 @@ func (s *Server) startInboxWorkers() {
 					return
 				}
 				unusedCtx, unusedCancel := context.WithTimeout(ctx, 5*time.Second)
-				_, unusedErr := s.accountingRuntime.Authority.RecoverCancelledPrepared(unusedCtx, 8)
+				_, unusedErr := s.accountingRuntime.Authority.RecoverUnusedPrepared(unusedCtx, 8)
 				unusedCancel()
 				if unusedErr != nil {
 					if ctx.Err() == nil {

@@ -9,11 +9,30 @@ import (
 
 func dropUnusedSchemaForMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	dropSupersessionSchemaForMigration(t, db)
 	var count int
 	if err := db.QueryRow(`SELECT count(*) FROM budget_unused_releases`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("cannot erase release proofs for historical fixture: %d %v", count, err)
 	}
 	if _, err := db.Exec(`ALTER TABLE budget_actions DROP CONSTRAINT budget_actions_unused_release; ALTER TABLE budget_actions DROP COLUMN unused_release_id; DROP TABLE budget_unused_release_scopes,budget_unused_releases; ALTER TABLE budget_actions DROP CONSTRAINT budget_actions_state_check; ALTER TABLE budget_actions ADD CONSTRAINT budget_actions_state_check CHECK(state IN ('prepared','sending','uncertain','result_recorded'))`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func dropSupersessionSchemaForMigration(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var columns int
+	if err := db.QueryRow(`SELECT count(*) FROM information_schema.columns WHERE table_schema=current_schema() AND table_name='budget_unused_releases' AND column_name='cause'`).Scan(&columns); err != nil {
+		t.Fatal(err)
+	}
+	if columns == 0 {
+		return
+	}
+	var superseded int
+	if err := db.QueryRow(`SELECT count(*) FROM budget_unused_releases WHERE cause='superseded'`).Scan(&superseded); err != nil || superseded != 0 {
+		t.Fatalf("cannot erase supersession proofs for historical fixture: %d %v", superseded, err)
+	}
+	if _, err := db.Exec(`ALTER TABLE budget_unused_releases DROP CONSTRAINT budget_unused_release_authority; ALTER TABLE budget_unused_releases DROP COLUMN cause,DROP COLUMN superseding_attempt_id,DROP COLUMN supersession_intake_id; ALTER TABLE budget_unused_releases ALTER COLUMN cancel_command_id SET NOT NULL; ALTER TABLE budget_attempts DROP CONSTRAINT budget_attempts_supersession; ALTER TABLE budget_attempts DROP COLUMN superseded_by_attempt_id,DROP COLUMN supersession_intake_id; ALTER TABLE budget_inbox DROP CONSTRAINT budget_inbox_state_check; ALTER TABLE budget_inbox ADD CONSTRAINT budget_inbox_state_check CHECK(state IN ('pending','running','completed','failed','expired','uncertain','cancelled'))`); err != nil {
 		t.Fatal(err)
 	}
 }

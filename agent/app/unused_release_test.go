@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +65,53 @@ func TestInboxAutomaticallyReleasesCancelledUnusedPreparationAfterRestartWithout
 	var unowned bool
 	if err = db.QueryRow(`SELECT (SELECT count(*) FROM budget_unused_releases),(SELECT count(*) FROM budget_holds),j.control_version,i.state,i.claim_token IS NULL FROM budget_jobs j JOIN budget_inbox i USING(run_id)`).Scan(&proofs, &holds, &version, &state, &unowned); err != nil || proofs != 1 || holds != 3 || version != 3 || state != "cancelled" || !unowned || p.calls.Load() != 0 {
 		t.Fatalf("cleanup resumed/sent/recharged work: proof=%d holds=%d version=%d state=%s unowned=%v calls=%d err=%v", proofs, holds, version, state, unowned, p.calls.Load(), err)
+	}
+}
+
+func TestInboxAutomaticallyReleasesSupersededUnusedPreparationAfterRestartWithoutProviderIO(t *testing.T) {
+	s, db, dsn := inboxServerDSN(t)
+	accepted := inboxWebhook(t, s, inboxBody, "superseded-unused-old")
+	if accepted.Code != http.StatusAccepted {
+		t.Fatalf("accept old: %d %s", accepted.Code, accepted.Body.String())
+	}
+	a, p, build := qualifiedToolService(t, s, db)
+	s.pipeline.Orchestrator = build(crashAfterPreparation{a}, "pinned")
+	item, err := a.ClaimInbox(context.Background())
+	if err != nil || item == nil {
+		t.Fatalf("claim old: %+v %v", item, err)
+	}
+	ctx := review.WithJobClaim(context.Background(), review.JobClaim{RunID: item.RunID, Token: item.ClaimToken})
+	if err = s.runInboxItem(ctx, item.Request, item.RunID); !errors.Is(err, errInboxPanic) {
+		t.Fatalf("did not lose old frame after durable preparation: %v", err)
+	}
+	newBody := strings.Replace(inboxBody, `"head":{"sha":"head"}`, `"head":{"sha":"head-next"}`, 1)
+	superseding := inboxWebhook(t, s, newBody, "superseded-unused-new")
+	if superseding.Code != http.StatusAccepted {
+		t.Fatalf("accept successor: %d %s", superseding.Code, superseding.Body.String())
+	}
+	s.Close()
+	restarted := newInboxServer(t, dsn)
+	restarted.startInboxWorkers()
+	deadline := time.Now().Add(5 * time.Second)
+	var released bool
+	for time.Now().Before(deadline) {
+		if err = db.QueryRow(`SELECT EXISTS(SELECT 1 FROM budget_actions WHERE state='not_executed')`).Scan(&released); err != nil {
+			t.Fatal(err)
+		}
+		if released {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	restarted.Close()
+	if !released {
+		t.Fatal("superseded unused preparation was not recovered")
+	}
+	var cause, state, phase string
+	var holds, proofs int
+	var dispatch, unowned bool
+	if err = db.QueryRow(`SELECT r.cause,i.state,j.phase,j.dispatch_allowed,i.claim_token IS NULL,(SELECT count(*) FROM budget_holds WHERE action_id=r.action_id),(SELECT count(*) FROM budget_unused_releases) FROM budget_unused_releases r JOIN budget_actions a ON a.id=r.action_id JOIN budget_jobs j ON j.attempt_id=a.attempt_id JOIN budget_inbox i USING(run_id) WHERE convert_from(j.receipt,'UTF8')::jsonb->>'Duplicate'='false'`).Scan(&cause, &state, &phase, &dispatch, &unowned, &holds, &proofs); err != nil || cause != "superseded" || state != "superseded" || phase != "finished" || dispatch || !unowned || holds != 3 || proofs != 1 || p.calls.Load() != 0 {
+		t.Fatalf("supersession cleanup resumed/sent/recharged work: %s %s %s %v %v %d %d calls=%d err=%v", cause, state, phase, dispatch, unowned, holds, proofs, p.calls.Load(), err)
 	}
 }
 
