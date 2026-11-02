@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
-	"time"
 
 	"github.com/Y4NN777/7review/agent/review"
 )
@@ -14,22 +13,7 @@ import (
 var ErrOperatorAttemptNotFound = errors.New("operator attempt not found")
 var ErrOperatorAttemptInvalid = errors.New("exact attempt ID required")
 
-// OperatorAttemptView is a durable status projection, not a dispatch permit,
-// validated assessment. ControlVersion is distinct from immutable admission
-// identity and advances on terminal/control dispositions, not worker stages.
-type OperatorAttemptView struct {
-	AttemptID                 string    `json:"attempt_id"`
-	RunID                     string    `json:"run_id"`
-	Revision                  string    `json:"revision"`
-	InboxState                string    `json:"inbox_state"`
-	JobPhase                  string    `json:"job_phase"`
-	Current                   bool      `json:"current"`
-	Active                    bool      `json:"active"`
-	Deadline                  time.Time `json:"deadline"`
-	ControlVersion            uint64    `json:"control_version"`
-	ReleasedUnusedActions     int64     `json:"released_unused_actions"`
-	RetainedModelReservations int64     `json:"retained_model_reservations"`
-}
+type OperatorAttemptView = review.OperatorAttemptView
 
 type operatorAttemptRecord struct {
 	view          OperatorAttemptView
