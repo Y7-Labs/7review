@@ -207,6 +207,27 @@ requires acknowledged service handoff; a CI retry cannot masquerade as durable
 service ownership. Unused and unknown holds are retained until a qualified
 settlement or future verified not-executed operation, not released on expiry.
 
+### Immutable Model Continuation Input
+
+Pipeline actions now bind an optional version-1 model checkpoint into the full
+immutable action digest. It contains the detached pre-call `Source`, prior raw
+responses and a typed batch/tool-round/findings-repair/coverage-repair cursor.
+Batch slots share one frozen pre-batch input, and live responses merge by batch
+index rather than completion order. Serial mode processes every batch too.
+Default validator version/confidence settings are frozen; custom validators have
+no qualified deterministic validation contract. No current profile is substituted
+for a stored validation setting during recovery.
+
+Checkpoints are bounded at 16 MiB and complete action records at 24 MiB. Unknown
+versions, cursor contradictions and changed attempt/execution/policy/SCM bindings
+fail before holds are created. Claim/Begin recheck the stored checkpoint, and
+reclaim returns its exact original bytes. Legacy missing checkpoints are not
+invented from current files and grant no validated-continuation authority.
+
+This is the durable input for a future versioned local reducer, not that reducer
+or an unrestricted scheduling grant. The result journal remains unvalidated, and
+the recovery restriction is not cleared by merely persisting this checkpoint.
+
 ## Token And Price Qualification
 
 There are no production route defaults or hardcoded live prices. Trusted host

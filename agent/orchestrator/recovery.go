@@ -78,6 +78,9 @@ func (o *Orchestrator) recoverPrepared(ctx context.Context, a preparedRecoveryAu
 		return errors.New("invalid recovered ownership receipt")
 	}
 	i := c.Intent
+	if err := ValidateModelCheckpoint(*i); err != nil {
+		return err
+	}
 	if i.ActionID != p.ID || i.RequestDigest != p.RequestDigest || i.Job == nil || c.Job == nil || i.Job.RunID != c.Job.RunID || c.Job.Token == "" || i.Execution.DeadlineAt.IsZero() {
 		return errors.New("recovered action attribution mismatch")
 	}

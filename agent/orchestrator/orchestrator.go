@@ -242,11 +242,15 @@ func (o *Orchestrator) CompleteParallel(
 
 	if !roleCfg.Parallel || len(batches) == 1 {
 		for index, batch := range batches {
+			batchCtx, err := review.WithModelBatch(ctx, index, len(batches))
+			if err != nil {
+				return err
+			}
 			step := "step5"
 			if len(batches) > 1 {
 				step = fmt.Sprintf("step5_batch%d", index+1)
 			}
-			result, err := o.Complete(ctx, rc, RoleReasoner, step, systemPrompt, buildUserMsg(batch), tools...)
+			result, err := o.Complete(batchCtx, rc, RoleReasoner, step, systemPrompt, buildUserMsg(batch), tools...)
 			if err != nil {
 				return err
 			}
@@ -332,7 +336,11 @@ func processBatch(
 		MaxTokens:    roleCfg.MaxTokens,
 		Tools:        append([]ToolDefinition(nil), tools...),
 	}
-	result, err := o.dispatch(ctx, rc, spec, RoleReasoner, fmt.Sprintf("step5_batch%d", batchIdx+1), req, func(callCtx context.Context) (string, error) { return provider.Complete(callCtx, req) })
+	batchCtx, err := review.WithModelBatch(ctx, batchIdx, batchCount)
+	var result string
+	if err == nil {
+		result, err = o.dispatch(batchCtx, rc, spec, RoleReasoner, fmt.Sprintf("step5_batch%d", batchIdx+1), req, func(callCtx context.Context) (string, error) { return provider.Complete(callCtx, req) })
+	}
 	if err != nil {
 		mu.Lock()
 		if *firstErr == nil {

@@ -349,6 +349,18 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 	if fenced != 1 {
 		p.t.Errorf("provider preceded fenced sending commit: %d", fenced)
 	}
+	var raw []byte
+	if err := p.db.QueryRowContext(ctx, `SELECT request FROM budget_actions WHERE attempt_id=$1 AND state='sending'`, p.attempt).Scan(&raw); err != nil {
+		return "", err
+	}
+	var intent orchestrator.DispatchIntent
+	if err := json.Unmarshal(raw, &intent); err != nil {
+		return "", err
+	}
+	cp, err := review.DecodeModelCheckpoint(intent.ModelCheckpoint)
+	if err != nil || cp.Source.Attempt.AttemptID != p.attempt || cp.Cursor.Phase != review.ModelReviewBatches || cp.Cursor.BatchCount != 1 || cp.Cursor.BatchIndex != 0 || cp.Validation == nil || cp.Validation.MinConfidence != 0.45 {
+		p.t.Errorf("provider preceded immutable continuation checkpoint: %#v %v", cp.Cursor, err)
+	}
 	return "[]", nil
 }
 

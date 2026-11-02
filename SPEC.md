@@ -716,6 +716,9 @@ controlled providers. Bounded inbox workers automatically reclaim eligible
 prepared actions using their stored invocation mode and exact request, recording
 responses as unvalidated without replaying the pipeline or marking completion.
 Production route qualification and validated continuation remain open.
+Pipeline actions also freeze versioned pre-call Source/raw-response/cursor and
+default-validation inputs. These are checked immutable continuation inputs, not
+validated results or authority to clear a recovered job's action restriction.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

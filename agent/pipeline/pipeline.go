@@ -1362,7 +1362,11 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 		maxTokens = p.Config.MaxDiffTokens
 	}
 	batches := chunkDiff(rc.Diff.Files, maxTokens)
-	err := p.Orchestrator.CompleteParallel(ctx, rc, reviewSystemPrompt(rc), batches, func(batch []review.FileDiff) string {
+	checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelReviewBatches, BatchCount: len(batches)})
+	if err != nil {
+		return nil, nil, "error", "", err
+	}
+	err = p.Orchestrator.CompleteParallel(checkpointCtx, rc, reviewSystemPrompt(rc), batches, func(batch []review.FileDiff) string {
 		return reviewUserMessage(rc, batch)
 	}, reasonerToolDefinitions(rc)...)
 	if err != nil {
@@ -1376,7 +1380,11 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 		rc.Source.ToolRequests = append(rc.Source.ToolRequests, toolRequests...)
 		observations := p.executeReviewToolRequests(ctx, runID, rc, round, toolRequests)
 		rc.Source.ToolObservations = append(rc.Source.ToolObservations, observations...)
-		nextRaw, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleReasoner, fmt.Sprintf("tool_augmented_review_round_%d", round), reviewSystemPrompt(rc), reviewToolFollowupUserMessage(rc, round, observations), reasonerToolDefinitions(rc)...)
+		checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelToolRound, Round: round, PriorCoverage: coverage})
+		if err != nil {
+			return nil, coverage, "error", "", err
+		}
+		nextRaw, err := p.Orchestrator.Complete(checkpointCtx, rc, orchestrator.RoleReasoner, fmt.Sprintf("tool_augmented_review_round_%d", round), reviewSystemPrompt(rc), reviewToolFollowupUserMessage(rc, round, observations), reasonerToolDefinitions(rc)...)
 		if err != nil {
 			return nil, coverage, "error", "", err
 		}
@@ -1394,7 +1402,7 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 		return findings, coverage, "tool_loop_incomplete", "model requested more tool rounds than the configured limit", nil
 	}
 	if status == "unparseable" && strings.TrimSpace(rawForRepair) != "" {
-		repaired, repairStatus, repairErr := p.repairFindingsJSON(ctx, rc, rawForRepair)
+		repaired, repairStatus, repairErr := p.repairFindingsJSON(ctx, rc, rawForRepair, coverage)
 		if terminalModelError(repairErr) {
 			return nil, coverage, "error", "", repairErr
 		}
@@ -1419,11 +1427,15 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 	return findings, coverage, status, warning, nil
 }
 
-func (p *Pipeline) repairFindingsJSON(ctx context.Context, rc *review.Context, raw string) (string, string, error) {
+func (p *Pipeline) repairFindingsJSON(ctx context.Context, rc *review.Context, raw string, coverage []review.SkillCoverage) (string, string, error) {
 	if p.Orchestrator == nil {
 		return "", "", fmt.Errorf("pipeline: orchestrator is not configured")
 	}
-	repaired, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleFormatter, "repair_findings", repairFindingsSystemPrompt(), repairFindingsUserMessage(raw))
+	checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelRepairFindings, PriorCoverage: coverage})
+	if err != nil {
+		return "", "", err
+	}
+	repaired, err := p.Orchestrator.Complete(checkpointCtx, rc, orchestrator.RoleFormatter, "repair_findings", repairFindingsSystemPrompt(), repairFindingsUserMessage(raw))
 	if err != nil {
 		return "", "", err
 	}
@@ -1435,7 +1447,11 @@ func (p *Pipeline) repairSkillCoverage(ctx context.Context, rc *review.Context) 
 	if p.Orchestrator == nil {
 		return nil, fmt.Errorf("pipeline: orchestrator is not configured")
 	}
-	repaired, err := p.Orchestrator.Complete(ctx, rc, orchestrator.RoleFormatter, "repair_skill_coverage", repairSkillCoverageSystemPrompt(), repairSkillCoverageUserMessage(rc))
+	checkpointCtx, err := p.modelCheckpointContext(ctx, rc, review.ModelCursor{Phase: review.ModelRepairCoverage, PriorCoverage: rc.Source.SkillCoverage})
+	if err != nil {
+		return nil, err
+	}
+	repaired, err := p.Orchestrator.Complete(checkpointCtx, rc, orchestrator.RoleFormatter, "repair_skill_coverage", repairSkillCoverageSystemPrompt(), repairSkillCoverageUserMessage(rc))
 	if err != nil {
 		return nil, err
 	}
@@ -1447,7 +1463,19 @@ func (p *Pipeline) repairSkillCoverage(ctx context.Context, rc *review.Context) 
 }
 
 func maxReviewToolRounds() int {
-	return 3
+	return review.MaxModelToolRounds
+}
+
+func (p *Pipeline) modelCheckpointContext(ctx context.Context, rc *review.Context, cursor review.ModelCursor) (context.Context, error) {
+	var contract *review.ModelValidation
+	if validator, ok := p.FindingValidator.(DefaultFindingValidator); ok {
+		min := validator.MinConfidence
+		if min == 0 {
+			min = 0.45
+		}
+		contract = &review.ModelValidation{Version: 1, MinConfidence: min}
+	}
+	return review.WithModelCheckpoint(review.WithModelValidation(ctx, contract), rc, cursor)
 }
 
 func markToolRequestRound(requests []review.ToolRequest, round int) []review.ToolRequest {

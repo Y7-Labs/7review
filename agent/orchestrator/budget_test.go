@@ -17,6 +17,40 @@ func budgetTestLimits() review.ResourceLimits {
 	return review.ResourceLimits{Currency: "USD", Attempt: s, Change: s, Project: s}
 }
 
+func TestEveryBatchBindsItsSlotToTheSameFrozenCheckpoint(t *testing.T) {
+	for _, parallel := range []bool{false, true} {
+		limits := budgetTestLimits()
+		a := &recordingBudget{}
+		cfg := DefaultOrchestratorConfig("review", "small", "fake")
+		role := cfg.Roles[RoleReasoner]
+		role.Parallel = parallel
+		cfg.Roles[RoleReasoner] = role
+		p := budgetProvider{call: func(context.Context, LLMRequest) (string, error) { return "[]", nil }}
+		o := NewOrchestrator(cfg, map[string]LLMProvider{"fake": p}, WithOperatorCeilings(&limits), WithBudgetAuthority(a))
+		rc := fundedContext(limits)
+		rc.AddFindings("prior")
+		ctx, err := review.WithModelCheckpoint(context.Background(), rc, review.ModelCursor{Phase: review.ModelReviewBatches, BatchCount: 2})
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = o.CompleteParallel(ctx, rc, "sys", [][]review.FileDiff{{{Path: "a.go"}}, {{Path: "b.go"}}}, func([]review.FileDiff) string { return "user" })
+		if err != nil || len(a.intents) != 2 {
+			t.Fatalf("batch dispatch: %v %d", err, len(a.intents))
+		}
+		seen := map[int]bool{}
+		for _, i := range a.intents {
+			cp, err := review.DecodeModelCheckpoint(i.ModelCheckpoint)
+			if err != nil || cp.Cursor.BatchCount != 2 || cp.Cursor.Phase != review.ModelReviewBatches || len(cp.RawResponses) != 1 || cp.RawResponses[0] != "prior" || len(cp.Source.Run.StepProviders) != 0 {
+				t.Fatalf("batch checkpoint depends on completion: %#v %v", cp, err)
+			}
+			seen[cp.Cursor.BatchIndex] = true
+		}
+		if !seen[0] || !seen[1] {
+			t.Fatalf("missing batch slots: %#v", seen)
+		}
+	}
+}
+
 // Only a reservation protocol fake: no production persistence/pricing claim.
 type recordingBudget struct {
 	mu         sync.Mutex

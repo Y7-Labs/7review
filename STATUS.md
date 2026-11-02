@@ -55,7 +55,10 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-45. The v8-to-v9 migration
+[Accounting](docs/accounting.md) and progress slices 20-48. Pipeline actions now
+persist pre-call evidence, prior responses, typed continuation slots and default
+validation settings. Local reducers and atomic next-action transitions are still
+missing; the checkpoint alone never authorizes continuation. The v8-to-v9 migration
 has a populated PostgreSQL rollback/retry rehearsal; deployed databases still
 require the explicit operator migration.
 

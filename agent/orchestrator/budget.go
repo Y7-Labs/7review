@@ -31,6 +31,7 @@ type PreparedBudgetAuthority interface {
 }
 
 type DispatchIntent struct {
+	ModelCheckpoint                                          []byte           `json:",omitempty"`
 	Invocation                                               string           `json:",omitempty"`
 	Job                                                      *review.JobClaim `json:",omitempty"`
 	ActionID                                                 string
@@ -164,6 +165,7 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 	requestDigest := "sha256:" + hex.EncodeToString(digest[:])
 	intent := DispatchIntent{Invocation: invocation, ActionID: hex.EncodeToString(actionBytes[:]), Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
 	intent.Job = review.JobClaimFromContext(ctx)
+	intent.ModelCheckpoint = review.ModelCheckpointFromContext(ctx)
 	if rc != nil {
 		intent.Attempt = rc.Source.Attempt
 		intent.Execution = rc.Source.Execution

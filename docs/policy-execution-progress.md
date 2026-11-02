@@ -799,6 +799,39 @@ This is an incremental behavior ledger, not a completion declaration.
   The current unvalidated journal cannot authorize a draft or unrestricted job
   continuation. Operator controls and cancellation/refund also remain open.
 
+### Slice 46: Serial Batch Coverage Gap
+
+- A red test showed that disabling parallelism silently discarded all but the
+  first diff batch. Serial review now dispatches every batch with a stable slot
+  name and retains partial audit evidence on failure. Empty work fails explicitly
+  rather than panicking or implying completed coverage. Orchestrator race tests pass.
+
+### Slice 47: Deterministic Parallel Reduction Order
+
+- A red reversed-completion test exposed arrival-order-dependent raw findings.
+  Workers now fill distinct batch slots and merge successful responses by index
+  after joining, including partial responses when a sibling fails. The batch plan
+  does not change with scheduling. Orchestrator race tests pass.
+
+### Slice 48: Immutable Pre-Action Model Checkpoints
+
+- A real-service red test required the continuation input to exist before provider
+  I/O. Initial batches, tool rounds and both formatter repairs now freeze the exact
+  Source, prior raw responses, typed cursor and retained coverage into the action.
+- The configured default-validator confidence/version is frozen too; custom
+  validators deliberately lack a deterministic replay qualification. Batch slots
+  share one pre-batch snapshot even when preceding serial batches finish first.
+- Reservation rejects mismatched identity, execution, policy, SCM or cursor without
+  leaking holds. Reclaim returns identical checkpoint bytes. A valid but different
+  prior-response history cannot be rebound to an existing action ID. Checkpoint
+  and full-action size bounds fail closed; absent legacy context is not reconstructed.
+- Full PostgreSQL suite, review/orchestrator/accounting/app/pipeline race suites and
+  vet passed. No schema change is needed for the existing immutable request body.
+- Still required: versioned deterministic local reductions, durable reducer output
+  and atomic fenced next-action scheduling, including batch joins and tool/repair
+  cursors. Responses remain unvalidated; no recovery fence is cleared yet. Operator
+  controls, cancellation/refund and full ceiling/release qualification remain open.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

@@ -22,6 +22,9 @@ func (a *Authority) storedAction(ctx context.Context, tx *sql.Tx, id string) (or
 	if err != nil {
 		return i, q, err
 	}
+	if len(raw) > 24<<20 {
+		return i, q, errors.New("stored action exceeds storage bound")
+	}
 	if hash(raw) != digest {
 		return i, q, errors.New("immutable action integrity failure")
 	}
@@ -33,6 +36,9 @@ func (a *Authority) storedAction(ctx context.Context, tx *sql.Tx, id string) (or
 	}
 	if i.ActionID != id || i.RequestDigest != requestDigest || hash(i.Payload) != requestDigest || q.RequestDigest != requestDigest {
 		return i, q, errors.New("stored action identity mismatch")
+	}
+	if err = a.validateModelCheckpointTx(ctx, tx, i); err != nil {
+		return i, q, err
 	}
 	return i, q, nil
 }

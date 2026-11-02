@@ -405,6 +405,9 @@ func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIn
 	if err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
+	if len(request) > 24<<20 {
+		return orchestrator.DispatchPermit{}, errors.New("immutable action exceeds storage bound")
+	}
 	tx, err := a.begin(ctx)
 	if err != nil {
 		return orchestrator.DispatchPermit{}, err
@@ -412,6 +415,9 @@ func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIn
 	defer tx.Rollback()
 	var tracking sql.NullString
 	if err = a.guardJobDispatch(ctx, tx, i); err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	if err = a.validateModelCheckpointTx(ctx, tx, i); err != nil {
 		return orchestrator.DispatchPermit{}, err
 	}
 	if err = tx.QueryRowContext(ctx, `SELECT tracking_id FROM budget_attempts WHERE id=$1`, i.Attempt.AttemptID).Scan(&tracking); err != nil {
