@@ -31,6 +31,7 @@ type PreparedBudgetAuthority interface {
 }
 
 type DispatchIntent struct {
+	Invocation                                               string           `json:",omitempty"`
 	Job                                                      *review.JobClaim `json:",omitempty"`
 	ActionID                                                 string
 	Provider, Model, Role, Step, RequestDigest, PolicyDigest string
@@ -112,6 +113,10 @@ func fatalDispatch(err error) bool {
 }
 
 func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec ModelSpec, role ModelRole, step string, req LLMRequest, invoke func(context.Context) (string, error)) (string, error) {
+	return o.dispatchInvocation(ctx, rc, spec, role, step, req, "complete", invoke)
+}
+
+func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Context, spec ModelSpec, role ModelRole, step string, req LLMRequest, invocation string, invoke func(context.Context) (string, error)) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -157,7 +162,7 @@ func (o *Orchestrator) dispatch(ctx context.Context, rc *review.Context, spec Mo
 		return deny("cannot create action identity")
 	}
 	requestDigest := "sha256:" + hex.EncodeToString(digest[:])
-	intent := DispatchIntent{ActionID: hex.EncodeToString(actionBytes[:]), Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
+	intent := DispatchIntent{Invocation: invocation, ActionID: hex.EncodeToString(actionBytes[:]), Provider: spec.Provider, Model: spec.Model, Role: string(role), Step: step, Payload: payload, RequestDigest: requestDigest, OperatorCeilings: o.operatorCeilings.Clone()}
 	intent.Job = review.JobClaimFromContext(ctx)
 	if rc != nil {
 		intent.Attempt = rc.Source.Attempt

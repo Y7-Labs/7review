@@ -112,7 +112,7 @@ func (o *Orchestrator) StreamComplete(
 		}
 		if streaming, ok := provider.(StreamingLLMProvider); ok {
 			log.Printf("[orchestrator] %s: streaming %s/%s", step, spec.Provider, spec.Model)
-			_, err := o.dispatch(ctx, rc, spec, role, step, streamReq, func(callCtx context.Context) (string, error) {
+			_, err := o.dispatchInvocation(ctx, rc, spec, role, step, streamReq, "stream", func(callCtx context.Context) (string, error) {
 				err := streaming.Stream(callCtx, streamReq, func(delta string) error {
 					b.WriteString(delta)
 					return emit(delta)
