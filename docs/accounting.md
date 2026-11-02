@@ -44,6 +44,11 @@ recovery ownership. Schema v7 commits complete accepted aggregates on top of v6 
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
 partial ledger is an error, not permission to initialize an empty replacement.
+The real-PostgreSQL v8-to-v9 rehearsal includes a deferred commit failure, DDL and
+provenance rollback, idempotent retry, unchanged requests/quotes/holds/tokens and
+deadlines, and live prepared/fenced/unfenced sending receipts. Runtime rejects v8
+instead of migrating it. This is a disposable-schema rehearsal, not an upgrade
+of an operator's deployed database or proof of backup/failover readiness.
 
 ## Runtime Intake
 

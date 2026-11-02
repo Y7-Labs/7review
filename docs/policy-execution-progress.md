@@ -783,6 +783,22 @@ This is an incremental behavior ledger, not a completion declaration.
   validated continuation, operator controls, safe cancellation/refund and upgrade
   rehearsal remain separate gates, not completed ceilings.
 
+### Slice 45: Explicit V8-To-V9 Upgrade Rehearsal
+
+- A populated v8-shaped schema retains prepared leases, fenced sending actions,
+  historical unfenced sending actions and all three-scope holds through upgrade.
+  Worker runtime refuses v8; only explicit migration advances the version.
+- A deferred commit failure rolls back both new columns and provenance backfill.
+  Retry is idempotent and preserves immutable requests/quotes, amounts, original
+  deadlines, lease epochs and job tokens. Existing sending receipts remain usable
+  only under their original fencing contract; no sending action becomes prepared.
+- Full PostgreSQL suite and focused upgrade/crash/recovery race tests passed.
+  No deployed database was migrated, and backup/failover qualification is not implied.
+- Next continuation prerequisite: persist the exact model-loop/evidence checkpoint
+  and a versioned deterministic reducer, not just a raw response or initial Source.
+  The current unvalidated journal cannot authorize a draft or unrestricted job
+  continuation. Operator controls and cancellation/refund also remain open.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

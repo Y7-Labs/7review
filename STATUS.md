@@ -55,7 +55,9 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-44.
+[Accounting](docs/accounting.md) and progress slices 20-45. The v8-to-v9 migration
+has a populated PostgreSQL rollback/retry rehearsal; deployed databases still
+require the explicit operator migration.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
