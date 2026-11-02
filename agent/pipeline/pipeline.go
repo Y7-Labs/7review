@@ -2069,13 +2069,35 @@ func (p *Pipeline) executeReviewToolRequests(ctx context.Context, runID string, 
 }
 
 func (p *Pipeline) executeReviewToolRequest(rc *review.Context, request review.ToolRequest) review.ToolObservation {
+	return observeSnapshotTool(rc, request)
+}
+
+func observeSnapshotTool(rc *review.Context, request review.ToolRequest) review.ToolObservation {
 	name := strings.TrimSpace(request.Name)
 	surface := reviewToolSurface(name)
-	observation := review.ToolObservation{Name: name, Surface: surface}
+	observation := review.ToolObservation{Name: name, Surface: surface, Round: request.Round}
 	if surface == "" {
 		observation.Status = "denied"
 		observation.Reason = "tool is not available in the review reasoner loop"
 		return observation
+	}
+	if rc == nil {
+		observation.Status = "error"
+		observation.Reason = "snapshot context is unavailable"
+		return observation
+	}
+	for key, value := range request.Input {
+		if key != "run" {
+			observation.Status = "denied"
+			observation.Reason = "tool input contains unsupported fields"
+			return observation
+		}
+		run, ok := value.(string)
+		if !ok || run == "" || run != rc.Source.Run.ID {
+			observation.Status = "denied"
+			observation.Reason = "tool input must refer to the active snapshot run"
+			return observation
+		}
 	}
 	if !rc.Source.Policy.AllowsCapability("repo.read") {
 		observation.Status = "denied"
@@ -2093,8 +2115,18 @@ func (p *Pipeline) executeReviewToolRequest(rc *review.Context, request review.T
 		observation.Reason = err.Error()
 		return observation
 	}
+	encoded, truncated, err := snapshotToolResult(result)
+	if err != nil {
+		observation.Status = "error"
+		observation.Reason = err.Error()
+		return observation
+	}
 	observation.Status = "ok"
-	observation.Result = marshalToolResult(result)
+	observation.Result = encoded
+	if truncated {
+		observation.Status = "truncated"
+		observation.Reason = "snapshot result exceeded the output bound; preview is incomplete"
+	}
 	return observation
 }
 
@@ -2269,14 +2301,6 @@ func compactSectionRefs(sections []review.Section) []map[string]any {
 		})
 	}
 	return out
-}
-
-func marshalToolResult(result any) string {
-	data, err := json.Marshal(result)
-	if err != nil {
-		return fmt.Sprintf("%v", result)
-	}
-	return truncateForAudit(string(data), 4000)
 }
 
 func countLines(text string) int {
