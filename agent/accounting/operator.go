@@ -15,16 +15,26 @@ var ErrOperatorAttemptNotFound = errors.New("operator attempt not found")
 var ErrOperatorAttemptInvalid = errors.New("exact attempt ID required")
 
 // OperatorAttemptView is a durable status projection, not a dispatch permit,
-// validated assessment or mutable command version.
+// validated assessment. ControlVersion is distinct from immutable admission
+// identity and advances on terminal/control dispositions, not worker stages.
 type OperatorAttemptView struct {
-	AttemptID  string    `json:"attempt_id"`
-	RunID      string    `json:"run_id"`
-	Revision   string    `json:"revision"`
-	InboxState string    `json:"inbox_state"`
-	JobPhase   string    `json:"job_phase"`
-	Current    bool      `json:"current"`
-	Active     bool      `json:"active"`
-	Deadline   time.Time `json:"deadline"`
+	AttemptID      string    `json:"attempt_id"`
+	RunID          string    `json:"run_id"`
+	Revision       string    `json:"revision"`
+	InboxState     string    `json:"inbox_state"`
+	JobPhase       string    `json:"job_phase"`
+	Current        bool      `json:"current"`
+	Active         bool      `json:"active"`
+	Deadline       time.Time `json:"deadline"`
+	ControlVersion uint64    `json:"control_version"`
+}
+
+type operatorAttemptRecord struct {
+	view          OperatorAttemptView
+	binding       attemptBinding
+	bindingDigest string
+	tracking      sql.NullString
+	cancelID      sql.NullString
 }
 
 func (a *Authority) OperatorAttempt(ctx context.Context, actor review.OperatorActor, attemptID string) (OperatorAttemptView, error) {
@@ -40,38 +50,56 @@ func (a *Authority) OperatorAttempt(ctx context.Context, actor review.OperatorAc
 		return v, err
 	}
 	defer tx.Rollback()
+	record, err := a.operatorAttemptTx(ctx, tx, actor, attemptID, false)
+	if err != nil {
+		return v, err
+	}
+	if err = tx.Commit(); err != nil {
+		return v, err
+	}
+	return record.view, nil
+}
+
+func (a *Authority) operatorAttemptTx(ctx context.Context, tx *sql.Tx, actor review.OperatorActor, attemptID string, lock bool) (operatorAttemptRecord, error) {
+	var record operatorAttemptRecord
+	v := &record.view
 	var bindingRaw []byte
 	var digest string
-	err = tx.QueryRowContext(ctx, `SELECT j.attempt_id,j.run_id,a.binding,a.binding_digest,a.active,
+	query := `SELECT j.attempt_id,j.run_id,a.binding,a.binding_digest,a.active,
 coalesce(h.current_attempt_id=a.id,false),j.phase,i.deadline,
 CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired'
-WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END
-FROM budget_jobs j JOIN budget_inbox i ON i.run_id=j.run_id
+WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,
+j.control_version,a.tracking_id,j.cancel_command_id
+FROM budget_inbox i JOIN budget_jobs j ON j.run_id=i.run_id
 JOIN budget_attempts a ON a.id=j.attempt_id LEFT JOIN budget_heads h ON h.id=a.tracking_id
-WHERE j.attempt_id=$1 AND i.boundary_id=$2 AND i.project_id=$3`, attemptID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&v.AttemptID, &v.RunID, &bindingRaw, &digest, &v.Active, &v.Current, &v.JobPhase, &v.Deadline, &v.InboxState)
+WHERE j.attempt_id=$1 AND i.boundary_id=$2 AND i.project_id=$3
+AND convert_from(j.receipt,'UTF8')::jsonb->>'Duplicate'='false'`
+	if lock {
+		query += ` FOR UPDATE OF i,j`
+	}
+	err := tx.QueryRowContext(ctx, query, attemptID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&v.AttemptID, &v.RunID, &bindingRaw, &digest, &v.Active, &v.Current, &v.JobPhase, &v.Deadline, &v.InboxState, &v.ControlVersion, &record.tracking, &record.cancelID)
 	if errors.Is(err, sql.ErrNoRows) {
-		return OperatorAttemptView{}, ErrOperatorAttemptNotFound
+		return operatorAttemptRecord{}, ErrOperatorAttemptNotFound
 	}
 	if err != nil {
-		return OperatorAttemptView{}, err
+		return operatorAttemptRecord{}, err
 	}
 	var b attemptBinding
 	if len(bindingRaw) > 1<<20 || hash(bindingRaw) != digest || json.Unmarshal(bindingRaw, &b) != nil || b.Attempt.AttemptID != attemptID || b.ProjectID != a.cfg.ProjectID {
-		return OperatorAttemptView{}, ErrIntegrity
+		return operatorAttemptRecord{}, ErrIntegrity
 	}
 	if err = a.cfg.Operators.Authorize(actor, a.cfg.BoundaryID, a.cfg.ProjectID, b.Attempt.Change, review.OperatorRoleOperator, review.OperatorRoleReviewer); err != nil {
-		return OperatorAttemptView{}, err
+		return operatorAttemptRecord{}, err
 	}
 	aggregate, err := a.readAggregateTx(ctx, tx, v.RunID)
 	if err != nil {
-		return OperatorAttemptView{}, err
+		return operatorAttemptRecord{}, err
 	}
 	if !reflect.DeepEqual(aggregate.Receipt.Attempt, b.Attempt) || !reflect.DeepEqual(aggregate.Receipt.Execution, b.Execution) {
-		return OperatorAttemptView{}, ErrIntegrity
+		return operatorAttemptRecord{}, ErrIntegrity
 	}
 	v.Revision = b.Attempt.Snapshot.AnalysisRevision()
-	if err = tx.Commit(); err != nil {
-		return OperatorAttemptView{}, err
-	}
-	return v, nil
+	record.binding = b
+	record.bindingDigest = digest
+	return record, nil
 }

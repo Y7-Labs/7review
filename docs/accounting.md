@@ -48,7 +48,9 @@ Schema v14 adds immutable snapshot observation receipts, three scope links and
 the current observation reference on owned jobs.
 Schema v15 adds typed tool-child links binding each child to its exact parent
 reduction and committed observation receipt/digest.
-Worker runtime now requires v15; run explicit migration before restart.
+Schema v16 adds authenticated command receipts, a separate job control version,
+and a cancellation disposition reference. Worker runtime now requires v16; run
+explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -76,6 +78,9 @@ does not infer observations, charges or continuation rights from old tool plans.
 The v14-to-v15 rehearsal preserves accepted observation bytes, ownership, model
 holds and observation scope links across deferred migration failure and retry.
 Migration creates no child and grants no new sending or continuation rights.
+The v15-to-v16 rehearsal preserves populated sending evidence, fencing leases,
+ownership, attempts and scope holds through deferred DDL failure and retry.
+Migration creates no command receipt, cancellation, refund or publication consent.
 
 ## Runtime Intake
 
@@ -129,18 +134,66 @@ credentials return 401; an authenticated actor without the repository role
 receives 403. A legacy run alias does not resolve as an attempt ID.
 
 The response contains only durable attempt/run IDs, analysis revision, inbox
-state, job phase, currentness, active flag and deadline. It verifies stored
+state, job phase, currentness, active flag, deadline and `control_version`. It verifies stored
 binding and aggregate integrity and never falls back to memory/legacy drafts.
 It exposes no claim tokens, prompts or credentials. Historical/expired attempts
 remain inspectable with the same repository authority. This projection is not
-a dispatch permit, validated assessment, or mutable command version.
+a dispatch permit or validated assessment. The control version is separate from
+immutable admission identity: terminal/control dispositions advance it; ordinary
+worker stages and ownership rotations do not. Duplicate delivery aliases do not
+become the attempt's control target; reads and commands select the original job.
+After cancellation, aliases project that same cancelled state, disappear from
+active queue counts and cannot be freshly claimed or completed by stale owners.
 
 Leave the mapping unset to disable this canonical endpoint. The immutable
 directory is shared by the HTTP and accounting boundaries; an actor issued by
 another directory is rejected. Credential/grant changes require restart. Use
 HTTPS or a trusted local transport; do not expose bearer credentials over public
-plain HTTP. This step does not implement cancellation, refunds or publication
-commands, and does not upgrade legacy approval routes into canonical authority.
+plain HTTP. This does not upgrade legacy approval routes into canonical authority.
+
+### Cancellation Commands
+
+Send `POST /operator/commands` with the mapped credential and
+`Content-Type: application/json`. The only implemented command kind is currently
+`cancel_attempt`; the closed envelope is bounded to 8 KiB:
+
+```json
+{"schema_version":1,"command_id":"cancel-unique-id","attempt_id":"exact-attempt-id","expected_version":1,"revision":"exact-analysis-revision","kind":"cancel_attempt","payload":{"reason":"operator requested stop"}}
+```
+
+Use the exact attempt ID, analysis revision and control version obtained from the
+scoped attempt endpoint. A reviewer/operator role for that exact repository is
+required. There is no request-body actor field, query override or run-alias
+resolution. An authenticated actor without the role gets 403. Stale revision,
+control version or currentness returns 409 with a scoped current-attempt link;
+the service does not silently retarget the command. Missing/incompatible storage
+or corrupt durable evidence fails closed, never as a successful cancellation.
+Audit reason/revision text must be bounded valid UTF-8 without NUL or replacement
+characters; malformed surrogate escapes are rejected instead of silently decoded.
+
+One transaction commits the actor-bound command and immutable checksummed receipt,
+advances the control version, disables the original job's dispatch, revokes its
+claim, marks its inbox cancelled and closes the attempt. It locks in the same
+job/head/attempt order as dispatch. A stale worker cannot begin or reclaim a
+prepared action, publish a model terminal disposition or finish that cancelled
+inbox. Cancellation of expired/recovered work does not extend its deadline.
+
+Reuse the same command ID and exact payload after a timeout/lost response. The ID
+is unique within the host boundary/project and bound to the authenticated actor;
+same input returns the original receipt, including after process restart.
+Different payload or actor conflicts. Every retry must still authenticate and
+pass repository authorization. Client death during COMMIT is not proof of
+rollback; exact-command replay reconciles either outcome.
+
+The receipt explicitly reports `reservation_disposition: retained`. **This step
+does not refund any reservation**, including a still-prepared action. Lease and
+positive sending evidence are preserved. Sending may already have won the race;
+cancellation cannot retract that provider request or infer zero usage. Late
+attributable responses and qualified final usage settlement remain recordable,
+but cannot revive dispatch, continuation or terminal model publication. A future
+verified-unused release requires a separate audited proof and scope accounting
+transaction. CLI/TUI mutation wiring, other canonical human commands and safe
+refunds remain open; this is not a completed control lifecycle or alpha gate.
 
 ### HTTP Acceptance and Recovery
 

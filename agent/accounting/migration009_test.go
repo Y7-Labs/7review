@@ -61,6 +61,7 @@ func TestPostgresV9UpgradePreservesPreparedSendingAndLegacyAuthority(t *testing.
 		return raw
 	}
 	before := snapshot()
+	dropOperatorSchemaForMigration(t, a.db)
 	if _, err = a.db.Exec(`DROP TABLE budget_model_tool_children; ALTER TABLE budget_jobs DROP COLUMN tool_observation_id; DROP TABLE budget_tool_observation_scopes,budget_model_tool_observations; ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_jobs DROP COLUMN recovery_action_id; UPDATE budget_schema SET version=8`); err != nil {
 		t.Fatal(err)
 	}

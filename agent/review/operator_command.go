@@ -27,10 +27,16 @@ type CancelAttemptCommand struct {
 }
 
 func (c CancelAttemptCommand) Validate() error {
-	if c.SchemaVersion != 1 || !operatorID.MatchString(c.CommandID) || !operatorID.MatchString(c.AttemptID) || c.ExpectedVersion == 0 || c.ExpectedVersion >= math.MaxInt64 || c.Kind != "cancel_attempt" || strings.TrimSpace(c.Revision) == "" || len(c.Revision) > 256 || !utf8.ValidString(c.Revision) || strings.ContainsRune(c.Revision, 0) || strings.TrimSpace(c.Payload.Reason) == "" || len(c.Payload.Reason) > 2048 || !utf8.ValidString(c.Payload.Reason) || strings.ContainsRune(c.Payload.Reason, 0) {
+	if c.SchemaVersion != 1 || !operatorID.MatchString(c.CommandID) || !operatorID.MatchString(c.AttemptID) || c.ExpectedVersion == 0 || c.ExpectedVersion >= math.MaxInt64 || c.Kind != "cancel_attempt" || !validOperatorCommandText(c.Revision, 256) || !validOperatorCommandText(c.Payload.Reason, 2048) {
 		return errors.New("invalid cancel_attempt command")
 	}
 	return nil
+}
+
+func validOperatorCommandText(value string, limit int) bool {
+	// encoding/json replaces unpaired surrogates with RuneError. Do not let
+	// lossy text silently collapse distinct audit payloads into one command.
+	return strings.TrimSpace(value) != "" && len(value) <= limit && utf8.ValidString(value) && !strings.ContainsRune(value, 0) && !strings.ContainsRune(value, utf8.RuneError)
 }
 
 func DecodeCancelAttemptCommand(data []byte) (CancelAttemptCommand, error) {

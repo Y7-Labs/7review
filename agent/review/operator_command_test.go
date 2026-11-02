@@ -24,6 +24,8 @@ func TestCancelCommandRequiresClosedVersionedEnvelopeWithoutActorClaims(t *testi
 		strings.Replace(cancelCommandFixture, `"reason":"operator requested stop"`, `"reason":"x","actor":"alice"`, 1),
 		strings.Replace(cancelCommandFixture, `"reason":"operator requested stop"`, `"reason":"  "`, 1),
 		strings.Replace(cancelCommandFixture, `"payload":{"reason":"operator requested stop"}`, `"payload":null`, 1),
+		strings.Replace(cancelCommandFixture, `"reason":"operator requested stop"`, `"reason":"stop\ud800"`, 1),
+		strings.Replace(cancelCommandFixture, `"revision":"head"`, `"revision":"head\ud800"`, 1),
 		strings.Replace(cancelCommandFixture, `"reason":"operator requested stop"`, `"reason":"`+strings.Repeat("x", 2049)+`"`, 1),
 		strings.Repeat(" ", 8193),
 	} {

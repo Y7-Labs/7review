@@ -61,7 +61,11 @@ func (a *Authority) CheckInbox(ctx context.Context) (*InboxHealth, error) {
 	if err = checkToolChildStorage(ctx, tx); err != nil {
 		return nil, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND deadline>now()),count(*) FILTER (WHERE state='running' AND deadline>now()),count(*) FILTER (WHERE state='uncertain' OR (state='running' AND deadline<=now())) FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&status.Pending, &status.Running, &status.Uncertain)
+	if err = checkOperatorStorage(ctx, tx); err != nil {
+		return nil, err
+	}
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FILTER (WHERE state='pending' AND deadline>now()),count(*) FILTER (WHERE state='running' AND deadline>now()),count(*) FILTER (WHERE state='uncertain' OR (state='running' AND deadline<=now())) FROM budget_inbox WHERE boundary_id=$1 AND project_id=$2
+AND NOT EXISTS(SELECT 1 FROM budget_jobs alias JOIN budget_jobs root ON root.attempt_id=alias.attempt_id WHERE alias.run_id=budget_inbox.run_id AND root.cancel_command_id IS NOT NULL)`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&status.Pending, &status.Running, &status.Uncertain)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +169,8 @@ func (a *Authority) LookupInbox(ctx context.Context, runID string) (*InboxItem, 
 func (a *Authority) lookupInboxTx(ctx context.Context, tx *sql.Tx, runID string) (item *InboxItem, err error) {
 	item = &InboxItem{}
 	err = tx.QueryRowContext(ctx, `SELECT i.run_id,
-CASE WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired'
+CASE WHEN EXISTS(SELECT 1 FROM budget_jobs root WHERE root.attempt_id=j.attempt_id AND root.cancel_command_id IS NOT NULL) THEN 'cancelled'
+WHEN i.deadline<=clock_timestamp() AND i.state='pending' THEN 'expired'
 WHEN i.deadline<=clock_timestamp() AND i.state='running' THEN 'uncertain' ELSE i.state END,
 i.deadline,coalesce(j.attempt_id,''),j.phase,
 (SELECT count(*) FROM budget_action_results r WHERE r.run_id=j.run_id),
@@ -197,7 +202,7 @@ func (a *Authority) ClaimInbox(ctx context.Context) (*InboxItem, error) {
 	}
 	item := &InboxItem{}
 	var raw []byte
-	err = tx.QueryRowContext(ctx, `SELECT i.run_id,i.request,i.deadline FROM budget_inbox i WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.state='pending' AND i.deadline>clock_timestamp() AND EXISTS (SELECT 1 FROM budget_jobs j WHERE j.run_id=i.run_id AND j.phase IN ('accepted','admitted')) AND (NOT $3 OR EXISTS (SELECT 1 FROM budget_aggregates g WHERE g.run_id=i.run_id)) ORDER BY i.created_at,i.id LIMIT 1 FOR UPDATE OF i SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID, a.cfg.RequireServiceJobs).Scan(&item.RunID, &raw, &item.Deadline)
+	err = tx.QueryRowContext(ctx, `SELECT i.run_id,i.request,i.deadline FROM budget_inbox i WHERE i.boundary_id=$1 AND i.project_id=$2 AND i.state='pending' AND i.deadline>clock_timestamp() AND EXISTS (SELECT 1 FROM budget_jobs j WHERE j.run_id=i.run_id AND j.phase IN ('accepted','admitted') AND NOT EXISTS(SELECT 1 FROM budget_jobs root WHERE root.attempt_id=j.attempt_id AND root.cancel_command_id IS NOT NULL)) AND (NOT $3 OR EXISTS (SELECT 1 FROM budget_aggregates g WHERE g.run_id=i.run_id)) ORDER BY i.created_at,i.id LIMIT 1 FOR UPDATE OF i SKIP LOCKED`, a.cfg.BoundaryID, a.cfg.ProjectID, a.cfg.RequireServiceJobs).Scan(&item.RunID, &raw, &item.Deadline)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tx.Commit()
 	}
@@ -238,7 +243,7 @@ func (a *Authority) FinishInbox(ctx context.Context, runID, token string, succes
 	if success {
 		state = "completed"
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.phase<>'effect_started' AND j.recovery_action_id IS NULL AND j.model_batch_id IS NULL AND j.terminal_reduction_id IS NULL AND j.tool_observation_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id))`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
+	result, err := tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$5,updated_at=clock_timestamp() WHERE boundary_id=$1 AND project_id=$2 AND run_id=$3 AND claim_token=$4 AND state='running' AND deadline>clock_timestamp() AND EXISTS(SELECT 1 FROM budget_jobs j WHERE j.run_id=budget_inbox.run_id AND j.phase<>'effect_started' AND j.recovery_action_id IS NULL AND j.model_batch_id IS NULL AND j.terminal_reduction_id IS NULL AND j.tool_observation_id IS NULL AND NOT EXISTS(SELECT 1 FROM budget_jobs root WHERE root.attempt_id=j.attempt_id AND root.cancel_command_id IS NOT NULL) AND NOT EXISTS(SELECT 1 FROM budget_actions a WHERE a.attempt_id=j.attempt_id))`, a.cfg.BoundaryID, a.cfg.ProjectID, runID, token, state)
 	if err != nil {
 		return err
 	}
@@ -249,7 +254,7 @@ func (a *Authority) FinishInbox(ctx context.Context, runID, token string, succes
 	if n != 1 {
 		return errors.New("inbox completion is unowned, expired or already terminal")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='finished',dispatch_allowed=false,updated_at=clock_timestamp() WHERE run_id=$1`, runID); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='finished',dispatch_allowed=false,control_version=control_version+1,updated_at=clock_timestamp() WHERE run_id=$1`, runID); err != nil {
 		return err
 	}
 	return tx.Commit()

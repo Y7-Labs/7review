@@ -15,6 +15,7 @@ func TestV15MigrationPreservesAcceptedObservationsWithoutInventingChildren(t *te
 	if err := a.db.QueryRow(`SELECT o.receipt,i.claim_token FROM budget_model_tool_observations o CROSS JOIN budget_inbox i`).Scan(&receipt, &token); err != nil {
 		t.Fatal(err)
 	}
+	dropOperatorSchemaForMigration(t, a.db)
 	if _, err := a.db.Exec(`DROP TABLE budget_model_tool_children; UPDATE budget_schema SET version=14; CREATE FUNCTION fail_v15_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=15 THEN RAISE EXCEPTION 'injected v15 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v15_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v15_commit()`); err != nil {
 		t.Fatal(err)
 	}

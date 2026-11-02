@@ -129,7 +129,7 @@ func (a *Authority) CompleteModelJob(ctx context.Context, actionID string) (*rev
 	if changed {
 		return nil, errors.New("unresolved sibling or unproven ancestry blocks terminal completion")
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET terminal_reduction_id=$2,phase='finished',dispatch_allowed=false,updated_at=clock_timestamp() WHERE run_id=$1`, artifact.Source.Run.ID, id); err != nil {
+	if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET terminal_reduction_id=$2,phase='finished',dispatch_allowed=false,control_version=control_version+1,updated_at=clock_timestamp() WHERE run_id=$1`, artifact.Source.Run.ID, id); err != nil {
 		return nil, err
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE budget_inbox SET state=$2,updated_at=clock_timestamp() WHERE run_id=$1`, artifact.Source.Run.ID, wantState); err != nil {

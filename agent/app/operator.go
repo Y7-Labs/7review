@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,13 +38,17 @@ func operatorCredential(r *http.Request) string {
 	return token
 }
 
-func (s *Server) handleOperatorAttempt(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Cache-Control", "no-store")
+func (s *Server) operatorActor(r *http.Request) (review.OperatorActor, error) {
 	var directory *review.OperatorDirectory
 	if s != nil && s.cfg != nil {
 		directory = s.cfg.Operators
 	}
-	actor, err := directory.Authenticate(operatorCredential(r))
+	return directory.Authenticate(operatorCredential(r))
+}
+
+func (s *Server) handleOperatorAttempt(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	actor, err := s.operatorActor(r)
 	if err != nil {
 		http.Error(w, "operator authentication required", http.StatusUnauthorized)
 		return
@@ -95,4 +100,80 @@ func (s *Server) handleOperatorAttempt(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	actor, err := s.operatorActor(r)
+	if err != nil {
+		http.Error(w, "operator authentication required", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if r.URL.RawQuery != "" {
+		http.Error(w, "operator commands do not accept query claims", http.StatusBadRequest)
+		return
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "application/json required", http.StatusUnsupportedMediaType)
+		return
+	}
+	if r.Body == nil {
+		http.Error(w, "command required", http.StatusBadRequest)
+		return
+	}
+	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, review.MaxOperatorCommandBytes))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		status := http.StatusBadRequest
+		if errors.As(err, &tooLarge) {
+			status = http.StatusRequestEntityTooLarge
+		}
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	c, err := review.DecodeCancelAttemptCommand(data)
+	if err != nil {
+		http.Error(w, "invalid cancel_attempt envelope", http.StatusBadRequest)
+		return
+	}
+	if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
+		http.Error(w, "durable operator authority unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	receipt, err := s.accountingRuntime.Authority.CancelAttempt(ctx, actor, c)
+	if err != nil {
+		var conflict *accounting.OperatorCommandConflict
+		if errors.As(err, &conflict) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(struct {
+				*accounting.OperatorCommandConflict
+				CurrentAttemptURL string `json:"current_attempt_url"`
+			}{conflict, "/operator/attempt?attempt_id=" + url.QueryEscape(conflict.CurrentAttemptID)})
+			return
+		}
+		status := http.StatusServiceUnavailable
+		switch {
+		case errors.Is(err, review.ErrOperatorUnauthorized):
+			status = http.StatusUnauthorized
+		case errors.Is(err, review.ErrOperatorForbidden):
+			status = http.StatusForbidden
+		case errors.Is(err, accounting.ErrOperatorAttemptNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, accounting.ErrOperatorAttemptInvalid):
+			status = http.StatusBadRequest
+		}
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(receipt)
 }

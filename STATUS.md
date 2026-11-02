@@ -97,17 +97,21 @@ and fenced child protocol. Restart, duplicate-worker and paused-live overlap
 tests reach checked local drafts across all three rounds and formatter repair.
 Ordinary live completion cannot terminate any committed model reservation.
 Known budget waits yield fairly without releasing holds or hiding post-send/
-storage failures. Authenticated controls, cancellation/refund, broader tool/CPU
+storage failures. Remaining operator controls, safe refunds, broader tool/CPU
 accounting and live operational/provider qualification remain open.
 Canonical operator access now has explicit host-mapped principals and exact
 boundary/project/repository roles, independently enforced by HTTP and accounting.
 Its read-only attempt endpoint rejects implicit service-token identity, forged
 actor/scope claims, ambiguous credentials and legacy run aliases, and verifies
-durable aggregate integrity. Mutation commands, their durable versioned receipts,
-and safe cancellation/refund remain open; this is not alpha readiness.
-The v8-to-v9 through v14-to-v15 migrations
+durable aggregate integrity. Authenticated cancellation now commits an actor-bound
+versioned receipt, revokes the claim, disables dispatch and closes the attempt
+atomically. Sending/completion races, duplicate workers, interrupted reclaim,
+restart replay and process death/unknown commit acknowledgments are tested.
+It deliberately retains every reservation: verified-unused refunds, remaining
+command/CLI/TUI controls and qualification remain open; this is not alpha readiness.
+The v8-to-v9 through v15-to-v16 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v15 before restart. No deployed database was changed.
+explicit migration to schema v16 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

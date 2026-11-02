@@ -353,6 +353,7 @@ func TestPostgresV1MigrationPreservesExistingSendingActions(t *testing.T) {
 	a := ledgerAuthority(t, db, l)
 	i := ledgerIntent(t, db, "one", "7", l)
 	admit(t, a, i)
+	dropOperatorSchemaForMigration(t, db)
 	if _, err := db.Exec(`DROP TABLE budget_model_tool_children; ALTER TABLE budget_jobs DROP COLUMN tool_observation_id; DROP TABLE budget_tool_observation_scopes,budget_model_tool_observations; ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions,budget_action_leases,budget_aggregates,budget_action_results,budget_jobs,budget_inbox_conflicts,budget_inbox,budget_receipts,budget_quarantine; DROP INDEX budget_actions_attempt; ALTER TABLE budget_actions DROP COLUMN integrity_incident; ALTER TABLE budget_actions DROP COLUMN fenced; ALTER TABLE budget_actions DROP CONSTRAINT budget_actions_state_check; ALTER TABLE budget_actions ADD CHECK(state IN ('sending','uncertain','result_recorded')); UPDATE budget_schema SET version=1`); err != nil {
 		t.Fatal(err)
 	}

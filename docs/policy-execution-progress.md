@@ -1317,6 +1317,50 @@ This is an incremental behavior ledger, not a completion declaration.
   Authenticated mutation receipts, cancellation/refund, broader tool/CPU and live
   operational/provider qualification remain open. Ceilings remain unfinished.
 
+### 72. Durable Cancellation Commands And Fenced Dispositions
+
+- Red: closed versioned envelope tests required exact command/attempt/revision,
+  nonzero bounded expected version and a reason, rejecting actor claims, unknown
+  fields, ambiguous JSON and oversized input. The contract is committed as
+  `cd36ea3`. Backend tests then failed on the absent cancellation operation;
+  PostgreSQL HTTP tests failed on the missing command route.
+- Green: host-mapped reviewer/operator credentials now authorize
+  `POST /operator/commands` cancellation. HTTP and accounting independently
+  enforce actor provenance and repository scope. A transaction commits the
+  command/receipt, advances a separate control version, closes the attempt,
+  revokes its job claim and disables dispatch. Stale currentness/revision/version
+  returns a scoped conflict, never silently cancelling a newer attempt.
+- Green: namespace-wide command identity binds actor and exact payload. Retries
+  return the original checksummed receipt after authorization, including after
+  restart/lost acknowledgment; conflicting actors/payloads cannot rebind it.
+  Duplicate delivery jobs cannot replace the original attempt's control target.
+  A further red test caught aliases still appearing pending after cancellation;
+  effective inbox views, queue counts, claiming and stale-owner completion now
+  respect the original attempt's cancellation without granting an alias control.
+  Terminal model/ordinary completion advances the same control version and cannot
+  overwrite a cancellation that won the transaction race.
+- Behavior coverage includes duplicate workers, sending and terminal-completion
+  races, interrupted reclaim, expired work, corrupt aggregate/audit evidence,
+  revoked credentials, wrong roles, real process/backend interruption before
+  commit, death after commit, and an unknown commit acknowledgment. Client death
+  alone is not treated as proof of rollback; exact-command replay reconciles it.
+- Verification: the final complete PostgreSQL-backed suite and focused
+  PostgreSQL-backed cancellation/operator/alias/migration race tests pass, along
+  with vet, formatting and diff checks. A complete race run also passed before
+  the final alias-view/queue correction; that correction was then covered by the
+  final full suite and focused race tests. No live provider was qualified.
+- Schema v16 is explicit. Its populated v15 upgrade rehearsal injects deferred
+  commit failure, verifies complete DDL/version rollback, retries idempotently and
+  preserves original attempts, requests, outcomes, leases, tokens and holds.
+  Historical rehearsals, including v8-to-v9, construct the actual older schema
+  without leaving newer command objects behind. Migration invents no commands,
+  refunds, sending rights or human consent. No deployed store was changed.
+- Cancellation receipts explicitly retain all reservations. Positive sending
+  evidence and attributable late results survive without reviving dispatch or
+  terminal model completion. Verified-unused release/refund, CLI/TUI mutations,
+  other human commands, broader tool/CPU and live operational/provider
+  qualification remain open. Ceilings and alpha remain unfinished.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
