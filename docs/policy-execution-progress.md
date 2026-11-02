@@ -762,6 +762,27 @@ This is an incremental behavior ledger, not a completion declaration.
   race suite for accounting, orchestrator, app, CI, pipeline and CLI passed.
   `go vet ./...`, formatting, diff checks and Compose configuration also passed.
 
+### Slice 44: Automatic Confined Prepared-Action Recovery
+
+- A red invocation test exposed that stored requests could not distinguish
+  Complete from Stream. New intents bind the actual API mode; historical missing
+  modes fail closed rather than guessing. Stream compatibility uses Complete.
+- A red fresh-service test established the missing worker wiring. Existing bounded
+  inbox workers now discover/reclaim and dispatch only immutable prepared actions.
+  The original provider/model, schemas and bytes are used without role rerouting,
+  fallback, new action IDs or whole-pipeline execution.
+- Recovered calls share the live deadline/active-time/outcome recording boundary.
+  Complete/native responses and locally captured Stream output remain unvalidated;
+  no draft, job completion, publication, hold release or new spending grant follows.
+- Real subprocess loss after prepare/claim/sending, duplicate recovery workers,
+  stale originals and faults before sending/after provider I/O exercise the
+  automatic adapter. Only pre-sending failure permits eventual reclaim; uncertain
+  sending remains non-retryable even when recording the response fails.
+- Full PostgreSQL suite, accounting/orchestrator/app race suites and vet passed.
+  Production routes remain unqualified;
+  validated continuation, operator controls, safe cancellation/refund and upgrade
+  rehearsal remain separate gates, not completed ceilings.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

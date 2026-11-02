@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -68,6 +69,87 @@ func inboxWebhook(t *testing.T, s *Server, body, delivery string) *httptest.Resp
 }
 
 const inboxBody = `{"action":"synchronize","number":7,"repository":{"full_name":"org/repo"},"pull_request":{"head":{"sha":"head"},"base":{"sha":"base"}}}`
+
+type crashAfterPreparation struct{ *accounting.Authority }
+
+func (a crashAfterPreparation) PrepareAction(ctx context.Context, i orchestrator.DispatchIntent) (orchestrator.PreparedAction, error) {
+	p, err := a.Authority.PrepareAction(ctx, i)
+	if err == nil {
+		panic("process lost after durable preparation")
+	}
+	return p, err
+}
+
+func TestInboxAutomaticallyRecoversPreparedActionWithoutReplayingPipeline(t *testing.T) {
+	s, db, dsn := inboxServerDSN(t)
+	w := inboxWebhook(t, s, inboxBody, "prepared-restart")
+	if w.Code != 202 {
+		t.Fatalf("accept: %d %s", w.Code, w.Body.String())
+	}
+	var receipt reviewDispatchResult
+	if err := json.Unmarshal(w.Body.Bytes(), &receipt); err != nil {
+		t.Fatal(err)
+	}
+	limits := s.cfg.PolicyRuntimeCeilings.Clone()
+	catalog, err := accounting.NewCatalog([]accounting.RouteBound{{Provider: "aggregate-fixture", Model: "pinned", Version: "test-v1", Currency: "USD", EvidenceRef: "test:bounded-in-memory-provider", ValidFrom: time.Now().Add(-time.Hour), ValidUntil: time.Now().Add(time.Hour), InputHardLimit: 20000, OutputHardLimit: 10000, InputMicroPerMillion: 1, OutputMicroPerMillion: 1, AllOutputBounded: true, MaxActiveMS: 5000, NativeToolsQualified: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := accounting.NewAuthority(db, accounting.Config{RequireServiceJobs: true, BoundaryID: "inbox-test", ProjectID: "team", Limits: limits, Catalog: catalog})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.accountingRuntime.Authority = a
+	s.pipeline.Canonical.Authority = a
+	p := &aggregateQualifiedProvider{t: t, db: db, attempt: receipt.AttemptID}
+	build := func(authority orchestrator.BudgetAuthority) *orchestrator.Orchestrator {
+		return orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("pinned", "pinned", p.Name()), map[string]orchestrator.LLMProvider{p.Name(): p}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(authority))
+	}
+	s.pipeline.Orchestrator = build(crashAfterPreparation{a})
+	item, err := a.ClaimInbox(context.Background())
+	if err != nil || item == nil {
+		t.Fatalf("claim: %#v %v", item, err)
+	}
+	ctx := review.WithJobClaim(context.Background(), review.JobClaim{RunID: item.RunID, Token: item.ClaimToken})
+	if err = s.runInboxItem(ctx, item.Request, item.RunID); !errors.Is(err, errInboxPanic) {
+		t.Fatalf("missing crash: %v", err)
+	}
+	if p.calls.Load() != 0 {
+		t.Fatal("preparation invoked provider")
+	}
+	// Fresh service and empty memory store: only the stored action is executable.
+	restarted := newInboxServer(t, dsn)
+	restarted.accountingRuntime.Authority = a
+	restarted.pipeline.Canonical.Authority = a
+	restarted.pipeline.Orchestrator = build(a)
+	restarted.pipeline.SCM = unavailableAcceptanceSCM{t}
+	restarted.pipeline.TrustedPolicy = nil
+	restarted.startInboxWorkers()
+	var indexed int
+	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
+		_ = db.QueryRow(`SELECT count(*) FROM budget_action_results WHERE status='recorded_unvalidated'`).Scan(&indexed)
+		if indexed == 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	restarted.inboxCancel()
+	restarted.inboxWorkers.Wait()
+	if indexed != 1 || p.calls.Load() != 1 {
+		t.Fatalf("automatic recovery missing: results=%d calls=%d", indexed, p.calls.Load())
+	}
+	if runs, err := restarted.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
+		t.Fatalf("recovery replayed pipeline: %#v %v", runs, err)
+	}
+	var state, phase string
+	var actions, holds int
+	_ = db.QueryRow(`SELECT i.state,j.phase FROM budget_inbox i JOIN budget_jobs j USING(run_id)`).Scan(&state, &phase)
+	_ = db.QueryRow(`SELECT count(*) FROM budget_actions`).Scan(&actions)
+	_ = db.QueryRow(`SELECT count(*) FROM budget_holds`).Scan(&holds)
+	if state != "running" || phase != "effect_started" || actions != 1 || holds != 3 {
+		t.Fatalf("recovery invented continuation/settlement: state=%s phase=%s actions=%d holds=%d", state, phase, actions, holds)
+	}
+}
 
 func TestCanonicalHTTPNeverFallsBackToInMemoryAcceptance(t *testing.T) {
 	s := &Server{pipeline: &pipeline.Pipeline{Canonical: &pipeline.CanonicalIntake{}}, work: make(chan workItem, 1)}

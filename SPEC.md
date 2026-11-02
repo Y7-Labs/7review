@@ -712,7 +712,10 @@ prepare/claim/begin with database-clock leases and monotonic fencing epochs.
 Explicit prepared reclaim rotates and confines service job ownership. Any prior
 external progress blocks job takeover; sending/uncertain actions never become
 retryable on lease expiry. Process-crash and stale-owner races are exercised with
-controlled providers. This is not autonomous recovery or provider qualification.
+controlled providers. Bounded inbox workers automatically reclaim eligible
+prepared actions using their stored invocation mode and exact request, recording
+responses as unvalidated without replaying the pipeline or marking completion.
+Production route qualification and validated continuation remain open.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

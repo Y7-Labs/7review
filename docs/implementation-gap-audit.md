@@ -162,12 +162,14 @@ receipt verifier adapters are not implemented. Canonical worker/CI intake now
 connects through opt-in runtime settings, with durable generation fencing and
 pre-dispatch identity checkpoints. Default production routes remain fail-closed.
 Durable HTTP acceptance and unclaimed pending-work recovery now have PostgreSQL
-fault/replay coverage. Claimed crashes are never automatically retried. Full
-qualified recovery adapters, validated response continuation/provider currentness,
+fault/replay coverage. Claimed jobs are never replayed as a whole; bounded workers
+can now recover eligible fenced prepared actions into the unvalidated journal.
+Complete/Stream subprocess, duplicate-owner and interrupted-commit cases use
+controlled providers. Live recovery qualification, validated response continuation/provider currentness,
 non-model resource accounting, prospective reconfiguration,
 operational recovery and the complete real-DB release exit remain open.
 The pipeline still uses a constant three read-tool rounds, not the target budget
-controller. See [red/green ledger](policy-execution-progress.md), slices 16-43.
+controller. See [red/green ledger](policy-execution-progress.md), slices 16-44.
 
 Exit: S21/S31/S42, ENG-B01-B06/C01-C05/F02, with concurrent real-DB admission and
 faults around usage settlement.

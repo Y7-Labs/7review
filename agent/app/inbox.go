@@ -106,6 +106,15 @@ func (s *Server) startInboxWorkers() {
 				if ctx.Err() != nil {
 					return
 				}
+				// Recovery owns only one immutable prepared action. It never calls
+				// RunAccepted or grants a replacement pipeline claim.
+				if _, err := s.pipeline.Orchestrator.RecoverPreparedActions(ctx, 8); err != nil {
+					if ctx.Err() == nil {
+						log.Printf("[inbox] prepared action recovery failed: %v", err)
+					}
+					timer.Reset(time.Second)
+					continue
+				}
 				recoveryCtx, recoveryCancel := context.WithTimeout(ctx, 5*time.Second)
 				_, recoveryErr := s.accountingRuntime.Authority.RecoverActionResults(recoveryCtx, 32)
 				recoveryCancel()

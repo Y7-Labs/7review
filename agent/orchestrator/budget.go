@@ -187,8 +187,12 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 	if permit.AlreadyStarted {
 		return deny("action already started; reconcile without resending")
 	}
+	return o.invokeReserved(ctx, permit, active, invoke)
+}
+
+func (o *Orchestrator) invokeReserved(ctx context.Context, permit DispatchPermit, active int64, invoke func(context.Context) (string, error)) (string, error) {
 	if permit.ActiveMS < 0 || permit.ActiveMS > active {
-		return deny("invalid reserved active-time bound")
+		return "", &budgetError{errors.New("invalid reserved active-time bound")}
 	}
 	if permit.ActiveMS > 0 {
 		active = permit.ActiveMS
@@ -202,6 +206,7 @@ func (o *Orchestrator) dispatchInvocation(ctx context.Context, rc *review.Contex
 	}
 	start := time.Now()
 	var result string
+	var err error
 	if err = callCtx.Err(); err == nil {
 		result, err = invoke(callCtx)
 	}

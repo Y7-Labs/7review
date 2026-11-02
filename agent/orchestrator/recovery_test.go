@@ -2,7 +2,15 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"reflect"
 	"testing"
+	"time"
+
+	"github.com/Y4NN777/7review/agent/review"
 )
 
 type recoveryStreamProvider struct{ budgetProvider }
@@ -31,5 +39,79 @@ func TestDispatchPersistsExactInvocationMode(t *testing.T) {
 		if a.intents[0].Invocation != want {
 			t.Fatalf("invocation=%q want=%q", a.intents[0].Invocation, want)
 		}
+	}
+}
+
+type recoveringBudget struct {
+	stagedBudget
+	reclaims int
+}
+
+func (b *recoveringBudget) PreparedRecoveryCandidates(context.Context, int) ([]PreparedAction, error) {
+	return []PreparedAction{{ID: b.prepared.ActionID, RequestDigest: b.prepared.RequestDigest}}, nil
+}
+
+func (b *recoveringBudget) ReclaimPrepared(ctx context.Context, p PreparedAction, worker string, lease time.Duration) (ActionClaim, error) {
+	b.reclaims++
+	if b.stage == "reclaim" {
+		return ActionClaim{}, errors.New("reclaim unavailable")
+	}
+	c, err := b.ClaimPrepared(ctx, p, worker, lease)
+	c.Job = &review.JobClaim{RunID: b.prepared.Job.RunID, Token: "recovery-token"}
+	return c, err
+}
+
+func TestPreparedRecoveryUsesOnlyOriginalRequestAndNeverFallsBack(t *testing.T) {
+	for _, stage := range []string{"", "reclaim", "bad claim", "begin", "bad begin", "legacy invocation", "unknown invocation", "changed request", "provider missing", "record", "panic"} {
+		t.Run(stage, func(t *testing.T) {
+			limits := budgetTestLimits()
+			a := &recoveringBudget{}
+			req := LLMRequest{Model: "review", SystemPrompt: "stored sys", UserMessage: "stored user", MaxTokens: 100}
+			payload, _ := json.Marshal(req)
+			digest := sha256.Sum256(payload)
+			a.prepared = DispatchIntent{Invocation: "complete", ActionID: "original-action", RequestDigest: "sha256:" + hex.EncodeToString(digest[:]), Provider: "fake", Model: "review", Payload: payload, OperatorCeilings: limits, Execution: review.ExecutionContext{DeadlineAt: time.Now().Add(time.Minute)}, Job: &review.JobClaim{RunID: "original-run", Token: "dead-owner"}}
+			a.stage = stage
+			switch stage {
+			case "legacy invocation":
+				a.prepared.Invocation = ""
+			case "unknown invocation":
+				a.prepared.Invocation = "guess"
+			case "changed request":
+				a.prepared.Payload = []byte(`{}`)
+			case "provider missing":
+				a.prepared.Provider = "missing"
+			case "record":
+				a.recordErr = errors.New("journal unavailable")
+			}
+			calls := 0
+			p := budgetProvider{call: func(_ context.Context, got LLMRequest) (string, error) {
+				calls++
+				if a.order[len(a.order)-1] != "begin" || !reflect.DeepEqual(got, req) {
+					t.Error("recovery changed request or preceded sending")
+				}
+				if stage == "panic" {
+					panic("provider panic")
+				}
+				return "unvalidated response", nil
+			}}
+			o := NewOrchestrator(DefaultOrchestratorConfig("different-model", "small", "fake"), map[string]LLMProvider{"fake": p}, WithOperatorCeilings(&limits), WithBudgetAuthority(a))
+			n, err := o.RecoverPreparedActions(context.Background(), 8)
+			if stage == "" {
+				if err != nil || n != 1 || calls != 1 || len(a.outcomes) != 1 || string(a.outcomes[0].Response) != "unvalidated response" {
+					t.Fatalf("recovery: n=%d calls=%d outcomes=%d err=%v", n, calls, len(a.outcomes), err)
+				}
+			} else {
+				wantCalls := 0
+				if stage == "record" || stage == "panic" {
+					wantCalls = 1
+				}
+				if err == nil || calls != wantCalls {
+					t.Fatalf("failed open: calls=%d want=%d err=%v", calls, wantCalls, err)
+				}
+			}
+			if a.legacyCalls != 0 {
+				t.Fatal("recovery used immediate-send path")
+			}
+		})
 	}
 }

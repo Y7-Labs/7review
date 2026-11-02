@@ -94,8 +94,9 @@ the low-level registration seam cannot bypass it. Explicit ephemeral CI retains
 its separate pipeline/job identity. Legacy service rerun/tool paths fail closed
 until they return a new durable intake receipt; use explicit review intake for
 a fresh service request instead of calling the old rerun execution path.
-Only unclaimed pending work is recoverable automatically. A crash, panic or
-shutdown after claim is not permission to execute again: the row remains running
+Unclaimed pending jobs can execute from their frozen aggregate. Claimed jobs are
+never replayed as a whole. Eligible prepared actions have the separate confined
+recovery path below. Otherwise a crash, panic or shutdown after claim leaves the row running
 until its original deadline, then becomes `uncertain`. Expired pending work becomes
 `expired`. Neither state releases budget holds or authorizes redispatch.
 
@@ -182,10 +183,21 @@ token and confines the new token to that action. Old workers cannot begin or
 schedule another ID; the recovery owner cannot rerun the whole pipeline either.
 Reclaim returns the original immutable input for a qualified recovery adapter.
 
-Sending/uncertain/result actions are never reclaimed. No automatic background
-model resumer, prepared cancellation/refund, lease-renewal command or authenticated
-operator recovery surface is added here. Native/stream recovery adapters and
-validated continuation still require qualification. Ephemeral runtime recovery
+The existing bounded inbox worker pool now scans up to eight prepared actions
+per iteration. Reclaim, immutable-request verification and fenced Begin precede
+every recovered call. Recovery uses the stored provider/model and explicit
+`complete` or `stream` invocation, never current role routing or a fallback.
+Streaming is captured locally; native schemas pass unchanged through Complete,
+under the existing route's native-tool qualification. Neither path executes a
+tool or publishes output. Legacy intents without an invocation mode fail closed,
+as do unavailable original providers/APIs, changed bounds and malformed receipts.
+Process-death, duplicate-worker, stale-owner and interrupted-commit tests use
+controlled providers. The production catalog remains empty, not implicitly qualified.
+
+Sending/uncertain/result actions are never reclaimed. Responses are indexed as
+`recorded_unvalidated`; recovery does not finish the job, create a draft or clear
+the confined job token. Prepared cancellation/refund, lease renewal, authenticated
+operator recovery and validated continuation remain open. Ephemeral runtime recovery
 requires acknowledged service handoff; a CI retry cannot masquerade as durable
 service ownership. Unused and unknown holds are retained until a qualified
 settlement or future verified not-executed operation, not released on expiry.
@@ -231,7 +243,7 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 - Production receipt-verifier adapters and authenticated operator settlement
   commands; library-level reconciliation tests use an explicit test verifier.
-- Qualified recovery adapters, prepared cancellation, validated continuation and provider currentness
+- Live recovery-adapter qualification, prepared cancellation, validated continuation and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
 - Complete stable-provider-ID/alias migration and rename qualification, including
   historical path-keyed records; new identity checks are not proof of that exit.

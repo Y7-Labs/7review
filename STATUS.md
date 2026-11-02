@@ -43,17 +43,19 @@ through opt-in PostgreSQL configuration, with pre-dispatch checkpoints, immutabl
 attempts, generation fencing and trusted provider hosts. Production inference
 intentionally remains fail-closed, and canonical service work is artifact-only.
 Durable HTTP acceptance and pending-work recovery now preserve stable receipts
-and original deadlines; claimed crashes remain non-retryable/uncertain.
+and original deadlines; claimed jobs are never replayed as a whole.
 The complete initial inbox/attempt/job/Source/event aggregate now commits before
 202, with controlled PostgreSQL/process-crash evidence. Workers use the frozen
 checkpoint; lost-response replay retains identity without new SCM reads. Local
 unvalidated response recovery remains separate. Prepared actions now have bounded
-fenced leases, explicit confined reclaim and stale-job-owner revocation. Sending
-actions remain non-retryable. Qualified recovery adapters, validated continuation,
+fenced leases, confined automatic reclaim and stale-job-owner revocation. The
+bounded inbox workers recover exact stored Complete/Stream requests into the
+unvalidated result journal, without pipeline replay or role fallback. Sending
+actions remain non-retryable. Live recovery qualification, validated continuation,
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-43.
+[Accounting](docs/accounting.md) and progress slices 20-44.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
