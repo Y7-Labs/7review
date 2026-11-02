@@ -12,7 +12,7 @@ func TestPostgresV10MigrationRollsBackAndReducesExistingV9Results(t *testing.T) 
 	if err := a.db.QueryRow(`SELECT md5(request)||md5(quote)||md5(outcome) FROM budget_actions WHERE id=$1`, i.ActionID).Scan(&before); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions; ALTER TABLE budget_jobs ALTER CONSTRAINT budget_jobs_recovery_action_id_fkey NOT DEFERRABLE; UPDATE budget_schema SET version=9; CREATE FUNCTION fail_v10_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=10 THEN RAISE EXCEPTION 'injected v10 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v10_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v10_commit()`); err != nil {
+	if _, err := a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations,budget_model_reduction_inputs,budget_model_reductions; ALTER TABLE budget_jobs ALTER CONSTRAINT budget_jobs_recovery_action_id_fkey NOT DEFERRABLE; UPDATE budget_schema SET version=9; CREATE FUNCTION fail_v10_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=10 THEN RAISE EXCEPTION 'injected v10 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v10_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v10_commit()`); err != nil {
 		t.Fatal(err)
 	}
 	if tx, err := a.begin(ctx); err == nil {

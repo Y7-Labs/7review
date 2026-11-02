@@ -1017,6 +1017,32 @@ This is an incremental behavior ledger, not a completion declaration.
   Existing action-only reclaim restrictions remain intact. No schema change;
   explicit runtime version remains 12. Ceilings and alpha remain incomplete.
 
+### 62. Sealed Batch Membership At Execution Boundaries
+
+- A red PostgreSQL regression showed that atomic preparation still allowed an
+  extra action to reserve money with the same job token. Schema v13 now commits
+  an ordered, digest-bound membership seal and job reference with the complete
+  action/hold set. Exact retries verify it; legacy unsealed sets cannot be adopted.
+- Reservation, claim and Begin verify every original slot and group input. Extra
+  actions, changed seal digests, missing/duplicated slots and detached job bindings
+  fail closed. A replacement execution token does not rewrite the original intent.
+  Terminal projection also verifies sealed membership.
+- The only supported nonmember is the exact formatter child derived from a
+  checked reduction and confined by the current action grant. A full two-batch
+  response -> formatter -> terminal test verifies that valid continuation still
+  works and that later seal corruption makes the result unavailable.
+- Deferred seal commit failure rolls back all actions, holds and membership.
+  The populated v12-to-v13 rehearsal verifies DDL/version rollback, idempotent
+  retry, unchanged sending requests/quotes/holds and fenced outcome attribution.
+  Migration never manufactures legacy batch recovery authority.
+- Verification: full PostgreSQL-backed tests, broad accounting/app/pipeline/
+  orchestrator/review race tests, vet, formatting, bridge tests and Compose
+  configuration validation pass.
+- Still open: group-confined batch reclaim, live `CompleteParallel` integration,
+  interrupted/overlapping batch recovery, durable tool continuation, authenticated
+  operator controls and safe cancellation/refund. Schema v13 requires explicit
+  migration; no deployed store was changed. Ceilings and alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

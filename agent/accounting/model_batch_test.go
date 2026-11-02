@@ -84,7 +84,7 @@ func TestModelBatchPreparationIsAtomicAndRestartIdempotent(t *testing.T) {
 }
 
 func TestModelBatchPreparationRollsBackEverySlotAndHold(t *testing.T) {
-	for _, fault := range []string{"later_route", "capacity", "commit"} {
+	for _, fault := range []string{"later_route", "capacity", "commit", "seal_commit"} {
 		t.Run(fault, func(t *testing.T) {
 			a, intents := modelBatchFixture(t)
 			if fault == "later_route" {
@@ -97,6 +97,10 @@ func TestModelBatchPreparationRollsBackEverySlotAndHold(t *testing.T) {
 					t.Fatal(err)
 				}
 				a.cfg.Catalog = catalog
+			} else if fault == "seal_commit" {
+				if _, err := a.db.Exec(`CREATE FUNCTION fail_seal_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected seal commit failure'; END $$; CREATE CONSTRAINT TRIGGER fail_seal_commit AFTER INSERT ON budget_model_batches DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_seal_commit()`); err != nil {
+					t.Fatal(err)
+				}
 			} else {
 				if _, err := a.db.Exec(`CREATE FUNCTION fail_batch_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected batch commit failure'; END $$; CREATE CONSTRAINT TRIGGER fail_batch_commit AFTER INSERT ON budget_actions DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_batch_commit()`); err != nil {
 					t.Fatal(err)
@@ -106,6 +110,10 @@ func TestModelBatchPreparationRollsBackEverySlotAndHold(t *testing.T) {
 				t.Fatalf("uncommitted batch escaped: %#v %v", p, err)
 			}
 			assertPreparedBatchCounts(t, a, 0)
+			var seals int
+			if err := a.db.QueryRow(`SELECT count(*) FROM budget_model_batches`).Scan(&seals); err != nil || seals != 0 {
+				t.Fatalf("seal escaped rollback: %d %v", seals, err)
+			}
 		})
 	}
 }
@@ -136,8 +144,22 @@ func TestModelBatchRetryCannotResetSendingOrExpandAnExistingPlan(t *testing.T) {
 	}
 }
 
+func TestSealedModelBatchRejectsAdditionalActions(t *testing.T) {
+	a, intents := modelBatchFixture(t)
+	ctx := context.Background()
+	if _, err := a.PrepareModelBatch(ctx, intents); err != nil {
+		t.Fatal(err)
+	}
+	extra := intents[0]
+	extra.ActionID = "unplanned-batch-action"
+	if p, err := a.PrepareAction(ctx, extra); err == nil || p.ID != "" {
+		t.Fatalf("sealed batch admitted extra spending: %#v %v", p, err)
+	}
+	assertPreparedBatchCounts(t, a, 2)
+}
+
 func TestModelBatchPreparationRejectsIncompleteOrMixedPlans(t *testing.T) {
-	for _, fault := range []string{"missing", "duplicate", "reordered", "job", "checkpoint", "source", "validator", "preexisting_partial", "preexisting_foreign"} {
+	for _, fault := range []string{"missing", "duplicate", "reordered", "job", "checkpoint", "source", "validator", "preexisting_partial", "preexisting_foreign", "preexisting_full"} {
 		t.Run(fault, func(t *testing.T) {
 			a, intents := modelBatchFixture(t)
 			want := 0
@@ -177,6 +199,13 @@ func TestModelBatchPreparationRejectsIncompleteOrMixedPlans(t *testing.T) {
 					t.Fatal(err)
 				}
 				want = 1
+			case "preexisting_full":
+				for _, i := range intents {
+					if _, err := a.PrepareAction(context.Background(), i); err != nil {
+						t.Fatal(err)
+					}
+				}
+				want = 2
 			}
 			if p, err := a.PrepareModelBatch(context.Background(), intents); err == nil || p != nil {
 				t.Fatalf("invalid batch accepted: %#v %v", p, err)

@@ -740,6 +740,12 @@ unrelated reduced siblings fail closed. Committed drafts/blocked results survive
 restart without replay, approval, publication or release of unknown-usage holds.
 This remains a partial model-only continuation path, not completed ceilings or
 an alpha-readiness claim. Explicit migration is required before worker restart.
+Schema v13 now seals atomic initial-batch membership alongside the job reference.
+Additional initial actions cannot spend outside that set; claim, Begin and
+terminal reads recheck the complete frozen membership. Only the exact proven
+formatter continuation may extend it. Upgrades preserve legacy evidence without
+inventing seals or new reclaim authority. Live batch integration and group-scoped
+recovery remain open; this does not relax the no-sending-retry invariant.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

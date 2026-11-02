@@ -10,7 +10,7 @@ import (
 func TestPostgresV11UpgradeRollsBackAndNeverCommitsDanglingChildGrant(t *testing.T) {
 	a, parent, old := formatterParentFixture(t)
 	ctx := context.Background()
-	if _, err := a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations; ALTER TABLE budget_jobs ALTER CONSTRAINT budget_jobs_recovery_action_id_fkey NOT DEFERRABLE; UPDATE budget_schema SET version=10; CREATE FUNCTION fail_v11_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=11 THEN RAISE EXCEPTION 'injected v11 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v11_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v11_commit()`); err != nil {
+	if _, err := a.db.Exec(`ALTER TABLE budget_jobs DROP COLUMN model_batch_id; DROP TABLE budget_model_batches; ALTER TABLE budget_jobs DROP COLUMN terminal_reduction_id; DROP TABLE budget_model_continuations; ALTER TABLE budget_jobs ALTER CONSTRAINT budget_jobs_recovery_action_id_fkey NOT DEFERRABLE; UPDATE budget_schema SET version=10; CREATE FUNCTION fail_v11_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.version=11 THEN RAISE EXCEPTION 'injected v11 commit failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_v11_commit AFTER UPDATE ON budget_schema DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_v11_commit()`); err != nil {
 		t.Fatal(err)
 	}
 	if tx, err := a.begin(ctx); err == nil {

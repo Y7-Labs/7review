@@ -174,6 +174,9 @@ func (a *Authority) lookupModelJobTx(ctx context.Context, tx *sql.Tx, runID stri
 // Historical projection verifies evidence, not current dispatch authority. Each
 // formatter edge must still bind the exact parent proof and frozen child plan.
 func (a *Authority) checkTerminalLineageTx(ctx context.Context, tx *sql.Tx, id string, artifact review.ModelReduction) error {
+	if _, err := a.readModelBatchSealTx(ctx, tx, artifact.Source.Run.ID); err != nil {
+		return err
+	}
 	type group struct {
 		id       string
 		artifact review.ModelReduction

@@ -114,6 +114,13 @@ func (a *Authority) PrepareModelBatch(ctx context.Context, intents []orchestrato
 	if existing != 0 && existing != len(frozen) {
 		return nil, errors.New("partial legacy batch cannot be adopted")
 	}
+	prior, err := a.readModelBatchSealTx(ctx, tx, first.Job.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if existing > 0 && prior == nil {
+		return nil, errors.New("legacy batch has no atomic membership seal")
+	}
 	prepared := make([]orchestrator.PreparedAction, 0, len(frozen))
 	for _, i := range frozen {
 		p, err := a.reserveActionTx(ctx, tx, i, true)
@@ -124,6 +131,34 @@ func (a *Authority) PrepareModelBatch(ctx context.Context, intents []orchestrato
 			return nil, errors.New("batch contains an already started action")
 		}
 		prepared = append(prepared, orchestrator.PreparedAction{ID: p.ID, RequestDigest: p.RequestDigest, Fence: p.Fence})
+	}
+	seal := modelBatchSeal{Version: 1, RunID: first.Job.RunID, AttemptID: first.Attempt.AttemptID, GroupDigest: group}
+	for _, i := range frozen {
+		seal.Slots = append(seal.Slots, modelBatchSlot{ActionID: i.ActionID, IntentDigest: requests[i.ActionID]})
+	}
+	manifest, err := json.Marshal(seal)
+	if err != nil {
+		return nil, err
+	}
+	if len(manifest) > 64<<10 {
+		return nil, errors.New("batch seal exceeds storage bound")
+	}
+	if prior == nil {
+		id := batchSealID(seal.RunID, seal.GroupDigest)
+		if _, err = tx.ExecContext(ctx, `INSERT INTO budget_model_batches(id,run_id,attempt_id,group_digest,manifest_digest,manifest) VALUES($1,$2,$3,$4,$5,$6)`, id, seal.RunID, seal.AttemptID, seal.GroupDigest, hash(manifest), manifest); err != nil {
+			return nil, err
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET model_batch_id=$2 WHERE run_id=$1`, seal.RunID, id); err != nil {
+			return nil, err
+		}
+	} else {
+		original, err := json.Marshal(prior)
+		if err != nil {
+			return nil, err
+		}
+		if hash(original) != hash(manifest) {
+			return nil, errors.New("batch membership cannot be rewritten")
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return nil, err

@@ -43,7 +43,8 @@ Schemas v8/v9 add prepared-action leases, fenced outcome provenance and confined
 recovery ownership. Schema v10 adds immutable local reduction artifacts and exact
 input links. Schema v11 adds parent-to-child links and a deferred child-grant FK.
 Schema v12 adds the terminal reduction reference on owned jobs.
-Worker runtime now requires v12; run explicit migration before restart.
+Schema v13 adds immutable batch membership seals and their job references.
+Worker runtime now requires v13; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -61,6 +62,9 @@ a dangling child restriction cannot commit. No temporary unrestricted grant is
 needed to create a child and reserve its three scope holds in one transaction.
 The v11-to-v12 rehearsal injects deferred commit failure, verifies column/version
 rollback, retries idempotently and completes a pre-existing reduction afterward.
+The v12-to-v13 rehearsal preserves fenced sending requests/quotes/holds and
+outcome attribution across deferred DDL failure and idempotent retry. It never
+infers seals or recovery rights for existing unsealed batches.
 
 ## Runtime Intake
 
@@ -330,9 +334,19 @@ sets, and returns receipts only after commit. A later-slot route/capacity denial
 or deferred commit failure rolls back the whole set. Competing callers and exact
 restart retries preserve one set. Sending actions cannot be reset by retry.
 
+Schema v13 commits a bounded ordered membership seal and job binding in the same
+transaction. It binds each original immutable intent and the common checkpoint
+group. Exact retries verify that seal; a complete but unsealed legacy set is not
+silently adopted. Further reservations outside the sealed set are denied, except
+the exact confined formatter child justified by a checked parent reduction.
+Every claim/Begin rechecks all sealed slots, including frozen source, validation
+and original job epoch. Missing/duplicated slots, changed artifacts or a detached
+job binding fail closed. Terminal projection also rechecks the seal. Normal
+current-epoch replacement during reclaim does not rewrite immutable intents.
+
 This API is not yet wired into `CompleteParallel`; live batching still prepares
-individual actions. Sealed membership and group-confined recovery ownership must
-be implemented before integration. It does not loosen action-only reclaim or
+individual actions. Group-confined recovery ownership must still be implemented
+before integration. The seal does not loosen action-only reclaim or
 make prepared siblings after external progress eligible for broad job takeover.
 
 ### Terminal Model Projection
