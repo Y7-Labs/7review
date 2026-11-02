@@ -51,6 +51,7 @@ type PreparedAction struct {
 }
 
 type ActionClaim struct {
+	Intent                      *DispatchIntent `json:"-"`
 	ID, RequestDigest, WorkerID string
 	Fence                       uint64
 	LeaseUntil                  time.Time

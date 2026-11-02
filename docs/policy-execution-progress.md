@@ -705,6 +705,27 @@ This is an incremental behavior ledger, not a completion declaration.
 - Verification: PostgreSQL accounting/orchestrator suite, including migration and
   existing receipt/hold behavior, passed.
 
+### Slice 41: Fenced Prepared Claims and Confined Reclaim
+
+- REC-01 claims use database time, bounded leases, expected fencing epochs and
+  monotonically increasing fences. Live owners cannot be stolen; expired owners
+  cannot begin. Sending/currentness, immutable qualification, scope authority,
+  reservation integrity and budget incidents are rechecked under ordered locks.
+- Reclaim rotates the durable service job token and confines it to the selected
+  action. Neither the stale owner nor the recovery owner may schedule a new ID
+  as a substitute for validated continuation. Jobs with prior external progress
+  are not taken over. Ephemeral runtime recovery requires service handoff.
+- Claim/reclaim/sending commit faults return no authority and roll back token,
+  fence and marker changes. A durable sending fence overrides contradictory
+  `prepared` state; sending/uncertain/result actions are never reclaimable.
+- Schema v9 records fenced provenance so loss of a lease row cannot degrade
+  result recording to legacy authorization. Late attributable responses retain
+  their sending fence even after lease expiry. No unused/unknown hold is released.
+- Bounded host-only discovery finds lost preparation receipts; descriptors do
+  not grant dispatch. Recovered immutable input bytes remain available on claims.
+- Verification: real PostgreSQL race cases for stale owners, concurrent claims,
+  commit faults, authority revocation, missing records and outcome fencing.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at

@@ -45,11 +45,15 @@ func (a *Authority) guardJobDispatch(ctx context.Context, tx *sql.Tx, i orchestr
 		return err
 	}
 	var allowed bool
-	if err := tx.QueryRowContext(ctx, `SELECT dispatch_allowed AND attempt_id=$2 FROM budget_jobs WHERE run_id=$1`, i.Job.RunID, i.Attempt.AttemptID).Scan(&allowed); err != nil {
+	var recovery sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT dispatch_allowed AND attempt_id=$2,recovery_action_id FROM budget_jobs WHERE run_id=$1`, i.Job.RunID, i.Attempt.AttemptID).Scan(&allowed, &recovery); err != nil {
 		return err
 	}
 	if !allowed {
 		return errors.New("job cannot dispatch this attempt")
+	}
+	if recovery.Valid && recovery.String != i.ActionID {
+		return errors.New("recovered job is confined to its prepared action; validated continuation required")
 	}
 	return nil
 }
