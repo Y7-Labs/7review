@@ -1374,7 +1374,7 @@ func (p *Pipeline) runReview(ctx context.Context, runID string, rc *review.Conte
 	}
 	raw := strings.Join(rc.AllFindings(), "\n")
 	rawForRepair := raw
-	findings, coverage, toolRequests, status := parseReviewOutputDetailed(raw)
+	findings, coverage, toolRequests, status := parseReviewResponses(rc.AllFindings())
 	for round := 1; len(toolRequests) > 0 && round <= maxReviewToolRounds(); round++ {
 		toolRequests = markToolRequestRound(toolRequests, round)
 		rc.Source.ToolRequests = append(rc.Source.ToolRequests, toolRequests...)
@@ -2270,6 +2270,8 @@ func countLines(text string) int {
 func skillCoverageIsMeaningful(item review.SkillCoverage) bool {
 	status := strings.ToLower(strings.TrimSpace(item.Status))
 	switch status {
+	case "incomplete_batch_coverage":
+		return false
 	case "", "missing", "skipped", "not_used", "not-used", "uncovered":
 		return len(item.Evidence) > 0 || len(item.Tools) > 0
 	default:
