@@ -409,6 +409,22 @@ func (a *Authority) PrepareAction(ctx context.Context, i orchestrator.DispatchIn
 }
 
 func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIntent, prepared bool) (orchestrator.DispatchPermit, error) {
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	defer tx.Rollback()
+	permit, err := a.reserveActionTx(ctx, tx, i, prepared)
+	if err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return orchestrator.DispatchPermit{}, err
+	}
+	return permit, nil
+}
+
+func (a *Authority) reserveActionTx(ctx context.Context, tx *sql.Tx, i orchestrator.DispatchIntent, prepared bool) (orchestrator.DispatchPermit, error) {
 	if !validID(i.ActionID) || !validID(i.Provider) || !validID(i.Model) || !validID(i.Role) || !validID(i.Step) {
 		return orchestrator.DispatchPermit{}, errors.New("action and route identity required")
 	}
@@ -423,11 +439,6 @@ func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIn
 	if len(request) > 24<<20 {
 		return orchestrator.DispatchPermit{}, errors.New("immutable action exceeds storage bound")
 	}
-	tx, err := a.begin(ctx)
-	if err != nil {
-		return orchestrator.DispatchPermit{}, err
-	}
-	defer tx.Rollback()
 	var tracking sql.NullString
 	if err = a.guardJobDispatch(ctx, tx, i); err != nil {
 		return orchestrator.DispatchPermit{}, err
@@ -558,9 +569,6 @@ func (a *Authority) reserveAction(ctx context.Context, i orchestrator.DispatchIn
 		if _, err = tx.ExecContext(ctx, `UPDATE budget_jobs SET phase='effect_started',updated_at=clock_timestamp() WHERE run_id=$1`, i.Job.RunID); err != nil {
 			return orchestrator.DispatchPermit{}, err
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		return orchestrator.DispatchPermit{}, err
 	}
 	notAfter := i.Execution.DeadlineAt
 	if quote.Qualification.ValidUntil.Before(notAfter) {
