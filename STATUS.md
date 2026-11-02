@@ -124,8 +124,9 @@ acknowledgment is reconciled through exact command replay; console interruptions
 and late model events do not assert rollback or overwrite operator receipts.
 Exact terminal publication authorization now uses the same HTTP/client/CLI/TUI
 boundary with explicit assessment, artifact and destination identity. It records
-authority only. Schema v20 now materializes one exact pending or obsolete outbox
-operation after restart and obsoletes stale pending authority, but fenced claim,
+authority only. The schema v20 maintenance loop now materializes one exact pending
+or obsolete outbox operation after restart and obsoletes stale pending authority,
+failing closed before fresh inbox claims when that journal is unavailable. Fenced claim,
 provider delivery and uncertain-result reconciliation remain open. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this

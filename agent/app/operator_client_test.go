@@ -106,7 +106,7 @@ func TestCanonicalOperatorClientAuthenticatesAndReconcilesLostHTTPAcknowledgment
 }
 
 func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedReviewer(t *testing.T) {
-	s, db, _ := inboxServerDSN(t)
+	s, db, dsn := inboxServerDSN(t)
 	directory, err := review.DecodeOperatorDirectory([]byte(`{"schema_version":1,"principals":[{"id":"reviewer","token_env":"REVIEWER_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["reviewer"]}]},{"id":"participant","token_env":"PARTICIPANT_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["participant"]}]}]}`), func(name string) string { return strings.ToLower(strings.TrimSuffix(name, "_TOKEN")) + "-secret" })
 	if err != nil {
 		t.Fatal(err)
@@ -209,5 +209,24 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	}
 	if provider.calls.Load() != beforeCalls {
 		t.Fatalf("authorization dispatched provider I/O: before=%d after=%d", beforeCalls, provider.calls.Load())
+	}
+	restarted := newInboxServer(t, dsn)
+	restarted.startInboxWorkers()
+	operationState := ""
+	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
+		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	restarted.Close()
+	if operationState != "pending" {
+		t.Fatalf("restart did not materialize authorized operation: %q %v", operationState, err)
+	}
+	if provider.calls.Load() != beforeCalls {
+		t.Fatalf("materialization replayed provider work: before=%d after=%d", beforeCalls, provider.calls.Load())
+	}
+	if runs, listErr := restarted.pipeline.Jobs.List(context.Background()); listErr != nil || len(runs) != 0 {
+		t.Fatalf("materialization replayed pipeline: %#v %v", runs, listErr)
 	}
 }

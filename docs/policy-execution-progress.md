@@ -1489,6 +1489,8 @@ This is an incremental behavior ledger, not a completion declaration.
 - Schema v20 adds the publication-operation outbox. Its explicit rollback/retry
   rehearsal preserves existing authorization and terminal evidence and infers no
   operation; duplicate post-restart materializers commit one exact pending row.
+  The service maintenance loop runs materialization before fresh inbox claims and
+  blocks dispatch if the operation journal is unavailable or corrupt.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;

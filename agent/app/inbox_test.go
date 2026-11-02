@@ -716,6 +716,26 @@ func TestInboxWorkerDoesNotDispatchPastUnavailableRecoveryJournal(t *testing.T) 
 	}
 }
 
+func TestInboxWorkerDoesNotDispatchPastUnavailablePublicationJournal(t *testing.T) {
+	s, db := inboxServer(t)
+	queued, err := s.enqueueReview(review.Request{Provider: "github", ProjectID: "org/repo", ChangeID: "7", DeliveryID: "publication-recovery-outage"}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`ALTER TABLE budget_publication_operations RENAME TO unavailable_publication_operations`); err != nil {
+		t.Fatal(err)
+	}
+	s.startInboxWorkers()
+	time.Sleep(600 * time.Millisecond)
+	var state string
+	if err = db.QueryRow(`SELECT state FROM budget_inbox WHERE run_id=$1`, queued.RunID).Scan(&state); err != nil || state != "pending" {
+		t.Fatalf("work passed unavailable publication journal: %s %v", state, err)
+	}
+	if runs, err := s.pipeline.Jobs.List(context.Background()); err != nil || len(runs) != 0 {
+		t.Fatalf("pipeline ran past publication journal outage: %#v %v", runs, err)
+	}
+}
+
 func TestInboxWorkersRecoverRecordedResultsWithoutRerunningPipeline(t *testing.T) {
 	s, db := inboxServer(t)
 	s.startInboxWorkers()
