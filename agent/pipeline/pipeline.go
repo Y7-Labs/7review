@@ -2240,6 +2240,9 @@ func executeReadOnlyReviewTool(rc *review.Context, name string) (any, error) {
 			"diff_refs":   scm.DiffRefs,
 		}, nil
 	case "get_changed_files":
+		if len(rc.Source.ChangedFiles) == 0 && (rc.Source.Diff == nil || len(rc.Source.Diff.Files) > 0) {
+			return nil, fmt.Errorf("changed-file metadata is unavailable in the captured snapshot")
+		}
 		files := make([]map[string]any, 0, len(rc.Source.ChangedFiles))
 		for _, file := range rc.Source.ChangedFiles {
 			files = append(files, map[string]any{
@@ -2260,7 +2263,7 @@ func executeReadOnlyReviewTool(rc *review.Context, name string) (any, error) {
 	case "get_diff_summary":
 		out := map[string]any{"file_count": 0, "total_tokens": 0}
 		if rc.Diff == nil {
-			return out, nil
+			return nil, fmt.Errorf("diff evidence is unavailable in the captured snapshot")
 		}
 		files := make([]map[string]any, 0, len(rc.Diff.Files))
 		total := 0
@@ -2456,6 +2459,14 @@ func parseReviewOutputDetailed(text string) ([]review.Finding, []review.SkillCov
 	}
 	for _, candidate := range jsonCandidates(text) {
 		if findings, coverage, toolRequests, ok := decodeReviewOutput(candidate); ok {
+			if len(toolRequests) > review.MaxModelToolRequests {
+				return nil, nil, nil, "tool_loop_incomplete"
+			}
+			for _, request := range toolRequests {
+				if err := validateSnapshotToolRequestShape(request); err != nil {
+					return nil, nil, nil, "tool_loop_incomplete"
+				}
+			}
 			if len(findings) == 0 {
 				return findings, coverage, toolRequests, "empty_findings"
 			}
@@ -2515,16 +2526,10 @@ func normalizeToolRequests(items []review.ToolRequest) []review.ToolRequest {
 	for _, item := range items {
 		item.Name = strings.TrimSpace(item.Name)
 		item.Reason = strings.TrimSpace(item.Reason)
-		if item.Name == "" {
-			continue
-		}
 		if item.Input == nil {
 			item.Input = map[string]any{}
 		}
 		out = append(out, item)
-	}
-	if len(out) > 5 {
-		return out[:5]
 	}
 	return out
 }

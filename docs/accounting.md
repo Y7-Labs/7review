@@ -422,6 +422,39 @@ cancellation/refund. The terminal projection replaces handed-off HTTP views with
 the authoritative stored result, never resumes the old frame. A formatter
 advancement itself still does not finish, approve or publish the review.
 
+## Snapshot Tool Observations
+
+The six current reasoner tools read only captured `Source` data; they do not fetch
+fresh SCM data or call the public operator-tool executor. `ModelToolObserverV1`
+renders a detached, deterministic `ModelToolObservations` set for an already
+verified `needs_tools` parent. It binds run/attempt, parent group/input digests and
+the complete ordered normalized request list. It rechecks response digests and
+re-parses the current group's recorded responses before rendering, including
+rejecting older partial plans that silently omitted an over-bound proposal.
+
+Missing/invalid parent identity, cursor, validation, diff, input references or
+interruption return no partial set. Snapshot policy and skill permissions remain
+required. Tool input permits only an optional `run` string matching the active
+snapshot; foreign runs, wrong types and unsupported fields produce denials, not
+successful reads of a different active context. Missing data is an error, distinct
+from a captured empty diff. Large results have status `truncated`, with bounded,
+valid JSON containing original byte length and a UTF-8-safe incomplete preview.
+They are not counted as successful tool evidence.
+
+V1 data bounds are five requests, 128-byte names, 1024-byte reasons and 4096-byte
+inputs; result text is at most 4096 bytes, each encoded observation at most 12 KiB,
+and the full observation set at most 128 KiB. The model parser rejects malformed
+or over-bound plans instead of dropping blank names or truncating the list.
+
+These are data bounds, not financial/resource qualification. The adapter does not
+persist observations, reserve/settle tool usage, read current permission state,
+advance the job, issue model calls, approve or publish. Its caller must verify
+durable parent proof, currentness and accounting before committing observations
+and authorizing a child. The canonical worker still leaves tool plans pending.
+This adapter does not re-qualify existing stored terminal assessments.
+Durable observation accounting/commit, guarded reasoner continuation, authenticated
+operator controls and safe cancellation/refund remain open. Schema stays v13.
+
 ## Token And Price Qualification
 
 There are no production route defaults or hardcoded live prices. Trusted host

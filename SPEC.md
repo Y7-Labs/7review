@@ -754,6 +754,12 @@ executes each slot sequentially. Frozen routing/output bounds survive later role
 configuration changes. Failed planning/commit/receipt checks never fall back to
 individual calls. Tool observations and continuation remain open; a `needs_tools`
 artifact is pending, not successful empty evidence or a final assessment.
+The snapshot-only `ModelToolObserverV1` now renders bounded, input-bound local
+observation sets without network access or job authority. It rechecks the complete
+recorded proposal list, preserves denials/missing data/truncation and exposes no
+partial set after interruption. This is not a durable observation receipt or
+resource settlement: observation commit/accounting and guarded reasoner-child
+authorization remain open, as do operator controls and safe cancellation/refund.
 
 | Execution state | Event/guard | Result and permitted effect |
 | --- | --- | --- |

@@ -4,9 +4,22 @@ import (
 	"encoding/json"
 	"errors"
 	"unicode/utf8"
+
+	"github.com/Y4NN777/7review/agent/review"
 )
 
-const maxSnapshotToolResultBytes = 4096
+const maxSnapshotToolResultBytes = review.MaxSnapshotToolResultBytes
+
+func validateSnapshotToolRequestShape(request review.ToolRequest) error {
+	if len(request.Name) == 0 || len(request.Name) > review.MaxModelToolNameBytes || len(request.Reason) > review.MaxModelToolReasonBytes {
+		return errors.New("tool request identity or reason exceeds the supported bound")
+	}
+	raw, err := json.Marshal(request.Input)
+	if err != nil || len(raw) > review.MaxModelToolInputBytes {
+		return errors.New("tool request input exceeds the supported bound")
+	}
+	return nil
+}
 
 func snapshotToolResult(result any) (string, bool, error) {
 	raw, err := json.Marshal(result)

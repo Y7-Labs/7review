@@ -55,7 +55,7 @@ actions remain non-retryable. Live recovery qualification, validated continuatio
 provider currentness, non-model
 accounting and operational qualification remain prerequisites
 for completing ceilings. Scoped conflicts have not been started. See
-[Accounting](docs/accounting.md) and progress slices 20-64. Pipeline actions now
+[Accounting](docs/accounting.md) and progress slices 20-66. Pipeline actions now
 persist pre-call evidence, prior responses, typed continuation slots and default
 validation settings. Versioned local reducers now persist immutable validated,
 pending-step or blocked artifacts with exact input links, under process-death and
@@ -78,6 +78,10 @@ Canonical multi-batch execution now freezes all requests and atomically stages
 the sealed set, then hands off without live provider I/O. Restart and paused-live/
 recovery overlap tests retain one execution per slot and authoritative draft views.
 Tool plans still wait for durable observation/continuation support.
+A versioned snapshot-only renderer now binds ordered observations to parent/input
+and request digests, preserving denials, missing data and explicit truncation.
+Malformed/over-bound proposals cannot silently lose requests. This renderer does
+not yet persist or charge observations, or authorize the next model action.
 The v8-to-v9 through v12-to-v13 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v13 before restart. No deployed database was changed.

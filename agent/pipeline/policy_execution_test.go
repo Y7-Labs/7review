@@ -62,6 +62,7 @@ func TestReviewToolRequiresBothPolicyAndSkillPermission(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rc := review.NewContext(review.Request{})
+			rc.Source.Diff = &review.StructuredDiff{Files: []review.FileDiff{{Path: "service.go", Patch: "+change", TokenCount: 2}}}
 			rc.Source.Policy = projectTrustedPolicy(TrustedPolicyResult{Enforced: tc.enforced, Effective: &policy.EffectivePolicy{AllowedTools: tc.capabilities}})
 			if tc.skill {
 				rc.Source.SkillActivations = []review.SkillActivation{{AllowedTools: []string{"diff-analyzer"}}}
@@ -69,6 +70,12 @@ func TestReviewToolRequiresBothPolicyAndSkillPermission(t *testing.T) {
 			got := (&Pipeline{}).executeReviewToolRequest(rc, review.ToolRequest{Name: "get_diff_summary"})
 			if got.Status != tc.want {
 				t.Fatalf("got %#v, want %s", got, tc.want)
+			}
+			if tc.want == "ok" && !strings.Contains(got.Result, `"file_count":1`) {
+				t.Fatalf("authorized read lost its captured diff: %#v", got)
+			}
+			if tc.want == "denied" && got.Result != "" {
+				t.Fatal("denied read exposed snapshot evidence")
 			}
 		})
 	}

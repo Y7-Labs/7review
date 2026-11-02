@@ -21,7 +21,7 @@ func parseReviewResponses(responses []string) ([]review.Finding, []review.SkillC
 		findings = append(findings, f...)
 		coverages = append(coverages, c)
 		requests = append(requests, r...)
-		if s == "unparseable" || s == "empty_response" {
+		if isFatalModelParseStatus(s) {
 			status = s
 		} else if !isFatalModelParseStatus(status) && len(f) > 0 {
 			status = "parsed"
@@ -30,7 +30,7 @@ func parseReviewResponses(responses []string) ([]review.Finding, []review.SkillC
 	if isFatalModelParseStatus(status) {
 		requests = nil
 	}
-	if len(requests) > 5 {
+	if len(requests) > review.MaxModelToolRequests {
 		requests = nil
 		status = "tool_loop_incomplete"
 	}

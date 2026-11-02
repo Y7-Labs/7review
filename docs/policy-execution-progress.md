@@ -1114,6 +1114,45 @@ This is an incremental behavior ledger, not a completion declaration.
   qualification. No schema change; current explicit version is 13. Ceilings and
   alpha remain incomplete.
 
+### 65. Snapshot Tool Input Scope And Honest Truncation
+
+- Red tests showed that model-loop tools ignored arguments, including a foreign
+  `run`, and labelled incomplete, invalid-UTF-8/JSON result prefixes as `ok`.
+  Verified commit `777b4b3` validates the run-only input contract, preserves round
+  identity and returns a bounded valid JSON preview with status `truncated`.
+- Denied inputs expose no result. Truncated observations are not successful tool
+  evidence. This changes the actual existing read executor, not just a future
+  configuration validator. Full pipeline tests, focused race tests and vet passed.
+
+### 66. Qualified Pure Snapshot Observation Sets
+
+- Red parser tests caught silently dropped blank tool names and omitted requests
+  beyond the first five. Malformed/over-bound plans now remain explicitly
+  incomplete and cannot become successful empty evidence. Batch aggregation
+  preserves that fatal status rather than erasing it.
+- `ModelToolObserverV1` consumes a verified pending parent and produces a detached
+  bounded set, with exact run/attempt, parent/input and ordered-request digests.
+  It reads only captured Source through the shared governed snapshot executor.
+  No profile, SCM, publisher, store or model provider is consulted.
+- The adapter validates parent identity/cursor/input references and rechecks the
+  original response digests and full normalized proposals. Altered declarations
+  and legacy partial plans are rejected. Repeated rendering is deterministic;
+  cancellation between observations exposes no partial set or success authority.
+- Missing snapshot data now yields errors rather than fabricated empty results;
+  explicitly captured empty diffs remain valid. Permission tests now provide real
+  captured data, preserving independent policy/skill intersection checks. Denials,
+  unsupported tools/fields, foreign run inputs and truncation remain explicit.
+- Verification: full PostgreSQL-backed suite, corrected broad accounting/app/
+  pipeline/orchestrator/review race suite, latest focused observer/round tests,
+  vet, formatting, bridge tests and Compose validation pass. The permission
+  fixture failures were resolved by supplying captured evidence, not by relaxing
+  the missing-data rule. PostgreSQL durability settings remained enabled.
+- Still open: durable observation commit and tool resource accounting, guarded
+  reasoner-child creation/recovery, authenticated operator controls and safe
+  cancellation/refund. The canonical worker still leaves `needs_tools` pending;
+  the pure adapter grants no execution or financial rights. Schema remains 13;
+  no deployed database was changed. Ceilings and alpha remain incomplete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
