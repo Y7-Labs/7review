@@ -460,6 +460,7 @@ type aggregateQualifiedProvider struct {
 	attempt        string
 	calls          atomic.Int32
 	malformedFirst bool
+	response       string
 }
 
 func (*aggregateQualifiedProvider) Name() string { return "aggregate-fixture" }
@@ -500,6 +501,9 @@ func (p *aggregateQualifiedProvider) Complete(ctx context.Context, _ orchestrato
 	}
 	if p.malformedFirst && call == 1 {
 		return "malformed parent response", nil
+	}
+	if p.response != "" {
+		return p.response, nil
 	}
 	return "[]", nil
 }

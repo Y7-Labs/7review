@@ -1548,8 +1548,12 @@ This is an incremental behavior ledger, not a completion declaration.
   collisions, deferred commit failure and concurrent stale versions fail closed.
   Its rollback/retry rehearsal invents no disposition and preserves terminal proof.
 - Original findings, evidence and reports are not mutated, and a disposition has
-  no publication side effect. Reading the current projection and HTTP/CLI/TUI/
-  channel routing remain open; ceilings and alpha remain unfinished.
+  no publication side effect. The authenticated canonical HTTP endpoint accepts
+  the same closed command, and its strict client validates the exact receipt with
+  no retry, redirect or retarget. A mapped participant can dispute but cannot use
+  reviewer-only status reads or accept/reject findings; stale versions conflict.
+  Reading the current projection and CLI/TUI/channel routing remain open; ceilings
+  and alpha remain unfinished.
 
 ## Method File Example
 

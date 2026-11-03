@@ -139,10 +139,13 @@ func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	var cancelCommand *review.CancelAttemptCommand
 	var publicationCommand *review.AuthorizePublicationCommand
+	var dispositionCommand *review.FindingDispositionCommand
 	if c, decodeErr := review.DecodeCancelAttemptCommand(data); decodeErr == nil {
 		cancelCommand = &c
 	} else if c, decodeErr := review.DecodeAuthorizePublicationCommand(data); decodeErr == nil {
 		publicationCommand = &c
+	} else if c, decodeErr := review.DecodeFindingDispositionCommand(data); decodeErr == nil {
+		dispositionCommand = &c
 	} else {
 		http.Error(w, "invalid operator command envelope", http.StatusBadRequest)
 		return
@@ -156,8 +159,10 @@ func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 	var receipt any
 	if cancelCommand != nil {
 		receipt, err = s.accountingRuntime.Authority.CancelAttempt(ctx, actor, *cancelCommand)
-	} else {
+	} else if publicationCommand != nil {
 		receipt, err = s.accountingRuntime.Authority.AuthorizePublication(ctx, actor, *publicationCommand)
+	} else {
+		receipt, err = s.accountingRuntime.Authority.DispositionFinding(ctx, actor, *dispositionCommand)
 	}
 	if err != nil {
 		var conflict *accounting.OperatorCommandConflict

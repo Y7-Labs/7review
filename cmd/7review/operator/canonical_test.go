@@ -42,6 +42,15 @@ func canonicalPublicationReceipt(c review.AuthorizePublicationCommand) string {
 	return string(raw)
 }
 
+func canonicalFindingDispositionCommand() review.FindingDispositionCommand {
+	return review.FindingDispositionCommand{SchemaVersion: 1, CommandID: "finding-1", AttemptID: "attempt-1", ExpectedVersion: 2, Revision: "head", Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: "F-1", FindingDigest: "sha256:" + strings.Repeat("d", 64), Decision: review.FindingDisputed, Reason: "the branch is unreachable"}}
+}
+
+func canonicalFindingDispositionReceipt(c review.FindingDispositionCommand) string {
+	raw, _ := json.Marshal(review.FindingDispositionReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: "sha256:" + strings.Repeat("e", 64), AttemptID: c.AttemptID, ActorID: "alice", Kind: c.Kind, Revision: c.Revision, ControlVersion: c.ExpectedVersion + 1, FindingID: c.Payload.FindingID, FindingDigest: c.Payload.FindingDigest, Decision: c.Payload.Decision, State: "recorded", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	return string(raw)
+}
+
 func TestCanonicalClientUsesOnlyMappedOperatorCredentialAndExactJSONCommand(t *testing.T) {
 	t.Setenv("REVIEW_API_TOKEN", "legacy-secret")
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
@@ -97,6 +106,40 @@ func TestCanonicalClientSendsExactPublicationAuthorizationAndRequiresExactReceip
 	r, err := client.AuthorizePublication(context.Background(), c)
 	if err != nil || r.CommandID != c.CommandID || r.ControlVersion != 3 || calls != 1 {
 		t.Fatalf("publication authorization: %+v calls=%d err=%v", r, calls, err)
+	}
+}
+
+func TestCanonicalClientSendsExactFindingDispositionAndRequiresExactReceipt(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	c := canonicalFindingDispositionCommand()
+	calls := 0
+	client := NewClient("https://agent/prefix", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/prefix/operator/commands" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer operator-secret" || r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("wrong disposition transport: %s %s %#v", r.Method, r.URL.String(), r.Header)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		got, err := review.DecodeFindingDispositionCommand(raw)
+		if err != nil || got != c || strings.Contains(string(raw), "actor") {
+			t.Fatalf("finding disposition changed: %+v %v", got, err)
+		}
+		return jsonResponse(http.StatusOK, canonicalFindingDispositionReceipt(c)), nil
+	})})
+	r, err := client.DispositionFinding(context.Background(), c)
+	if err != nil || r.CommandID != c.CommandID || r.ControlVersion != 3 || calls != 1 {
+		t.Fatalf("finding disposition: %+v calls=%d err=%v", r, calls, err)
+	}
+	for _, body := range []string{"{}", canonicalFindingDispositionReceipt(c) + `{}`, strings.Replace(canonicalFindingDispositionReceipt(c), `"finding_digest":"`+c.Payload.FindingDigest+`"`, `"finding_digest":"sha256:`+strings.Repeat("f", 64)+`"`, 1)} {
+		calls = 0
+		client = NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			return jsonResponse(http.StatusOK, body), nil
+		})})
+		_, err = client.DispositionFinding(context.Background(), c)
+		var failure *CanonicalRequestError
+		if !errors.As(err, &failure) || !failure.MayHaveCommitted || failure.CommandID != c.CommandID || calls != 1 {
+			t.Fatalf("unproven disposition acknowledged/retried: failure=%+v calls=%d err=%v", failure, calls, err)
+		}
 	}
 }
 

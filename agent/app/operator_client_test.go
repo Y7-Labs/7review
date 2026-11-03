@@ -155,7 +155,7 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	}
 	s.accountingRuntime.Authority = authority
 	s.pipeline.Canonical.Authority = authority
-	provider := &aggregateQualifiedProvider{t: t, db: db, attempt: admission.AttemptID}
+	provider := &aggregateQualifiedProvider{t: t, db: db, attempt: admission.AttemptID, response: `[{"id":"F-1","severity":"high","title":"Authorization bypass","description":"The guard is skipped.","suggestion":"Enforce the guard.","location":{"path":"service.go","line":1},"confidence":0.91}]`}
 	build := func() *orchestrator.Orchestrator {
 		return orchestrator.NewOrchestrator(orchestrator.DefaultOrchestratorConfig("pinned", "pinned", provider.Name()), map[string]orchestrator.LLMProvider{provider.Name(): provider}, orchestrator.WithOperatorCeilings(&limits), orchestrator.WithBudgetAuthority(authority))
 	}
@@ -186,7 +186,7 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatal("validated terminal assessment was not completed")
 	}
 	projection, err := authority.LookupModelJob(context.Background(), admission.RunID)
-	if err != nil || !projection.Succeeded || projection.Source.Report.Draft == "" {
+	if err != nil || !projection.Succeeded || projection.Source.Report.Draft == "" || len(projection.Source.Findings) != 1 {
 		t.Fatalf("terminal projection: %#v %v", projection, err)
 	}
 	var assessmentDigest string
@@ -203,9 +203,42 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	if err != nil {
 		t.Fatal(err)
 	}
+	finding := projection.Source.Findings[0]
+	findingDigest, err := review.CanonicalFindingDigest(finding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	disposition := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: "finding-http", AttemptID: admission.AttemptID, ExpectedVersion: view.ControlVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: finding.ID, FindingDigest: findingDigest, Decision: review.FindingDisputed, Reason: "the cited branch is unreachable"}}
+	beforeCalls := provider.calls.Load()
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
+	dispositionReceipt, err := client.DispositionFinding(context.Background(), disposition)
+	if err != nil || dispositionReceipt.ActorID != "participant" || dispositionReceipt.ControlVersion != view.ControlVersion+1 || dispositionReceipt.State != "recorded" {
+		t.Fatalf("finding disposition: %+v %v", dispositionReceipt, err)
+	}
+	staleDisposition := disposition
+	staleDisposition.CommandID = "finding-http-stale"
+	if _, err = client.DispositionFinding(context.Background(), staleDisposition); err == nil {
+		t.Fatal("stale finding disposition accepted")
+	} else {
+		var failure *operator.CanonicalRequestError
+		if !errors.As(err, &failure) || failure.StatusCode != http.StatusConflict {
+			t.Fatalf("stale disposition rejection: %v", err)
+		}
+	}
+	if provider.calls.Load() != beforeCalls {
+		t.Fatalf("finding disposition dispatched provider I/O: before=%d after=%d", beforeCalls, provider.calls.Load())
+	}
+	var dispositions int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 1 {
+		t.Fatalf("finding disposition not durable: %d %v", dispositions, err)
+	}
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "reviewer-secret")
+	view, err = client.Attempt(context.Background(), admission.AttemptID)
+	if err != nil || view.ControlVersion != dispositionReceipt.ControlVersion {
+		t.Fatalf("updated attempt view: %+v %v", view, err)
+	}
 	draftDigest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(projection.Source.Report.Draft)))
 	command := review.AuthorizePublicationCommand{SchemaVersion: 1, CommandID: "publish-http", AttemptID: admission.AttemptID, ExpectedVersion: view.ControlVersion, Revision: view.Revision, Kind: "authorize_publication", Payload: review.AuthorizePublicationPayload{AssessmentDigest: assessmentDigest, ArtifactDigest: draftDigest, Destination: review.PublicationDestination{Provider: "github", Host: "github.com", RepositoryID: "org/repo", ChangeNumber: "7", ArtifactClass: "assessment"}, Reason: "reviewed exact terminal assessment"}}
-	beforeCalls := provider.calls.Load()
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
 	if _, err = client.AuthorizePublication(context.Background(), command); err == nil {
 		t.Fatal("participant authorized publication")
