@@ -23,6 +23,7 @@ func TestDockerCompose_WiresRequiredSidecarsOnOneNetwork(t *testing.T) {
 		"HTTP_READ_HEADER_TIMEOUT_MS:",
 		"HTTP_WRITE_TIMEOUT_MS:",
 		"WEBHOOK_JOB_TIMEOUT_MS:",
+		"ACCOUNTING_ROUTE_BOUNDS_JSON:",
 		`test: ["CMD", "/app/7review", "healthcheck"]`,
 		"${CORPUS_ROOT:-.}:/workspace:ro",
 		"GITLAB_URL:",

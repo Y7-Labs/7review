@@ -22,6 +22,23 @@ func TestRuntimeSettingsCannotSilentlyEnablePartialAccounting(t *testing.T) {
 	}
 }
 
+func TestRuntimeSettingsDecodeExplicitRouteQualifications(t *testing.T) {
+	raw := `{"schema_version":1,"routes":[{"provider":"qualified","model":"pinned-model-20261001","version":"contract-v1","currency":"USD","evidence_ref":"operator:provider-contract-1","valid_from":"2026-10-28T11:00:00Z","valid_until":"2026-10-28T13:00:00Z","input_hard_limit":100,"output_hard_limit":40,"input_micro_per_million":11,"output_micro_per_million":13,"fixed_micro":2,"all_output_bounded":true,"max_active_ms":50,"native_tools_qualified":false}]}`
+	values := map[string]string{"ACCOUNTING_DATABASE_URL": "postgres://configured", "ACCOUNTING_BOUNDARY_ID": "boundary", "ACCOUNTING_PROJECT_ID": "project", "ACCOUNTING_ROUTE_BOUNDS_JSON": raw}
+	settings, err := ReadRuntimeSettings(func(key string) string { return values[key] })
+	if err != nil || len(settings.RouteBounds) != 1 || settings.RouteBounds[0].Provider != "qualified" {
+		t.Fatalf("route qualifications not loaded: %#v %v", settings, err)
+	}
+	values["ACCOUNTING_ROUTE_BOUNDS_JSON"] = `{"schema_version":1,"routes":[]}`
+	if _, err = ReadRuntimeSettings(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("invalid route qualifications accepted")
+	}
+	values = map[string]string{"ACCOUNTING_ROUTE_BOUNDS_JSON": raw}
+	if _, err = ReadRuntimeSettings(func(key string) string { return values[key] }); err == nil {
+		t.Fatal("route qualifications enabled without accounting authority")
+	}
+}
+
 func TestPostgresRuntimeChecksSchemaWithoutAuthorizingDefaultRoutes(t *testing.T) {
 	_, dsn := postgresFixture(t)
 	limits := ledgerLimits()
@@ -38,6 +55,20 @@ func TestPostgresRuntimeChecksSchemaWithoutAuthorizingDefaultRoutes(t *testing.T
 	}
 	if _, err = runtime.Authority.cfg.Catalog.Quote(quoteIntent(), boundsTime); err == nil {
 		t.Fatal("enabling intake implicitly authorized an unqualified route")
+	}
+}
+
+func TestPostgresRuntimeUsesOnlyExplicitRouteQualifications(t *testing.T) {
+	_, dsn := postgresFixture(t)
+	limits := ledgerLimits()
+	runtime, err := OpenRuntime(context.Background(), RuntimeSettings{DatabaseURL: dsn, BoundaryID: "test-authority", ProjectID: "team", RouteBounds: []RouteBound{testRoute()}}, &limits)
+	if err != nil || runtime == nil {
+		t.Fatalf("qualified runtime unavailable: %#v %v", runtime, err)
+	}
+	defer runtime.Close()
+	quote, err := runtime.Authority.cfg.Catalog.Quote(quoteIntent(), boundsTime)
+	if err != nil || quote.RouteVersion != testRoute().Version || quote.EvidenceRef != testRoute().EvidenceRef {
+		t.Fatalf("runtime changed explicit qualification: %#v %v", quote, err)
 	}
 }
 

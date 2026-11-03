@@ -13,6 +13,7 @@ import (
 type RuntimeSettings struct {
 	DatabaseURL, BoundaryID, ProjectID string
 	Operators                          *review.OperatorDirectory
+	RouteBounds                        []RouteBound
 }
 
 func (s RuntimeSettings) Enabled() bool { return s.DatabaseURL != "" }
@@ -31,10 +32,17 @@ func (r *Runtime) Close() error {
 }
 func ReadRuntimeSettings(getenv func(string) string) (RuntimeSettings, error) {
 	s := RuntimeSettings{DatabaseURL: strings.TrimSpace(getenv("ACCOUNTING_DATABASE_URL")), BoundaryID: strings.TrimSpace(getenv("ACCOUNTING_BOUNDARY_ID")), ProjectID: strings.TrimSpace(getenv("ACCOUNTING_PROJECT_ID"))}
+	if raw := strings.TrimSpace(getenv("ACCOUNTING_ROUTE_BOUNDS_JSON")); raw != "" {
+		bounds, err := DecodeRouteBounds([]byte(raw))
+		if err != nil {
+			return RuntimeSettings{}, errors.New("ACCOUNTING_ROUTE_BOUNDS_JSON is invalid")
+		}
+		s.RouteBounds = bounds
+	}
 	return s, s.validate()
 }
 func (s RuntimeSettings) validate() error {
-	if s.DatabaseURL == "" && s.BoundaryID == "" && s.ProjectID == "" {
+	if s.DatabaseURL == "" && s.BoundaryID == "" && s.ProjectID == "" && len(s.RouteBounds) == 0 {
 		return nil
 	}
 	if s.DatabaseURL == "" || len(s.DatabaseURL) > 8192 || !validID(s.BoundaryID) || !validID(s.ProjectID) {
@@ -73,7 +81,7 @@ func OpenRuntime(ctx context.Context, settings RuntimeSettings, limits *review.R
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := NewCatalog(nil)
+	catalog, err := NewCatalog(settings.RouteBounds)
 	if err != nil {
 		db.Close()
 		return nil, err

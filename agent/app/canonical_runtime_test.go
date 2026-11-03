@@ -48,6 +48,7 @@ func TestCanonicalServiceRuntimePersistsIntakeButDeniesUnqualifiedModel(t *testi
 	t.Setenv("ACCOUNTING_DATABASE_URL", dsn)
 	t.Setenv("ACCOUNTING_BOUNDARY_ID", "service-test")
 	t.Setenv("ACCOUNTING_PROJECT_ID", "team")
+	t.Setenv("ACCOUNTING_ROUTE_BOUNDS_JSON", "")
 	var calls atomic.Int32
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)

@@ -152,8 +152,9 @@ Migration is explicit; startup never initializes replacement tables. The service
 requires `POLICY_V2_MODE=enforce` for this runtime and uses the configured SCM API
 host, not a webhook/report URL. It runs artifact-only, with legacy publication and
 optional ungoverned memory/context side effects disabled. The runtime factory has
-an empty qualified-route catalog and no receipt verifier: enabling intake alone
-cannot spend on any production model. Real-provider qualification remains required.
+an empty deny-all route catalog unless trusted host qualification is supplied,
+and no receipt verifier by default. Enabling intake alone cannot spend on any
+production model. Real-provider qualification remains explicit and operator-owned.
 
 ### Authenticated Operator Access
 
@@ -854,6 +855,22 @@ price rewrites. Configured active-time holds are enforced by dispatch deadlines.
 Qualification is rechecked after lock waits. Permits expire at the earlier
 execution or qualification deadline, so a stalled sender cannot use stale price
 authority. Receipt identity conflicts are serialized even across project scopes.
+
+The service accepts these records only through the trusted host variable
+`ACCOUNTING_ROUTE_BOUNDS_JSON`. It is a closed schema-v1 document; duplicate or
+unknown fields, duplicate provider/model pairs, invalid time windows, unbounded
+output and unsafe numeric bounds fail startup. Setting it without the complete
+accounting database/boundary/project authority also fails startup. For example:
+
+```json
+{"schema_version":1,"routes":[{"provider":"openai_compat","model":"pinned-model-id","version":"provider-contract-2026-11","currency":"USD","evidence_ref":"operator:contract-42","valid_from":"2026-11-01T00:00:00Z","valid_until":"2026-12-01T00:00:00Z","input_hard_limit":100000,"output_hard_limit":4096,"input_micro_per_million":1000,"output_micro_per_million":2000,"fixed_micro":0,"all_output_bounded":true,"max_active_ms":30000,"native_tools_qualified":false}]}
+```
+
+This is authority to reserve and send within that exact contract, not evidence of
+actual usage. Until a trusted receipt verifier is configured, provider outcomes
+remain unknown and retain the full reservation. Operators must not qualify model
+aliases, proxies with mutable routing, or contracts where `max_tokens` does not
+bound every billable output token.
 
 ## Verification
 

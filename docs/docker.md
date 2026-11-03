@@ -58,6 +58,9 @@ override; the stack deliberately does not forward the entire host environment.
 
 Canonical controls require the coordinated runtime, trusted host ceilings and
 explicit schema v24 migration; the default legacy stack is not that authority.
+`ACCOUNTING_ROUTE_BOUNDS_JSON` is forwarded explicitly and defaults to an empty,
+deny-all catalog. Supplying it authorizes only its exact time-bounded routes and
+does not settle unknown usage; see [token and price qualification](accounting.md#token-and-price-qualification).
 After explicitly building/recreating the intended service configuration, use
 the host CLI against its loopback-published port, or the container binary against
 its own loopback address:
