@@ -89,6 +89,10 @@ func TestFindingDispositionPersistsExactTerminalSubjectAndReplaysAfterReplacemen
 	if err = a.db.QueryRow(`SELECT (SELECT count(*) FROM budget_finding_dispositions),(SELECT d.command_id FROM budget_finding_disposition_heads h JOIN budget_operator_commands d ON d.id=h.disposition_id WHERE h.attempt_id=$1 AND h.finding_id=$2)`, command.AttemptID, command.Payload.FindingID).Scan(&dispositions, &head); err != nil || dispositions != 2 || head != later.CommandID {
 		t.Fatalf("replacement lost history/head: %d %q %v", dispositions, head, err)
 	}
+	view, err := restarted.FindingDisposition(ctx, actor, command.AttemptID, command.Payload.FindingID)
+	if err != nil || view.Current == nil || view.Current.CommandID != later.CommandID || view.Current.Decision != review.FindingRejected || view.Current.Reason != later.Payload.Reason || view.Current.RecordedVersion != next.ControlVersion {
+		t.Fatalf("replacement finding view: %#v %v", view, err)
+	}
 	replayed, err = restarted.DispositionFinding(ctx, actor, command)
 	if err != nil || !reflect.DeepEqual(receipt, replayed) {
 		t.Fatalf("old exact replay after replacement: %#v %v", replayed, err)
@@ -185,5 +189,37 @@ func TestFindingDispositionCommitFailureAndConcurrentVersionRaceAreAtomic(t *tes
 	}
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("concurrent dispositions did not serialize: successes=%d conflicts=%d", successes, conflicts)
+	}
+}
+
+func TestFindingDispositionViewRevalidatesTerminalSubjectAndCurrentAttribution(t *testing.T) {
+	a, _, reviewer, participant, command, dsn := findingDispositionFixture(t)
+	ctx := context.Background()
+	view, err := a.FindingDisposition(ctx, participant, command.AttemptID, command.Payload.FindingID)
+	if err != nil || view.Current != nil || view.FindingDigest != command.Payload.FindingDigest || view.ControlVersion != command.ExpectedVersion {
+		t.Fatalf("undispositioned finding view: %#v %v", view, err)
+	}
+	if _, err = a.FindingDisposition(ctx, participant, command.AttemptID, "F-404"); err == nil {
+		t.Fatal("missing terminal finding was exposed")
+	}
+	receipt, err := a.DispositionFinding(ctx, reviewer, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err = a.FindingDisposition(ctx, participant, command.AttemptID, command.Payload.FindingID)
+	if err != nil || view.Current == nil || view.Current.CommandID != command.CommandID || view.Current.ActorID != reviewer.PrincipalID() || view.Current.Decision != command.Payload.Decision || view.Current.Reason != command.Payload.Reason || view.Current.RecordedVersion != receipt.ControlVersion || !view.Current.CreatedAt.Equal(receipt.CreatedAt) || view.ControlVersion != receipt.ControlVersion {
+		t.Fatalf("attributed finding view: %#v %v", view, err)
+	}
+	db, err := OpenDatabase(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	restarted, err := NewAuthority(db, a.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed, err := restarted.FindingDisposition(ctx, participant, command.AttemptID, command.Payload.FindingID); err != nil || !reflect.DeepEqual(view, replayed) {
+		t.Fatalf("restart finding view: %#v %v", replayed, err)
 	}
 }
