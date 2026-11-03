@@ -129,3 +129,28 @@ func TestCatalogRejectsInvalidAuthorityAndDetachesConfiguration(t *testing.T) {
 		t.Fatal("oversized request accepted")
 	}
 }
+
+func TestDecodeRouteBoundsRequiresClosedExplicitQualification(t *testing.T) {
+	raw := []byte(`{"schema_version":1,"routes":[{"provider":"openai_compat","model":"pinned-model","version":"contract-2026-11","currency":"USD","evidence_ref":"operator:contract-42","valid_from":"2026-11-01T00:00:00Z","valid_until":"2026-12-01T00:00:00Z","input_hard_limit":100000,"output_hard_limit":4096,"input_micro_per_million":1000,"output_micro_per_million":2000,"fixed_micro":3,"all_output_bounded":true,"max_active_ms":30000,"native_tools_qualified":false}]}`)
+	routes, err := DecodeRouteBounds(raw)
+	if err != nil || len(routes) != 1 {
+		t.Fatalf("explicit route qualification: %#v %v", routes, err)
+	}
+	route := routes[0]
+	if route.Provider != "openai_compat" || route.Model != "pinned-model" || route.Version != "contract-2026-11" || route.EvidenceRef != "operator:contract-42" || route.InputHardLimit != 100000 || route.OutputHardLimit != 4096 || route.MaxActiveMS != 30000 || route.NativeToolsQualified {
+		t.Fatalf("route qualification changed: %#v", route)
+	}
+	for _, invalid := range [][]byte{
+		nil,
+		[]byte(`{"schema_version":1,"routes":[]}`),
+		[]byte(`{"schema_version":2,"routes":[{}]}`),
+		[]byte(`{"schema_version":1,"schema_version":1,"routes":[{}]}`),
+		[]byte(`{"schema_version":1,"routes":[{"provider":"p","provider":"q"}]}`),
+		[]byte(`{"schema_version":1,"routes":[{"provider":"p"}],"extra":true}`),
+		append(append([]byte(nil), raw...), []byte(` {}`)...),
+	} {
+		if got, err := DecodeRouteBounds(invalid); err == nil || got != nil {
+			t.Fatalf("unsafe route qualification accepted: %s %#v %v", invalid, got, err)
+		}
+	}
+}

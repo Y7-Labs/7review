@@ -38,6 +38,114 @@ type Quote struct {
 
 type Catalog struct{ routes []RouteBound }
 
+type routeBoundDocument struct {
+	SchemaVersion int              `json:"schema_version"`
+	Routes        []routeBoundJSON `json:"routes"`
+}
+
+type routeBoundJSON struct {
+	Provider              string    `json:"provider"`
+	Model                 string    `json:"model"`
+	Version               string    `json:"version"`
+	Currency              string    `json:"currency"`
+	EvidenceRef           string    `json:"evidence_ref"`
+	ValidFrom             time.Time `json:"valid_from"`
+	ValidUntil            time.Time `json:"valid_until"`
+	InputHardLimit        int64     `json:"input_hard_limit"`
+	OutputHardLimit       int64     `json:"output_hard_limit"`
+	InputMicroPerMillion  int64     `json:"input_micro_per_million"`
+	OutputMicroPerMillion int64     `json:"output_micro_per_million"`
+	FixedMicro            int64     `json:"fixed_micro"`
+	AllOutputBounded      bool      `json:"all_output_bounded"`
+	MaxActiveMS           int64     `json:"max_active_ms"`
+	NativeToolsQualified  bool      `json:"native_tools_qualified"`
+}
+
+func DecodeRouteBounds(data []byte) ([]RouteBound, error) {
+	invalid := errors.New("invalid route qualification document")
+	if len(data) == 0 || len(data) > 64<<10 || rejectDuplicateRouteJSON(data) != nil {
+		return nil, invalid
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var document routeBoundDocument
+	if decoder.Decode(&document) != nil || decoder.Decode(new(any)) != io.EOF || document.SchemaVersion != 1 || len(document.Routes) == 0 || len(document.Routes) > 64 {
+		return nil, invalid
+	}
+	routes := make([]RouteBound, 0, len(document.Routes))
+	for _, item := range document.Routes {
+		for _, value := range []string{item.Provider, item.Model, item.Version, item.Currency, item.EvidenceRef} {
+			if value == "" || value != strings.TrimSpace(value) {
+				return nil, invalid
+			}
+		}
+		routes = append(routes, RouteBound{
+			Provider: item.Provider, Model: item.Model, Version: item.Version, Currency: item.Currency, EvidenceRef: item.EvidenceRef,
+			ValidFrom: item.ValidFrom, ValidUntil: item.ValidUntil, InputHardLimit: item.InputHardLimit, OutputHardLimit: item.OutputHardLimit,
+			InputMicroPerMillion: item.InputMicroPerMillion, OutputMicroPerMillion: item.OutputMicroPerMillion, FixedMicro: item.FixedMicro,
+			AllOutputBounded: item.AllOutputBounded, MaxActiveMS: item.MaxActiveMS, NativeToolsQualified: item.NativeToolsQualified,
+		})
+	}
+	if _, err := NewCatalog(routes); err != nil {
+		return nil, invalid
+	}
+	return routes, nil
+}
+
+func rejectDuplicateRouteJSON(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	var consume func() error
+	consume = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := map[string]bool{}
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				key, ok := keyToken.(string)
+				if err != nil || !ok || seen[key] {
+					return errors.New("duplicate or invalid object key")
+				}
+				seen[key] = true
+				if err = consume(); err != nil {
+					return err
+				}
+			}
+			token, err = decoder.Token()
+			if err != nil || token != json.Delim('}') {
+				return errors.New("invalid object")
+			}
+		case '[':
+			for decoder.More() {
+				if err = consume(); err != nil {
+					return err
+				}
+			}
+			token, err = decoder.Token()
+			if err != nil || token != json.Delim(']') {
+				return errors.New("invalid array")
+			}
+		default:
+			return errors.New("invalid JSON delimiter")
+		}
+		return nil
+	}
+	if err := consume(); err != nil {
+		return err
+	}
+	if token, err := decoder.Token(); err != io.EOF || token != nil {
+		return errors.New("trailing JSON data")
+	}
+	return nil
+}
+
 func NewCatalog(routes []RouteBound) (*Catalog, error) {
 	seen := map[string]bool{}
 	for _, r := range routes {
