@@ -27,6 +27,8 @@ type PublicationOperation struct {
 	Fence                  uint64
 	LeaseUntil             time.Time
 	SendingAt              time.Time
+	DeliveryReceipt        PublicationDeliveryReceipt
+	CompletedAt            time.Time
 	CreatedAt, UpdatedAt   time.Time
 }
 
@@ -208,10 +210,11 @@ func (a *Authority) LookupPublicationOperation(ctx context.Context, commandID st
 func (a *Authority) readPublicationOperationTx(ctx context.Context, tx *sql.Tx, commandID string) (PublicationOperation, string, error) {
 	var op PublicationOperation
 	var authorizationKey, destinationDigest string
-	var destinationRaw []byte
+	var destinationRaw, receiptRaw []byte
+	var receiptDigest sql.NullString
 	var worker sql.NullString
-	var leaseUntil, sendingAt sql.NullTime
-	err := tx.QueryRowContext(ctx, `SELECT id,authorization_id,command_id,run_id,attempt_id,assessment_digest,artifact_digest,destination,destination_digest,payload,payload_digest,state,worker_id,fence,lease_until,sending_at,created_at,updated_at FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND command_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, commandID).Scan(&op.ID, &authorizationKey, &op.AuthorizationCommandID, &op.RunID, &op.AttemptID, &op.AssessmentDigest, &op.ArtifactDigest, &destinationRaw, &destinationDigest, &op.Payload, &op.PayloadDigest, &op.State, &worker, &op.Fence, &leaseUntil, &sendingAt, &op.CreatedAt, &op.UpdatedAt)
+	var leaseUntil, sendingAt, completedAt sql.NullTime
+	err := tx.QueryRowContext(ctx, `SELECT id,authorization_id,command_id,run_id,attempt_id,assessment_digest,artifact_digest,destination,destination_digest,payload,payload_digest,state,worker_id,fence,lease_until,sending_at,delivery_receipt,delivery_receipt_digest,completed_at,created_at,updated_at FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND command_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, commandID).Scan(&op.ID, &authorizationKey, &op.AuthorizationCommandID, &op.RunID, &op.AttemptID, &op.AssessmentDigest, &op.ArtifactDigest, &destinationRaw, &destinationDigest, &op.Payload, &op.PayloadDigest, &op.State, &worker, &op.Fence, &leaseUntil, &sendingAt, &receiptRaw, &receiptDigest, &completedAt, &op.CreatedAt, &op.UpdatedAt)
 	if err != nil {
 		return PublicationOperation{}, "", err
 	}
@@ -232,13 +235,34 @@ func (a *Authority) readPublicationOperationTx(ctx context.Context, tx *sql.Tx, 
 	if sendingAt.Valid {
 		op.SendingAt = sendingAt.Time
 	}
-	if (op.WorkerID == "") != op.LeaseUntil.IsZero() || (op.State == review.DeliveryPending && !op.SendingAt.IsZero()) || ((op.State == review.DeliverySending || op.State == review.DeliveryUncertain || op.State == review.DeliveryDelivered || op.State == review.DeliveryFailed) && (op.WorkerID == "" || op.Fence == 0 || op.LeaseUntil.IsZero() || op.SendingAt.IsZero())) {
+	if completedAt.Valid {
+		op.CompletedAt = completedAt.Time
+	}
+	if receiptDigest.Valid {
+		if hash(receiptRaw) != receiptDigest.String || json.Unmarshal(receiptRaw, &op.DeliveryReceipt) != nil || op.DeliveryReceipt.validate(op.Destination.Provider, op.PayloadDigest) != nil {
+			return PublicationOperation{}, "", ErrIntegrity
+		}
+		canonicalReceipt, _ := json.Marshal(op.DeliveryReceipt)
+		if !bytes.Equal(canonicalReceipt, receiptRaw) {
+			return PublicationOperation{}, "", ErrIntegrity
+		}
+	}
+	completed := op.State == review.DeliveryDelivered
+	if (op.WorkerID == "") != op.LeaseUntil.IsZero() || (op.State == review.DeliveryPending && !op.SendingAt.IsZero()) || ((op.State == review.DeliverySending || op.State == review.DeliveryUncertain || completed || op.State == review.DeliveryFailed) && (op.WorkerID == "" || op.Fence == 0 || op.LeaseUntil.IsZero() || op.SendingAt.IsZero())) || completed != receiptDigest.Valid || completed != completedAt.Valid || (!completed && len(receiptRaw) != 0) {
 		return PublicationOperation{}, "", ErrIntegrity
 	}
 	return op, authorizationKey, nil
 }
 
 func checkPublicationOperationStorage(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT o.id,o.boundary_id,o.project_id,o.authorization_id,o.command_id,o.run_id,o.attempt_id,o.assessment_digest,o.artifact_digest,o.destination,o.destination_digest,o.payload,o.payload_digest,o.state,o.worker_id,o.fence,o.lease_until,o.sending_at,o.delivery_receipt,o.delivery_receipt_digest,o.completed_at,o.created_at,o.updated_at FROM budget_publication_operations o LIMIT 0`)
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func checkPublicationOperationStorageV21(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT o.id,o.boundary_id,o.project_id,o.authorization_id,o.command_id,o.run_id,o.attempt_id,o.assessment_digest,o.artifact_digest,o.destination,o.destination_digest,o.payload,o.payload_digest,o.state,o.worker_id,o.fence,o.lease_until,o.sending_at,o.created_at,o.updated_at FROM budget_publication_operations o LIMIT 0`)
 	if err != nil {
 		return err

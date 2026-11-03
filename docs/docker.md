@@ -57,7 +57,7 @@ variable names need explicit service `environment` entries in a private Compose
 override; the stack deliberately does not forward the entire host environment.
 
 Canonical controls require the coordinated runtime, trusted host ceilings and
-explicit schema v21 migration; the default legacy stack is not that authority.
+explicit schema v22 migration; the default legacy stack is not that authority.
 After explicitly building/recreating the intended service configuration, use
 the host CLI against its loopback-published port, or the container binary against
 its own loopback address:

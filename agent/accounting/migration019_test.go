@@ -41,7 +41,7 @@ func TestV19MigrationIsExplicitAtomicAndDoesNotInventPublicationAuthority(t *tes
 		}
 	}
 	var inferred, commands int
-	if err := a.db.QueryRow(`SELECT version,(SELECT count(*) FROM budget_jobs WHERE publication_authorization_id IS NOT NULL),(SELECT count(*) FROM budget_operator_commands) FROM budget_schema`).Scan(&version, &inferred, &commands); err != nil || version != 21 || inferred != 0 || commands != 0 || snapshot() != before {
+	if err := a.db.QueryRow(`SELECT version,(SELECT count(*) FROM budget_jobs WHERE publication_authorization_id IS NOT NULL),(SELECT count(*) FROM budget_operator_commands) FROM budget_schema`).Scan(&version, &inferred, &commands); err != nil || version != 22 || inferred != 0 || commands != 0 || snapshot() != before {
 		t.Fatalf("v19 invented authority: %d %d %d %v", version, inferred, commands, err)
 	}
 	if projection, err := a.LookupModelJob(ctx, intent.Job.RunID); err != nil || !projection.Succeeded || projection.Source.Report.Draft == "" {

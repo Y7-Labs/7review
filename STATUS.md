@@ -128,13 +128,15 @@ authority only. The schema v20 maintenance loop now materializes one exact pendi
 or obsolete outbox operation after restart and obsoletes stale pending authority,
 failing closed before fresh inbox claims when that journal is unavailable. Schema
 v21 adds fenced pre-send claims and turns expired sending markers uncertain without
-reclaim. Provider delivery and remote reconciliation remain open. Compose forwards the
+reclaim. Schema v22 adds exact fenced provider-receipt completion and refuses to
+invent receipts for legacy delivered rows. Provider invocation and remote
+reconciliation remain open. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v20-to-v21 migrations
+The v8-to-v9 through v21-to-v22 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v21 before restart. No deployed database was changed.
+explicit migration to schema v22 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

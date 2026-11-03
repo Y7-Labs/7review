@@ -58,7 +58,10 @@ pointer on a terminal validated job; it grants no delivery, merge or memory
 effect. Schema v20 adds immutable publication-operation payloads and lifecycle
 state; migration does not infer operations from existing authorizations. Schema
 v21 adds bounded pre-send leases, monotonic fences and a durable sending marker.
-Worker runtime now requires v21; run explicit migration before restart.
+Schema v22 adds an immutable provider receipt and completion timestamp bound to
+the exact fenced operation. It refuses unreceipted legacy `delivered` rows rather
+than inferring an external effect. Worker runtime now requires v22; run explicit
+migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -107,6 +110,10 @@ after migration. Runtime refuses an unmigrated v19 store.
 The v20-to-v21 rehearsal preserves pending operation bytes across deferred DDL
 failure and idempotent retry. It invents no worker, fence, lease or sending marker;
 the migrated operation remains claimable. Runtime refuses an unmigrated v20 store.
+The v21-to-v22 rehearsal preserves operation and job authority across deferred DDL
+failure and idempotent retry. It invents no delivery receipt or completion time;
+runtime refuses an unmigrated v21 store and migration rejects an unproven legacy
+`delivered` state.
 
 ## Runtime Intake
 

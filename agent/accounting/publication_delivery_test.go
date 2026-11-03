@@ -195,3 +195,77 @@ func TestPublicationSendingRecoverySurvivesRestartAndNeverReclaims(t *testing.T)
 		t.Fatalf("uncertain operation became claimable: %#v %v", claim, err)
 	}
 }
+
+func TestPublicationCompletionPersistsExactReceiptAndRejectsStaleOwner(t *testing.T) {
+	a, command, op, _ := publicationOperationFixture(t)
+	ctx := context.Background()
+	claim, err := a.ClaimPublication(ctx, "delivery-owner", time.Minute)
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %#v %v", claim, err)
+	}
+	permit, err := a.BeginPublication(ctx, *claim, time.Minute)
+	if err != nil || permit == nil {
+		t.Fatalf("begin: %#v %v", permit, err)
+	}
+	receipt := PublicationDeliveryReceipt{Provider: op.Destination.Provider, RemoteID: "comment-42", RemoteURL: "https://provider.test/comment/42", PayloadDigest: op.PayloadDigest}
+	stale := *permit
+	stale.Fence++
+	if completed, err := a.CompletePublication(ctx, stale, receipt); err == nil || completed != nil {
+		t.Fatalf("stale permit completed publication: %#v %v", completed, err)
+	}
+	completed, err := a.CompletePublication(ctx, *permit, receipt)
+	if err != nil || completed == nil || completed.State != review.DeliveryDelivered || completed.DeliveryReceipt != receipt || completed.CompletedAt.IsZero() {
+		t.Fatalf("exact completion was not persisted: %#v %v", completed, err)
+	}
+	replayed, err := a.CompletePublication(ctx, *permit, receipt)
+	if err != nil || replayed == nil || replayed.DeliveryReceipt != receipt || replayed.CompletedAt != completed.CompletedAt {
+		t.Fatalf("exact completion did not replay: %#v %v", replayed, err)
+	}
+	changed := receipt
+	changed.RemoteID = "comment-99"
+	if replay, err := a.CompletePublication(ctx, *permit, changed); err == nil || replay != nil {
+		t.Fatalf("changed completion receipt replayed: %#v %v", replay, err)
+	}
+	loaded, err := a.LookupPublicationOperation(ctx, command.CommandID)
+	if err != nil || loaded.DeliveryReceipt != receipt || loaded.State != review.DeliveryDelivered {
+		t.Fatalf("durable receipt lookup: %#v %v", loaded, err)
+	}
+}
+
+func TestPublicationCompletionCommitFailureRemainsUncertainNotDelivered(t *testing.T) {
+	a, _, op, _ := publicationOperationFixture(t)
+	ctx := context.Background()
+	claim, err := a.ClaimPublication(ctx, "interrupted-delivery-owner", time.Minute)
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %#v %v", claim, err)
+	}
+	permit, err := a.BeginPublication(ctx, *claim, time.Millisecond)
+	if err != nil || permit == nil {
+		t.Fatalf("begin: %#v %v", permit, err)
+	}
+	if _, err = a.db.Exec(`CREATE FUNCTION fail_publication_completion() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.state='delivered' THEN RAISE EXCEPTION 'injected publication completion failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_publication_completion AFTER UPDATE ON budget_publication_operations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_publication_completion()`); err != nil {
+		t.Fatal(err)
+	}
+	receipt := PublicationDeliveryReceipt{Provider: op.Destination.Provider, RemoteID: "comment-42", PayloadDigest: op.PayloadDigest}
+	if completed, err := a.CompletePublication(ctx, *permit, receipt); err == nil || completed != nil {
+		t.Fatalf("failed completion acknowledged: %#v %v", completed, err)
+	}
+	var state string
+	var hasReceipt, hasCompletion bool
+	if err = a.db.QueryRow(`SELECT state,delivery_receipt IS NOT NULL,completed_at IS NOT NULL FROM budget_publication_operations WHERE id=$1`, op.ID).Scan(&state, &hasReceipt, &hasCompletion); err != nil || state != "sending" || hasReceipt || hasCompletion {
+		t.Fatalf("failed completion partially committed: %s %v %v %v", state, hasReceipt, hasCompletion, err)
+	}
+	if _, err = a.db.Exec(`DROP TRIGGER fail_publication_completion ON budget_publication_operations`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.db.Exec(`UPDATE budget_publication_operations SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := a.RecoverUncertainPublications(ctx, 8); err != nil || n != 1 {
+		t.Fatalf("interrupted provider success was not quarantined: %d %v", n, err)
+	}
+	loaded, err := a.LookupPublicationOperation(ctx, permit.CommandID)
+	if err != nil || loaded.State != review.DeliveryUncertain || loaded.DeliveryReceipt != (PublicationDeliveryReceipt{}) {
+		t.Fatalf("interrupted completion was not uncertain: %#v %v", loaded, err)
+	}
+}

@@ -4,13 +4,29 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/Y4NN777/7review/agent/review"
 )
 
 var ErrPublicationObsolete = errors.New("publication operation is no longer current")
+
+type PublicationDeliveryReceipt struct {
+	Provider      string `json:"provider"`
+	RemoteID      string `json:"remote_id"`
+	RemoteURL     string `json:"remote_url,omitempty"`
+	PayloadDigest string `json:"payload_digest"`
+}
+
+func (r PublicationDeliveryReceipt) validate(provider, payloadDigest string) error {
+	if r.Provider != provider || strings.TrimSpace(r.RemoteID) == "" || len(r.RemoteID) > 512 || len(r.RemoteURL) > 4096 || r.PayloadDigest != payloadDigest {
+		return errors.New("exact provider delivery receipt required")
+	}
+	return nil
+}
 
 type PublicationClaim struct {
 	Operation  PublicationOperation
@@ -180,6 +196,57 @@ func (a *Authority) RecoverUncertainPublications(ctx context.Context, limit int)
 		return 0, err
 	}
 	return len(commandIDs), nil
+}
+
+func (a *Authority) CompletePublication(ctx context.Context, permit PublicationPermit, receipt PublicationDeliveryReceipt) (*PublicationOperation, error) {
+	if !validID(permit.OperationID) || !validID(permit.CommandID) || !validID(permit.WorkerID) || permit.Fence == 0 || permit.PayloadDigest == "" {
+		return nil, errors.New("valid fenced publication permit required")
+	}
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var commandID string
+	if err = tx.QueryRowContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE id=$1 AND boundary_id=$2 AND project_id=$3 FOR UPDATE`, permit.OperationID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&commandID); err != nil {
+		return nil, err
+	}
+	op, _, err := a.readPublicationOperationTx(ctx, tx, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if op.ID != permit.OperationID || op.AuthorizationCommandID != permit.CommandID || op.WorkerID != permit.WorkerID || op.Fence != permit.Fence || op.PayloadDigest != permit.PayloadDigest || receipt.validate(op.Destination.Provider, op.PayloadDigest) != nil {
+		return nil, errors.New("publication permit or receipt is stale")
+	}
+	if op.State == review.DeliveryDelivered {
+		if op.DeliveryReceipt != receipt {
+			return nil, errors.New("publication completion conflicts with durable receipt")
+		}
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+		op.Payload = append([]byte(nil), op.Payload...)
+		return &op, nil
+	}
+	if op.State != review.DeliverySending {
+		return nil, errors.New("publication is not sending")
+	}
+	receiptRaw, err := json.Marshal(receipt)
+	if err != nil {
+		return nil, err
+	}
+	var completedAt time.Time
+	if err = tx.QueryRowContext(ctx, `UPDATE budget_publication_operations SET state='delivered',delivery_receipt=$4,delivery_receipt_digest=$5,completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='sending' AND worker_id=$2 AND fence=$3 RETURNING completed_at`, op.ID, permit.WorkerID, permit.Fence, receiptRaw, hash(receiptRaw)).Scan(&completedAt); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	op.State = review.DeliveryDelivered
+	op.DeliveryReceipt = receipt
+	op.CompletedAt = completedAt
+	op.Payload = append([]byte(nil), op.Payload...)
+	return &op, nil
 }
 
 func (a *Authority) obsoletePublicationTx(ctx context.Context, tx *sql.Tx, operationID string) error {

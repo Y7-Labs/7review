@@ -1495,10 +1495,14 @@ This is an incremental behavior ledger, not a completion declaration.
   atomic sending marker. Expired pre-send claims can be reclaimed with a higher
   fence; sending is never reclaimed and expires to `uncertain`. Its migration
   rehearsal infers no owner, fence, lease or sending authority.
+- Schema v22 atomically records an exact provider, remote identity, payload digest
+  and completion time against the fenced sending permit. Exact completion replay
+  is idempotent, conflicting or stale completion is rejected, and commit failure
+  remains recoverably uncertain. Migration never invents a provider receipt.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;
-  Provider delivery and remote uncertain-result reconciliation remain open.
+  Provider invocation and remote uncertain-result reconciliation remain open.
   Legacy `/approve` still is not canonical authority. Other operator commands,
   incident adjustments and live provider qualification remain open. Ceilings and
   alpha remain unfinished.
