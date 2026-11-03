@@ -1528,6 +1528,20 @@ This is an incremental behavior ledger, not a completion declaration.
   incident adjustments and live provider qualification remain open. Ceilings and
   alpha remain unfinished.
 
+### 77. Exact Finding Disposition Command Contract
+
+- Red/green domain tests define a closed `disposition_finding` command bound to
+  command ID, attempt, expected control version, revision, finding ID, immutable
+  finding digest, explicit decision and reason. Actor identity is transport-only.
+- Decisions are typed separately as `accepted`, editorial `rejected`, or factual
+  `disputed`; legacy suppression aliases and unknown states are rejected.
+- The receipt decoder requires the exact command subject and next control version.
+  Duplicate keys, actor claims, malformed digests, lossy Unicode, oversized text
+  and ambiguous payload fields fail closed.
+- This slice adds no persistence or report mutation. Repository-role enforcement,
+  durable idempotent receipts, current-disposition projection and HTTP/CLI/TUI/
+  channel routing remain open; original findings and evidence are not changed.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
