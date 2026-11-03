@@ -29,6 +29,33 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 	if a.cfg.ReceiptVerifier == nil {
 		return errors.New("no qualified final receipt verifier")
 	}
+	if err := validateFinalReceipt(r); err != nil {
+		return err
+	}
+	if err := a.cfg.ReceiptVerifier.VerifyFinal(ctx, r); err != nil {
+		return err
+	}
+	return a.settleFinal(ctx, r, nil)
+}
+
+func (a *Authority) SettleFinalByOperator(ctx context.Context, actor review.OperatorActor, r FinalReceipt, evidenceID string) error {
+	if a.cfg.Operators == nil {
+		return review.ErrOperatorUnauthorized
+	}
+	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
+		return err
+	}
+	if !validID(evidenceID) {
+		return errors.New("exact operator settlement evidence ID required")
+	}
+	r.EvidenceRef = "operator:" + actor.PrincipalID() + ":" + evidenceID
+	if err := validateFinalReceipt(r); err != nil {
+		return err
+	}
+	return a.settleFinal(ctx, r, &actor)
+}
+
+func validateFinalReceipt(r FinalReceipt) error {
 	if r.SchemaVersion != 1 || r.Certainty != "final" || !validID(r.ReceiptID) || !validID(r.ActionID) || !canonicalDigest(r.RequestDigest) || !validID(r.Provider) || !validID(r.Model) || r.Currency == "" || r.EvidenceRef == "" || len(r.EvidenceRef) > 4096 || r.Actual.Period != nil || r.Actual.ModelCalls != 1 || r.Actual.ToolCalls != 0 || r.Actual.ObservationBytes != 0 {
 		return errors.New("invalid final model usage receipt")
 	}
@@ -37,9 +64,10 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 			return errors.New("negative actual usage")
 		}
 	}
-	if err := a.cfg.ReceiptVerifier.VerifyFinal(ctx, r); err != nil {
-		return err
-	}
+	return nil
+}
+
+func (a *Authority) settleFinal(ctx context.Context, r FinalReceipt, actor *review.OperatorActor) error {
 	raw, err := json.Marshal(r)
 	if err != nil {
 		return err
@@ -61,13 +89,13 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 	var digest, state string
 	err = tx.QueryRowContext(ctx, `SELECT request_digest,request,quote,upper_amount,settled,integrity_incident,state FROM budget_actions WHERE id=$1 FOR UPDATE`, r.ActionID).Scan(&digest, &request, &quoteJSON, &upperJSON, &settled, &incident, &state)
 	if errors.Is(err, sql.ErrNoRows) {
+		if actor != nil {
+			return ErrOperatorAttemptNotFound
+		}
 		return quarantine(ctx, tx, r, raw, "receipt has no matching action")
 	}
 	if err != nil {
 		return err
-	}
-	if state == "prepared" {
-		return quarantine(ctx, tx, r, raw, "receipt precedes sending marker")
 	}
 	var intent orchestrator.DispatchIntent
 	var quote Quote
@@ -80,6 +108,14 @@ func (a *Authority) SettleFinal(ctx context.Context, r FinalReceipt) error {
 	}
 	if err = json.Unmarshal(upperJSON, &upper); err != nil {
 		return err
+	}
+	if actor != nil {
+		if err = a.cfg.Operators.Authorize(*actor, a.cfg.BoundaryID, a.cfg.ProjectID, intent.Attempt.Change, review.OperatorRoleOperator); err != nil {
+			return err
+		}
+	}
+	if state == "prepared" {
+		return quarantine(ctx, tx, r, raw, "receipt precedes sending marker")
 	}
 	if r.RequestDigest != digest || r.Provider != intent.Provider || r.Model != intent.Model || r.Currency != quote.Currency {
 		return quarantine(ctx, tx, r, raw, "receipt action/request/route/currency mismatch")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -76,6 +77,58 @@ func TestPostgresFinalSettlementReplacesHoldExactlyOnce(t *testing.T) {
 	_ = db.QueryRow(`SELECT count(*) FROM budget_receipts`).Scan(&receipts)
 	if settled != 1 || receipts != 1 {
 		t.Fatalf("settlement not unique: settled=%d receipts=%d", settled, receipts)
+	}
+}
+
+func TestPostgresOperatorFinalSettlementRequiresExactRepositoryAuthority(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	a := ledgerAuthority(t, db, l)
+	i := ledgerIntent(t, db, "operator-settlement", "7", l)
+	admit(t, a, i)
+	change := i.Attempt.Change
+	raw := `{"schema_version":1,"principals":[{"id":"alice","token_env":"ALICE_TOKEN","grants":[{"boundary_id":"` + a.cfg.BoundaryID + `","project_id":"` + a.cfg.ProjectID + `","provider":"` + change.Provider + `","host":"` + change.Host + `","repository_id":"` + change.RepositoryID + `","roles":["operator"]}]},{"id":"bob","token_env":"BOB_TOKEN","grants":[{"boundary_id":"` + a.cfg.BoundaryID + `","project_id":"` + a.cfg.ProjectID + `","provider":"` + change.Provider + `","host":"` + change.Host + `","repository_id":"` + change.RepositoryID + `","roles":["participant"]}]},{"id":"eve","token_env":"EVE_TOKEN","grants":[{"boundary_id":"` + a.cfg.BoundaryID + `","project_id":"` + a.cfg.ProjectID + `","provider":"` + change.Provider + `","host":"` + change.Host + `","repository_id":"org/other","roles":["operator"]}]}]}`
+	directory, err := review.DecodeOperatorDirectory([]byte(raw), func(name string) string { return strings.ToLower(strings.TrimSuffix(name, "_TOKEN")) + "-secret" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.cfg.Operators = directory
+	alice, _ := directory.Authenticate("alice-secret")
+	bob, _ := directory.Authenticate("bob-secret")
+	eve, _ := directory.Authenticate("eve-secret")
+	receipt := finalReceipt(i)
+	for name, actor := range map[string]review.OperatorActor{"unauthenticated": {}, "participant": bob, "foreign repository": eve} {
+		if err = a.SettleFinalByOperator(context.Background(), actor, receipt, "manual-usage-42"); err == nil {
+			t.Fatalf("%s actor settled usage", name)
+		}
+		var settled bool
+		if err = db.QueryRow(`SELECT settled FROM budget_actions WHERE id=$1`, i.ActionID).Scan(&settled); err != nil || settled {
+			t.Fatalf("%s rejection changed hold: settled=%v err=%v", name, settled, err)
+		}
+	}
+	unknown := receipt
+	unknown.ActionID = "missing-action"
+	unknown.ReceiptID = "missing-action-receipt"
+	if err = a.SettleFinalByOperator(context.Background(), alice, unknown, "manual-usage-missing"); !errors.Is(err, ErrOperatorAttemptNotFound) {
+		t.Fatalf("unknown action was not rejected before audit mutation: %v", err)
+	}
+	var quarantined int
+	if err = db.QueryRow(`SELECT count(*) FROM budget_quarantine`).Scan(&quarantined); err != nil || quarantined != 0 {
+		t.Fatalf("unauthorized operator settlement created quarantine: %d %v", quarantined, err)
+	}
+	if err = a.SettleFinalByOperator(context.Background(), alice, receipt, "manual-usage-42"); err != nil {
+		t.Fatalf("authorized operator settlement: %v", err)
+	}
+	if err = a.SettleFinalByOperator(context.Background(), alice, receipt, "manual-usage-42"); err != nil {
+		t.Fatalf("exact operator settlement replay: %v", err)
+	}
+	var payload []byte
+	if err = db.QueryRow(`SELECT payload FROM budget_receipts WHERE id=$1`, receipt.ReceiptID).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var stored FinalReceipt
+	if json.Unmarshal(payload, &stored) != nil || stored.EvidenceRef != "operator:alice:manual-usage-42" {
+		t.Fatalf("operator attribution not stored: %s", payload)
 	}
 }
 
