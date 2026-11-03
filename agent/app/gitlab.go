@@ -12,7 +12,7 @@ import (
 
 type reviewRequestHandler func(review.Request) (reviewDispatchResult, error)
 
-func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.HandlerFunc {
+func gitLabWebhookHandler(secret string, handler reviewRequestHandler, nativeHandlers ...nativeSCMCommentHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -25,6 +25,10 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 		body, err := readWebhookBody(r.Body)
 		if err != nil {
 			http.Error(w, "webhook payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+		if isGitLabNoteEvent(body) {
+			handleGitLabNote(w, r, body, nativeHandlers)
 			return
 		}
 
@@ -99,6 +103,17 @@ func gitLabWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 			_, _ = w.Write([]byte(result.Reason))
 		}
 	}
+}
+
+func isGitLabNoteEvent(body []byte) bool {
+	var event struct {
+		ObjectKind string `json:"object_kind"`
+		EventType  string `json:"event_type"`
+	}
+	if json.Unmarshal(body, &event) != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(event.ObjectKind), "note") || strings.EqualFold(strings.TrimSpace(event.EventType), "note")
 }
 
 type gitLabLabels []string

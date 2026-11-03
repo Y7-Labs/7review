@@ -12,7 +12,7 @@ import (
 	"github.com/Y4NN777/7review/agent/review"
 )
 
-func gitHubWebhookHandler(secret string, handler reviewRequestHandler) http.HandlerFunc {
+func gitHubWebhookHandler(secret string, handler reviewRequestHandler, nativeHandlers ...nativeSCMCommentHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -27,7 +27,12 @@ func gitHubWebhookHandler(secret string, handler reviewRequestHandler) http.Hand
 			http.Error(w, "invalid webhook signature", http.StatusUnauthorized)
 			return
 		}
-		if r.Header.Get("X-GitHub-Event") != "pull_request" {
+		eventName := r.Header.Get("X-GitHub-Event")
+		if eventName == "issue_comment" {
+			handleGitHubIssueComment(w, r, body, nativeHandlers)
+			return
+		}
+		if eventName != "pull_request" {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
