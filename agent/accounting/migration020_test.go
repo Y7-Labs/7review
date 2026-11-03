@@ -44,7 +44,7 @@ func TestV20MigrationIsExplicitAtomicAndDoesNotInventPublicationOperations(t *te
 		}
 	}
 	var operations int
-	if err = a.db.QueryRow(`SELECT version,(SELECT count(*) FROM budget_publication_operations) FROM budget_schema`).Scan(&version, &operations); err != nil || version != 23 || operations != 0 {
+	if err = a.db.QueryRow(`SELECT version,(SELECT count(*) FROM budget_publication_operations) FROM budget_schema`).Scan(&version, &operations); err != nil || version != 24 || operations != 0 {
 		t.Fatalf("v20 invented publication operation: %d %d %v", version, operations, err)
 	}
 	if n, err := a.MaterializeAuthorizedPublications(ctx, 8); err != nil || n != 1 {

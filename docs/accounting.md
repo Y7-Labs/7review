@@ -62,7 +62,9 @@ Schema v22 adds an immutable provider receipt and completion timestamp bound to
 the exact fenced operation. It refuses unreceipted legacy `delivered` rows rather
 than inferring an external effect. Schema v23 adds durable lookup eligibility;
 uncertain reconciliation reuses the monotonic worker fence and lease. Worker
-runtime now requires v23; run explicit migration before restart.
+runtime now requires v24; run explicit migration before restart. Schema v24 adds
+immutable authenticated terminal-finding dispositions and a separate current-head
+projection. It does not rewrite findings or infer dispositions during migration.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -118,6 +120,10 @@ runtime refuses an unmigrated v21 store and migration rejects an unproven legacy
 The v22-to-v23 rehearsal preserves an existing uncertain operation across deferred
 DDL failure and idempotent retry, then makes it immediately eligible for one
 fenced lookup owner. Runtime refuses an unmigrated v22 store.
+The v23-to-v24 rehearsal preserves terminal assessment and job authority across
+deferred DDL failure and idempotent retry, invents no disposition, and proves the
+migrated terminal finding can subsequently receive an exact disposition. Runtime
+refuses an unmigrated v23 store.
 
 The service maintenance loop materializes authority, quarantines expired sending
 effects, performs read-only reconciliation of uncertain operations, and then

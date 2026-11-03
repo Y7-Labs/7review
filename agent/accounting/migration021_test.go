@@ -9,6 +9,7 @@ import (
 func TestV21MigrationIsExplicitAtomicAndDoesNotInventPublicationLeaseOrSending(t *testing.T) {
 	a, command, op, _ := publicationOperationFixture(t)
 	ctx := context.Background()
+	dropFindingDispositionSchemaForMigration(t, a.db)
 	var before string
 	if err := a.db.QueryRow(`SELECT jsonb_build_object('operations',(SELECT jsonb_agg(jsonb_build_object('id',id,'authorization_id',authorization_id,'command_id',command_id,'run_id',run_id,'attempt_id',attempt_id,'assessment_digest',assessment_digest,'artifact_digest',artifact_digest,'destination',encode(destination,'hex'),'destination_digest',destination_digest,'payload',encode(payload,'hex'),'payload_digest',payload_digest,'state',state,'created_at',created_at,'updated_at',updated_at)) FROM budget_publication_operations),'jobs',(SELECT jsonb_agg(to_jsonb(j)) FROM budget_jobs j),'commands',(SELECT jsonb_agg(to_jsonb(c)) FROM budget_operator_commands c))::text`).Scan(&before); err != nil {
 		t.Fatal(err)
@@ -42,7 +43,7 @@ func TestV21MigrationIsExplicitAtomicAndDoesNotInventPublicationLeaseOrSending(t
 	var worker *string
 	var lease, sending *time.Time
 	var fence uint64
-	if err := a.db.QueryRow(`SELECT version,(SELECT worker_id FROM budget_publication_operations WHERE id=$1),(SELECT fence FROM budget_publication_operations WHERE id=$1),(SELECT lease_until FROM budget_publication_operations WHERE id=$1),(SELECT sending_at FROM budget_publication_operations WHERE id=$1) FROM budget_schema`, op.ID).Scan(&version, &worker, &fence, &lease, &sending); err != nil || version != 23 || worker != nil || fence != 0 || lease != nil || sending != nil {
+	if err := a.db.QueryRow(`SELECT version,(SELECT worker_id FROM budget_publication_operations WHERE id=$1),(SELECT fence FROM budget_publication_operations WHERE id=$1),(SELECT lease_until FROM budget_publication_operations WHERE id=$1),(SELECT sending_at FROM budget_publication_operations WHERE id=$1) FROM budget_schema`, op.ID).Scan(&version, &worker, &fence, &lease, &sending); err != nil || version != 24 || worker != nil || fence != 0 || lease != nil || sending != nil {
 		t.Fatalf("v21 invented publication ownership/sending: %d %v %d %v %v %v", version, worker, fence, lease, sending, err)
 	}
 	claim, err := a.ClaimPublication(ctx, "migrated-worker", time.Minute)

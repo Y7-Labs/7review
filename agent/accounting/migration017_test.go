@@ -59,6 +59,7 @@ func dropPublicationAuthorizationSchemaForMigration(t *testing.T, db *sql.DB) {
 
 func dropPublicationOperationSchemaForMigration(t *testing.T, db *sql.DB) {
 	t.Helper()
+	dropFindingDispositionSchemaForMigration(t, db)
 	var tables int
 	if err := db.QueryRow(`SELECT count(*) FROM pg_class WHERE relnamespace=current_schema()::regnamespace AND relname='budget_publication_operations'`).Scan(&tables); err != nil {
 		t.Fatal(err)

@@ -8,6 +8,7 @@ import (
 func TestV22MigrationIsExplicitAtomicAndDoesNotInventDeliveryReceipt(t *testing.T) {
 	a, _, op, _ := publicationOperationFixture(t)
 	ctx := context.Background()
+	dropFindingDispositionSchemaForMigration(t, a.db)
 	var before string
 	if err := a.db.QueryRow(`SELECT jsonb_build_object('operation',(SELECT to_jsonb(o)-'delivery_receipt'-'delivery_receipt_digest'-'completed_at'-'reconcile_after' FROM budget_publication_operations o WHERE id=$1),'jobs',(SELECT jsonb_agg(to_jsonb(j)) FROM budget_jobs j))::text`, op.ID).Scan(&before); err != nil {
 		t.Fatal(err)
@@ -39,13 +40,14 @@ func TestV22MigrationIsExplicitAtomicAndDoesNotInventDeliveryReceipt(t *testing.
 		}
 	}
 	var hasReceipt, hasCompletion bool
-	if err := a.db.QueryRow(`SELECT version,(SELECT delivery_receipt IS NOT NULL FROM budget_publication_operations WHERE id=$1),(SELECT completed_at IS NOT NULL FROM budget_publication_operations WHERE id=$1) FROM budget_schema`, op.ID).Scan(&version, &hasReceipt, &hasCompletion); err != nil || version != 23 || hasReceipt || hasCompletion {
+	if err := a.db.QueryRow(`SELECT version,(SELECT delivery_receipt IS NOT NULL FROM budget_publication_operations WHERE id=$1),(SELECT completed_at IS NOT NULL FROM budget_publication_operations WHERE id=$1) FROM budget_schema`, op.ID).Scan(&version, &hasReceipt, &hasCompletion); err != nil || version != 24 || hasReceipt || hasCompletion {
 		t.Fatalf("v22 invented publication completion: %d %v %v %v", version, hasReceipt, hasCompletion, err)
 	}
 }
 
 func TestV22MigrationRejectsUnreceiptedDeliveredState(t *testing.T) {
 	a, _, op, _ := publicationOperationFixture(t)
+	dropFindingDispositionSchemaForMigration(t, a.db)
 	if _, err := a.db.Exec(`ALTER TABLE budget_publication_operations DROP CONSTRAINT budget_publication_operation_reconciliation,DROP COLUMN reconcile_after,DROP CONSTRAINT budget_publication_operation_completion,DROP COLUMN delivery_receipt,DROP COLUMN delivery_receipt_digest,DROP COLUMN completed_at; UPDATE budget_schema SET version=21`); err != nil {
 		t.Fatal(err)
 	}

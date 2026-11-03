@@ -139,9 +139,11 @@ endpoint hosts fail before publish or lookup. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v22-to-v23 migrations
+Schema v24 records authenticated, exact terminal-finding dispositions as immutable
+history with a separate current head and no report mutation or publication effect.
+The v8-to-v9 through v23-to-v24 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v23 before restart. No deployed database was changed.
+explicit migration to schema v24 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

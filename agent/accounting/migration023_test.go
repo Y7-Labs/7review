@@ -9,6 +9,7 @@ import (
 func TestV23MigrationIsExplicitAtomicAndSchedulesExistingUncertainPublication(t *testing.T) {
 	a, _, op, _ := publicationOperationFixture(t)
 	ctx := context.Background()
+	dropFindingDispositionSchemaForMigration(t, a.db)
 	claim, err := a.ClaimPublication(ctx, "v23-sending-owner", time.Minute)
 	if err != nil || claim == nil {
 		t.Fatalf("claim: %#v %v", claim, err)
@@ -56,7 +57,7 @@ func TestV23MigrationIsExplicitAtomicAndSchedulesExistingUncertainPublication(t 
 	if err != nil || reconciliation == nil || reconciliation.Operation.ID != op.ID || reconciliation.Fence <= claim.Fence {
 		t.Fatalf("migrated uncertain operation is not fenced and claimable: %#v %v", reconciliation, err)
 	}
-	if err = a.db.QueryRow(`SELECT version FROM budget_schema`).Scan(&version); err != nil || version != 23 {
+	if err = a.db.QueryRow(`SELECT version FROM budget_schema`).Scan(&version); err != nil || version != 24 {
 		t.Fatalf("v23 migration version: %d %v", version, err)
 	}
 }

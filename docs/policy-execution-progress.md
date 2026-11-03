@@ -1538,9 +1538,18 @@ This is an incremental behavior ledger, not a completion declaration.
 - The receipt decoder requires the exact command subject and next control version.
   Duplicate keys, actor claims, malformed digests, lossy Unicode, oversized text
   and ambiguous payload fields fail closed.
-- This slice adds no persistence or report mutation. Repository-role enforcement,
-  durable idempotent receipts, current-disposition projection and HTTP/CLI/TUI/
-  channel routing remain open; original findings and evidence are not changed.
+- PostgreSQL enforcement re-verifies the exact validated terminal reduction,
+  immutable attempt binding, lineage, finding ID and canonical finding digest.
+  Reviewer/operator roles may accept or reject; repository participants may only
+  dispute. Wrong role, stale version/revision or changed subject persists nothing.
+- Schema v24 records actor-bound command receipts and immutable disposition
+  history, advances the job control version atomically, and maintains a separate
+  current head. Exact commands replay after restart and after replacement; command
+  collisions, deferred commit failure and concurrent stale versions fail closed.
+  Its rollback/retry rehearsal invents no disposition and preserves terminal proof.
+- Original findings, evidence and reports are not mutated, and a disposition has
+  no publication side effect. Reading the current projection and HTTP/CLI/TUI/
+  channel routing remain open; ceilings and alpha remain unfinished.
 
 ## Method File Example
 
