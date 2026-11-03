@@ -1558,7 +1558,8 @@ This is an incremental behavior ledger, not a completion declaration.
   commands without locally rebuilding authority. Direct CLI and slash-command/TUI
   flows accept only finding ID, decision, reason and stable command ID; they fetch
   revision, version and digest, then issue one mutation without retargeting.
-  Channel/native SCM routing remains open; ceilings and alpha remain unfinished.
+  Channel routing was completed in the following slice; ceilings and alpha remain
+  unfinished.
 - Channel protocol groundwork parses one exact attempt/finding/decision/command
   identity plus reason, and maps each already-authorized provider sender to an
   operator credential environment name. Missing, duplicate, unauthorized or
@@ -1567,7 +1568,24 @@ This is an incremental behavior ledger, not a completion declaration.
   job replay or provider I/O. New-delivery retries replay the same current command;
   changed reuse conflicts. Outbound drafts now carry the validated canonical
   attempt and deduplicated finding IDs plus the closed reply template, while
-  omitting credentials and digests. Native SCM routing remains open.
+  omitting credentials and digests.
+- Native GitHub pull-request comments and GitLab merge-request notes now normalize
+  only after webhook signature/token authentication. Immutable numeric provider
+  actor IDs map to operator credential environment names; usernames never grant
+  authority and bot self-comments are inert.
+- The bot mention must be the first token and name the closed finding command.
+  Prose, embedded mentions, non-PR/MR comments, unknown actors and malformed
+  commands execute nothing. Provider-specific mappings without a configured bot
+  identity fail startup.
+- The ledger atomically binds the disposition read to the signed comment's exact
+  provider, trusted host, repository and PR/MR number. A principal authorized for
+  the repository cannot use a different change as a command carrier. Participant
+  disputes retain their narrow role; accept/reject still require reviewer/operator.
+- Signed webhook integration tests cover durable command replay under a fresh
+  delivery, duplicate delivery suppression, wrong-change rejection, unknown actor
+  rejection, self-loop suppression and absence of model/provider work. The focused
+  race test runs against disposable PostgreSQL. Hosted permission/API-version
+  qualification remains open; this is not an alpha completion claim.
 
 ## Method File Example
 
