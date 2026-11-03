@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -129,6 +130,51 @@ func TestPostgresOperatorFinalSettlementRequiresExactRepositoryAuthority(t *test
 	var stored FinalReceipt
 	if json.Unmarshal(payload, &stored) != nil || stored.EvidenceRef != "operator:alice:manual-usage-42" {
 		t.Fatalf("operator attribution not stored: %s", payload)
+	}
+}
+
+func TestPostgresOperatorUsageCommandDerivesRouteAndBindsReplay(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	a := ledgerAuthority(t, db, l)
+	i := ledgerIntent(t, db, "operator-command", "7", l)
+	admit(t, a, i)
+	actor, _ := cancellationActor(t, a, i)
+	command := review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-command-1", ActionID: i.ActionID, Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 10, OutputTokens: 2, MoneyMicro: 2, ActiveMS: 1, EvidenceID: "provider-invoice-42", Reason: "reconciled against provider invoice"}}
+	receipt, err := a.SettleUsageByOperator(context.Background(), actor, command)
+	if err != nil || receipt == nil || receipt.ActorID != "alice" || receipt.ActionID != i.ActionID || receipt.CommandID != command.CommandID || receipt.Actual != command.Payload.Actual() || receipt.State != "settled" {
+		t.Fatalf("operator usage command: %#v %v", receipt, err)
+	}
+	replayed, err := a.SettleUsageByOperator(context.Background(), actor, command)
+	if err != nil || !reflect.DeepEqual(receipt, replayed) {
+		t.Fatalf("operator usage replay: %#v %v", replayed, err)
+	}
+	changed := command
+	changed.Payload.Reason = "changed reason"
+	if got, err := a.SettleUsageByOperator(context.Background(), actor, changed); err == nil || got != nil {
+		t.Fatalf("changed command reuse accepted: %#v %v", got, err)
+	}
+	var stored FinalReceipt
+	var raw []byte
+	if err = db.QueryRow(`SELECT payload FROM budget_receipts WHERE id=$1`, command.CommandID).Scan(&raw); err != nil || json.Unmarshal(raw, &stored) != nil || stored.Provider != i.Provider || stored.Model != i.Model || stored.RequestDigest != i.RequestDigest || stored.Currency != "USD" || stored.CommandDigest != receipt.CommandDigest || stored.Reason != command.Payload.Reason {
+		t.Fatalf("durable settlement did not derive exact route/command: %#v %v", stored, err)
+	}
+}
+
+func TestPostgresOperatorUsageCommandRecordsOverBoundIntegrity(t *testing.T) {
+	db, _ := postgresFixture(t)
+	l := ledgerLimits()
+	a := ledgerAuthority(t, db, l)
+	i := ledgerIntent(t, db, "operator-over-bound", "7", l)
+	admit(t, a, i)
+	actor, _ := cancellationActor(t, a, i)
+	command := review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-over-bound", ActionID: i.ActionID, Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 101, OutputTokens: 2, MoneyMicro: 2, ActiveMS: 1, EvidenceID: "provider-invoice-over", Reason: "provider reported an input overrun"}}
+	if receipt, err := a.SettleUsageByOperator(context.Background(), actor, command); !errors.Is(err, ErrIntegrity) || receipt != nil {
+		t.Fatalf("over-bound command was not fenced: %#v %v", receipt, err)
+	}
+	var incident, settled bool
+	if err := db.QueryRow(`SELECT integrity_incident,settled FROM budget_actions WHERE id=$1`, i.ActionID).Scan(&incident, &settled); err != nil || !incident || !settled {
+		t.Fatalf("over-bound evidence not retained: incident=%v settled=%v err=%v", incident, settled, err)
 	}
 }
 

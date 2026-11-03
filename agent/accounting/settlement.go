@@ -2,7 +2,9 @@ package accounting
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 
@@ -15,6 +17,7 @@ var ErrIntegrity = errors.New("budget integrity incident blocks further spending
 type FinalReceipt struct {
 	SchemaVersion                                                                         int
 	ReceiptID, ActionID, RequestDigest, Provider, Model, Currency, EvidenceRef, Certainty string
+	CommandDigest, Reason                                                                 string
 	Actual                                                                                review.ResourceLimitScope
 }
 
@@ -53,6 +56,53 @@ func (a *Authority) SettleFinalByOperator(ctx context.Context, actor review.Oper
 		return err
 	}
 	return a.settleFinal(ctx, r, &actor)
+}
+
+func (a *Authority) SettleUsageByOperator(ctx context.Context, actor review.OperatorActor, c review.UsageSettlementCommand) (*review.UsageSettlementReceipt, error) {
+	if c.Validate() != nil {
+		return nil, errors.New("invalid operator usage settlement")
+	}
+	if a.cfg.Operators == nil {
+		return nil, review.ErrOperatorUnauthorized
+	}
+	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
+		return nil, err
+	}
+	var request, quoteRaw []byte
+	var requestDigest string
+	err := a.db.QueryRowContext(ctx, `SELECT request_digest,request,quote FROM budget_actions WHERE id=$1`, c.ActionID).Scan(&requestDigest, &request, &quoteRaw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrOperatorAttemptNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var intent orchestrator.DispatchIntent
+	var quote Quote
+	if json.Unmarshal(request, &intent) != nil || json.Unmarshal(quoteRaw, &quote) != nil {
+		return nil, ErrIntegrity
+	}
+	payloadDigest := sha256.Sum256(intent.Payload)
+	if intent.ActionID != c.ActionID || intent.RequestDigest != requestDigest || requestDigest != "sha256:"+hex.EncodeToString(payloadDigest[:]) || quote.RequestDigest != requestDigest || quote.Qualification.Provider != intent.Provider || quote.Qualification.Model != intent.Model || quote.Currency == "" || quote.Currency != quote.Qualification.Currency {
+		return nil, ErrIntegrity
+	}
+	if err = a.cfg.Operators.Authorize(actor, a.cfg.BoundaryID, a.cfg.ProjectID, intent.Attempt.Change, review.OperatorRoleOperator); err != nil {
+		return nil, err
+	}
+	commandDigest, err := review.CanonicalUsageSettlementCommandDigest(c)
+	if err != nil {
+		return nil, err
+	}
+	r := FinalReceipt{
+		SchemaVersion: 1, ReceiptID: c.CommandID, ActionID: c.ActionID, RequestDigest: requestDigest,
+		Provider: intent.Provider, Model: intent.Model, Currency: quote.Currency, Certainty: "final",
+		CommandDigest: commandDigest, Reason: c.Payload.Reason,
+		Actual: review.ResourceLimitScope{ModelCalls: 1, InputTokens: c.Payload.InputTokens, OutputTokens: c.Payload.OutputTokens, MoneyMicro: c.Payload.MoneyMicro, ActiveMS: c.Payload.ActiveMS},
+	}
+	if err = a.SettleFinalByOperator(ctx, actor, r, c.Payload.EvidenceID); err != nil {
+		return nil, err
+	}
+	return &review.UsageSettlementReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: commandDigest, ActionID: c.ActionID, ActorID: actor.PrincipalID(), Kind: c.Kind, Actual: c.Payload.Actual(), EvidenceRef: "operator:" + actor.PrincipalID() + ":" + c.Payload.EvidenceID, State: "settled"}, nil
 }
 
 func validateFinalReceipt(r FinalReceipt) error {
