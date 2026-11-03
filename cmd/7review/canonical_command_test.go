@@ -43,6 +43,16 @@ func dispositionArgs() []string {
 	return []string{"attempt-1", "F-1", "--command-id", "finding-1", "--decision", "disputed", "--reason", "the cited branch is unreachable", "--server", "https://agent"}
 }
 
+func settlementArgs() []string {
+	return []string{"action-1", "--command-id", "settle-1", "--input-tokens", "10", "--output-tokens", "2", "--money-micro", "1", "--active-ms", "20", "--evidence-id", "invoice-42", "--reason", "reconciled provider invoice", "--server", "https://agent"}
+}
+
+func cliSettlementResponse(c review.UsageSettlementCommand) string {
+	digest, _ := review.CanonicalUsageSettlementCommandDigest(c)
+	raw, _ := json.Marshal(review.UsageSettlementReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: digest, ActionID: c.ActionID, ActorID: "alice", Kind: c.Kind, Actual: c.Payload.Actual(), EvidenceRef: "operator:alice:" + c.Payload.EvidenceID, State: "settled"})
+	return string(raw)
+}
+
 func cliFindingView(t *testing.T) review.FindingDispositionView {
 	t.Helper()
 	finding := review.Finding{ID: "F-1", Severity: review.SeverityHigh, Title: "Authorization bypass", Description: "The guard is skipped.", Suggestion: "Enforce the guard.", Location: review.Location{Path: "service.go", Line: 7}, Confidence: 0.91}
@@ -168,6 +178,72 @@ func TestCanonicalCLIFetchesAndDispositionsOneExactFinding(t *testing.T) {
 	}
 	if calls != 4 || len(commands) != 2 || commands[0] != commands[1] || !strings.Contains(out.String(), "disputed finding F-1 for attempt-1") || !strings.Contains(out.String(), "finding-1") || !strings.Contains(out.String(), "control version 3") {
 		t.Fatalf("unproven finding output/calls: %d %s", calls, out.String())
+	}
+}
+
+func TestCanonicalCLISettlesOneExactActionWithoutLookupOrDerivedClaims(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	var requests []string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Fatalf("settlement CLI used wrong transport: %s %s", r.Method, r.URL.String())
+		}
+		raw, _ := io.ReadAll(r.Body)
+		requests = append(requests, string(raw))
+		command, err := review.DecodeUsageSettlementCommand(raw)
+		if err != nil || command != (review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-1", ActionID: "action-1", Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 10, OutputTokens: 2, MoneyMicro: 1, ActiveMS: 20, EvidenceID: "invoice-42", Reason: "reconciled provider invoice"}}) {
+			t.Fatalf("CLI changed exact settlement command: %+v %v", command, err)
+		}
+		for _, forbidden := range []string{`"actor_id":`, `"provider":`, `"model":`, `"request_digest":`, `"repository_id":`} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Fatalf("CLI supplied authority-owned claim %q: %s", forbidden, raw)
+			}
+		}
+		return jsonResponse(http.StatusOK, cliSettlementResponse(command)), nil
+	})}
+	var out strings.Builder
+	for range 2 {
+		out.Reset()
+		if err := runSettleUsage(settlementArgs(), &out, client); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(out.String(), "settled usage for action action-1") || !strings.Contains(out.String(), "command settle-1  actor alice") || !strings.Contains(out.String(), "input 10  output 2  money-micro 1  active-ms 20") || !strings.Contains(out.String(), "evidence operator:alice:invoice-42") {
+			t.Fatalf("unproven settlement output: %s", out.String())
+		}
+	}
+	if len(requests) != 2 || requests[0] != requests[1] {
+		t.Fatal("manual settlement retry changed command identity or payload")
+	}
+}
+
+func TestCanonicalUsageSettlementCLIRejectsIncompleteAmbiguousOrNonCanonicalInputBeforeIO(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return jsonResponse(http.StatusOK, "{}"), nil
+	})}
+	complete := settlementArgs()
+	cases := [][]string{
+		nil,
+		{"action-1"},
+		append(append([]string(nil), complete...), "extra"),
+		append(append([]string(nil), complete...), "--unknown"),
+		append(append([]string(nil), complete...), "--money-micro", "2"),
+		append(append([]string(nil), complete...), "--evidence-id=other"),
+		{"action-1", "--command-id", "settle-1", "--input-tokens", "01", "--output-tokens", "2", "--money-micro", "1", "--active-ms", "20", "--evidence-id", "invoice-42", "--reason", "reconciled"},
+		{"action-1", "--command-id", "settle-1", "--input-tokens", "+1", "--output-tokens", "2", "--money-micro", "1", "--active-ms", "20", "--evidence-id", "invoice-42", "--reason", "reconciled"},
+		{"action-1", "--command-id", "settle-1", "--input-tokens", "-1", "--output-tokens", "2", "--money-micro", "1", "--active-ms", "20", "--evidence-id", "invoice-42", "--reason", "reconciled"},
+		{"action-1", "--command-id", "settle-1", "--input-tokens", "9223372036854775808", "--output-tokens", "2", "--money-micro", "1", "--active-ms", "20", "--evidence-id", "invoice-42", "--reason", "reconciled"},
+	}
+	for _, args := range cases {
+		var out strings.Builder
+		if err := runSettleUsage(args, &out, client); err == nil || out.Len() != 0 {
+			t.Fatalf("unsafe settlement args accepted: %#v output=%q", args, out.String())
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("invalid settlement reached authority: %d", calls)
 	}
 }
 
@@ -306,6 +382,44 @@ func TestCanonicalTerminalCommandsRequireExplicitAttemptAndHonorCancellation(t *
 	}
 }
 
+func TestCanonicalTerminalSettlementRequiresExactActionAndPinnedServer(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.String() != "https://agent/operator/commands" {
+			t.Fatalf("terminal settlement escaped pinned server: %s", r.URL.String())
+		}
+		raw, _ := io.ReadAll(r.Body)
+		command, err := review.DecodeUsageSettlementCommand(raw)
+		if err != nil || command.ActionID != "action-1" {
+			t.Fatalf("terminal rebound selected run as action: %+v %v", command, err)
+		}
+		return jsonResponse(http.StatusOK, cliSettlementResponse(command)), nil
+	})}
+	handler := chatCommandHandlerWithClient("https://agent", "selected-run", client)
+	var out strings.Builder
+	for _, text := range []string{
+		"/settle-usage",
+		`/settle-usage --command-id settle-1 --input-tokens 10 --output-tokens 2 --money-micro 1 --active-ms 20 --evidence-id invoice-42 --reason reconciled`,
+		`/settle-usage action-1 --command-id settle-1 --input-tokens 10 --output-tokens 2 --money-micro 1 --active-ms 20 --evidence-id invoice-42 --reason reconciled --server https://other`,
+	} {
+		if handled, err := handler(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err == nil {
+			t.Fatalf("unsafe terminal settlement accepted: %q %v", text, err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("unsafe terminal settlement reached authority: %d", calls)
+	}
+	text := `/settle-usage action-1 --command-id settle-1 --input-tokens 10 --output-tokens 2 --money-micro 1 --active-ms 20 --evidence-id invoice-42 --reason "reconciled provider invoice"`
+	if handled, err := handler(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err != nil || !strings.Contains(out.String(), "settled usage for action action-1") {
+		t.Fatalf("terminal settlement: handled=%t err=%v out=%q", handled, err, out.String())
+	}
+	if calls != 1 {
+		t.Fatalf("terminal settlement calls: %d", calls)
+	}
+}
+
 func TestCanonicalConsoleInterruptionKeepsOutcomeUnconfirmedUntilRequestReturns(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	started := make(chan struct{}, 1)
@@ -384,13 +498,49 @@ func TestCanonicalCLIExecutableChild(t *testing.T) {
 		t.Skip("subprocess helper")
 	}
 	command, args := "cancel-attempt", cancelArgs()
-	if os.Getenv("SEVENREVIEW_CANONICAL_CLI_TEST_MODE") == "publication" {
+	switch os.Getenv("SEVENREVIEW_CANONICAL_CLI_TEST_MODE") {
+	case "publication":
 		command, args = "authorize-publication", publicationArgs()
+	case "settlement":
+		command, args = "settle-usage", settlementArgs()
 	}
 	os.Args = append([]string{"7review", command}, args...)
 	os.Args = append(os.Args[:len(os.Args)-2], "--server", server, "--json")
 	main()
 	os.Exit(0)
+}
+
+func TestCanonicalCLIExecutableDispatchesUsageSettlementAndEmitsValidatedJSON(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Error("executable used wrong settlement route/credential")
+		}
+		raw, _ := io.ReadAll(r.Body)
+		command, err := review.DecodeUsageSettlementCommand(raw)
+		if err != nil || command.ActionID != "action-1" || command.CommandID != "settle-1" {
+			t.Errorf("executable changed settlement command: %+v %v", command, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(cliSettlementResponse(command)))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCanonicalCLIExecutableChild$")
+	child.Env = append(os.Environ(), "SEVENREVIEW_CANONICAL_CLI_TEST_SERVER="+server.URL, "SEVENREVIEW_CANONICAL_CLI_TEST_MODE=settlement")
+	out, err := child.CombinedOutput()
+	if err != nil {
+		t.Fatalf("executable failed: %v %s", err, out)
+	}
+	var receipt review.UsageSettlementReceipt
+	if err = json.Unmarshal(out, &receipt); err != nil || receipt.CommandID != "settle-1" || receipt.ActionID != "action-1" || receipt.Actual.InputTokens != 10 || receipt.EvidenceRef != "operator:alice:invoice-42" || requests.Load() != 1 {
+		t.Fatalf("executable settlement acknowledgment: %+v requests=%d err=%v out=%s", receipt, requests.Load(), err, out)
+	}
 }
 
 func TestCanonicalCLIExecutableDispatchesPublicationAuthorizationAndEmitsValidatedJSON(t *testing.T) {

@@ -30,7 +30,7 @@ const operatorStreamTimeout = 10 * time.Minute
 const maxSSEEventBytes = 4 << 20
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "attempt" || os.Args[1] == "cancel-attempt" || os.Args[1] == "authorize-publication" || os.Args[1] == "disposition-finding") {
+	if len(os.Args) > 1 && (os.Args[1] == "attempt" || os.Args[1] == "cancel-attempt" || os.Args[1] == "authorize-publication" || os.Args[1] == "disposition-finding" || os.Args[1] == "settle-usage") {
 		var err error
 		switch os.Args[1] {
 		case "attempt":
@@ -41,6 +41,8 @@ func main() {
 			err = runAuthorizePublication(os.Args[2:], os.Stdout, operatorRequestHTTPClient())
 		case "disposition-finding":
 			err = runDispositionFinding(os.Args[2:], os.Stdout, operatorRequestHTTPClient())
+		case "settle-usage":
+			err = runSettleUsage(os.Args[2:], os.Stdout, operatorRequestHTTPClient())
 		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

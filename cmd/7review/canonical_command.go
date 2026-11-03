@@ -33,9 +33,17 @@ type findingDispositionOptions struct {
 	json                                               bool
 }
 
+type usageSettlementOptions struct {
+	serverURL string
+	json      bool
+	command   review.UsageSettlementCommand
+}
+
 const findingDispositionUsage = "7review disposition-finding <exact-attempt-id> <exact-finding-id> --command-id <id> --decision <accepted|rejected|disputed> --reason <text> [--server <url>] [--json]"
 
 const publicationCommandUsage = "7review authorize-publication <exact-attempt-id> --command-id <id> --expected-version <n> --revision <revision> --assessment-digest <sha256> --artifact-digest <sha256> --provider <provider> --host <host> --repository-id <id> --change-number <number> --artifact-class <class> --reason <text> [--server <url>] [--json]"
+
+const usageSettlementUsage = "7review settle-usage <exact-action-id> --command-id <id> --input-tokens <n> --output-tokens <n> --money-micro <n> --active-ms <n> --evidence-id <id> --reason <text> [--server <url>] [--json]"
 
 func canonicalUsage(cancel bool) string {
 	if cancel {
@@ -305,6 +313,67 @@ func parseFindingDispositionOptions(args []string) (findingDispositionOptions, e
 	return o, nil
 }
 
+func parseUsageSettlementOptions(args []string) (usageSettlementOptions, error) {
+	o := usageSettlementOptions{serverURL: "http://localhost:8080"}
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return o, fmt.Errorf("usage: %s", usageSettlementUsage)
+	}
+	o.command = review.UsageSettlementCommand{SchemaVersion: 1, ActionID: args[0], Kind: "settle_model_usage"}
+	fs := flag.NewFlagSet("settle-usage", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	seen := map[string]bool{}
+	set := func(name, value string, target *string) error {
+		if seen[name] {
+			return fmt.Errorf("duplicate --%s", name)
+		}
+		seen[name], *target = true, value
+		return nil
+	}
+	setAmount := func(name, value string, target *int64) error {
+		if seen[name] {
+			return fmt.Errorf("duplicate --%s", name)
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || parsed < 0 || strconv.FormatInt(parsed, 10) != value {
+			return fmt.Errorf("--%s requires a canonical nonnegative integer", name)
+		}
+		seen[name], *target = true, parsed
+		return nil
+	}
+	fs.Func("command-id", "stable command identity", func(v string) error { return set("command-id", v, &o.command.CommandID) })
+	fs.Func("input-tokens", "final input token usage", func(v string) error { return setAmount("input-tokens", v, &o.command.Payload.InputTokens) })
+	fs.Func("output-tokens", "final output token usage", func(v string) error { return setAmount("output-tokens", v, &o.command.Payload.OutputTokens) })
+	fs.Func("money-micro", "final cost in currency micro-units", func(v string) error { return setAmount("money-micro", v, &o.command.Payload.MoneyMicro) })
+	fs.Func("active-ms", "final active provider time", func(v string) error { return setAmount("active-ms", v, &o.command.Payload.ActiveMS) })
+	fs.Func("evidence-id", "external settlement evidence identity", func(v string) error { return set("evidence-id", v, &o.command.Payload.EvidenceID) })
+	fs.Func("reason", "settlement audit reason", func(v string) error { return set("reason", v, &o.command.Payload.Reason) })
+	fs.Func("server", "operator server URL", func(v string) error { return set("server", v, &o.serverURL) })
+	fs.BoolFunc("json", "emit JSON", func(v string) error {
+		if seen["json"] {
+			return errors.New("duplicate --json")
+		}
+		seen["json"] = true
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return errors.New("invalid --json value")
+		}
+		o.json = parsed
+		return nil
+	})
+	if err := fs.Parse(args[1:]); err != nil || len(fs.Args()) != 0 {
+		return o, fmt.Errorf("invalid usage settlement flags; usage: %s", usageSettlementUsage)
+	}
+	for _, required := range []string{"command-id", "input-tokens", "output-tokens", "money-micro", "active-ms", "evidence-id", "reason"} {
+		if !seen[required] {
+			return o, fmt.Errorf("--%s is required", required)
+		}
+	}
+	if err := o.command.Validate(); err != nil {
+		return o, err
+	}
+	return o, nil
+}
+
 func runOperatorAttempt(args []string, out io.Writer, httpClient *http.Client) error {
 	return runOperatorAttemptContext(context.Background(), args, out, httpClient)
 }
@@ -408,6 +477,30 @@ func runDispositionFindingContext(ctx context.Context, args []string, out io.Wri
 	}
 	if err != nil {
 		return fmt.Errorf("finding disposition acknowledged for command %s but output failed: %w", receipt.CommandID, err)
+	}
+	return nil
+}
+
+func runSettleUsage(args []string, out io.Writer, httpClient *http.Client) error {
+	return runSettleUsageContext(context.Background(), args, out, httpClient)
+}
+
+func runSettleUsageContext(ctx context.Context, args []string, out io.Writer, httpClient *http.Client) error {
+	o, err := parseUsageSettlementOptions(args)
+	if err != nil {
+		return err
+	}
+	receipt, err := operator.NewClient(o.serverURL, httpClient).SettleUsage(ctx, o.command)
+	if err != nil {
+		return fmt.Errorf("command %s: %w", o.command.CommandID, err)
+	}
+	if o.json {
+		err = json.NewEncoder(out).Encode(receipt)
+	} else {
+		_, err = fmt.Fprintf(out, "settled usage for action %s\ncommand %s  actor %s\ninput %d  output %d  money-micro %d  active-ms %d\nevidence %s\n", receipt.ActionID, receipt.CommandID, receipt.ActorID, receipt.Actual.InputTokens, receipt.Actual.OutputTokens, receipt.Actual.MoneyMicro, receipt.Actual.ActiveMS, receipt.EvidenceRef)
+	}
+	if err != nil {
+		return fmt.Errorf("usage settlement acknowledged for command %s but output failed: %w", receipt.CommandID, err)
 	}
 	return nil
 }
