@@ -1605,8 +1605,32 @@ This is an incremental behavior ledger, not a completion declaration.
   contract; it is not provider-contract verification. The current provider API
   still returns text without a trusted usage receipt, so outcomes retain the full
   reservation. Production receipt adapters, live contract/currentness
-  qualification and authenticated settlement remain open. Ceilings and alpha are
-  not complete.
+  qualification and operator action discovery remain open. Authenticated
+  settlement is recorded in the next slice. Ceilings and alpha are not complete.
+
+### 79. Authenticated Exact-Action Usage Settlement
+
+- A closed `settle_model_usage` command carries one stable command ID, exact
+  action ID, nonnegative final input/output tokens, money, active time, evidence
+  ID and reason. It accepts no actor, repository, provider, model, request,
+  currency or route claims from the caller.
+- PostgreSQL derives those authority-owned fields from the durable action and
+  authenticated principal. Only an operator for the action's exact repository can
+  settle it; participants, foreign repositories and unknown actions mutate
+  nothing. Exact replay is idempotent and changed command reuse conflicts.
+- Under-bound usage releases only the proven reservation difference. Over-bound
+  usage remains recorded with a durable integrity incident and blocks subsequent
+  spending instead of being clipped or refunded.
+- The authenticated HTTP endpoint and strict client validate the exact receipt.
+  CLI and TUI commands reject ambiguous amounts before I/O, never infer an action
+  from the selected run, pin the terminal server and preserve unknown outcomes for
+  identical-command reconciliation. Subprocess and race tests exercise the real
+  dispatch path.
+- This is operator-attested reconciliation, not a production provider receipt
+  adapter, cancellation proof or refund. A bounded repository-scoped projection
+  for discovering unsettled actions is still missing, as are live evidence
+  qualification and the remaining continuation/recovery exits. Ceilings and alpha
+  remain unfinished.
 
 ## Method File Example
 

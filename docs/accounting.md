@@ -872,6 +872,37 @@ remain unknown and retain the full reservation. Operators must not qualify model
 aliases, proxies with mutable routing, or contracts where `max_tokens` does not
 bound every billable output token.
 
+### Authenticated Usage Settlement
+
+An authenticated repository operator can reconcile one exact model action after
+obtaining final usage from an external bill or other qualified evidence:
+
+```sh
+export REVIEW_OPERATOR_TOKEN="$ALICE_OPERATOR_TOKEN"
+7review settle-usage <exact-action-id> --command-id <stable-command-id> --input-tokens <final-input> --output-tokens <final-output> --money-micro <final-cost> --active-ms <final-active-time> --evidence-id <stable-evidence-id> --reason "reconciled provider invoice" --server http://localhost:8080 --json
+```
+
+The command supplies only final usage, evidence identity and reason. Actor,
+repository, provider, model, request digest, route version and currency come from
+the authenticated principal and durable action. The ledger requires the
+repository `operator` role and rejects participants, foreign repositories and
+unknown actions before changing accounting state. Exact command replay is
+idempotent; reusing a command ID with changed bytes conflicts. The CLI rejects
+missing, duplicate, negative, non-canonical or overflowing amounts before network
+I/O, and validates the returned command digest, actor-derived evidence reference
+and exact usage before printing success. Terminal use is `/settle-usage` with the
+same fields; it cannot substitute the selected run or override the pinned server.
+
+Usage at or below the reserved upper bound settles the action and releases only
+the proven difference. Usage above any bound records the settlement and a durable
+integrity incident, then blocks further spending; it is not silently clipped.
+This control does not cancel an in-flight provider request, prove that a prepared
+action was unsent, or create a refund. Those release paths require their own
+durable evidence. It is also not a production receipt-verifier adapter: the
+operator remains responsible for qualifying the external evidence. Exact action
+IDs currently require operational database/API inspection; a bounded
+repository-scoped action projection is still required for a complete workflow.
+
 ## Verification
 
 Run the isolated real-PostgreSQL suite, including race detection:
@@ -891,8 +922,9 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 
 ## Still Required
 
-- Production receipt-verifier adapters and authenticated operator settlement
-  commands; library-level reconciliation tests use an explicit test verifier.
+- Production receipt-verifier adapters and live provider evidence qualification;
+  authenticated exact-action settlement exists, but bounded action discovery is
+  still required for the operator workflow.
 - Live recovery-adapter qualification, prepared cancellation, validated continuation and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
 - Complete stable-provider-ID/alias migration and rename qualification, including
