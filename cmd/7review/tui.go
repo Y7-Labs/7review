@@ -174,7 +174,7 @@ func (m consoleTUIModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			ctx := context.Background()
 			name := operator.CanonicalCommand(strings.Fields(command)[0])
-			if name == "/attempt" || name == "/cancel-attempt" || name == "/authorize-publication" {
+			if name == "/attempt" || name == "/cancel-attempt" || name == "/authorize-publication" || name == "/disposition-finding" {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				m.cancel = cancel

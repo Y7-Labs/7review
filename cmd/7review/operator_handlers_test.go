@@ -10,9 +10,35 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Y4NN777/7review/agent/review"
 	"github.com/Y4NN777/7review/agent/tools"
 	"github.com/Y4NN777/7review/agent/ui"
 )
+
+func TestChatDispositionFindingUsesCanonicalReadThenCommand(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	view := cliFindingView(t)
+	viewRaw, _ := json.Marshal(view)
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			return jsonResponse(http.StatusOK, string(viewRaw)), nil
+		}
+		raw, _ := io.ReadAll(req.Body)
+		command, err := review.DecodeFindingDispositionCommand(raw)
+		if err != nil || command.Payload.FindingDigest != view.FindingDigest || command.ExpectedVersion != view.ControlVersion {
+			t.Fatalf("chat changed finding authority: %+v %v", command, err)
+		}
+		return jsonResponse(http.StatusOK, cliFindingReceipt(command)), nil
+	})}
+	var out strings.Builder
+	text := "/disposition-finding attempt-1 F-1 --command-id finding-chat --decision disputed --reason 'the cited branch is unreachable'"
+	handled, err := chatCommandHandlerWithClient("https://agent", "", client)(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true})
+	if err != nil || !handled || calls != 2 || !strings.Contains(out.String(), "disputed finding F-1") {
+		t.Fatalf("chat disposition: handled=%t calls=%d out=%q err=%v", handled, calls, out.String(), err)
+	}
+}
 
 func TestChatCommandHandlerRendersRunHistory(t *testing.T) {
 	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {

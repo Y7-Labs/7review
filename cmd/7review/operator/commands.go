@@ -28,6 +28,7 @@ var Commands = []Command{
 	{Name: "/attempt", Usage: "/attempt <exact-attempt-id>", Description: "Show canonical attempt identity, version and reservation status."},
 	{Name: "/cancel-attempt", Usage: "/cancel-attempt <exact-attempt-id> --command-id <id> --expected-version <n> --revision <revision> --reason <text>", Description: "Cancel an exact canonical attempt with a versioned command."},
 	{Name: "/authorize-publication", Usage: "/authorize-publication <exact-attempt-id> --command-id <id> --expected-version <n> --revision <revision> --assessment-digest <sha256> --artifact-digest <sha256> --provider <provider> --host <host> --repository-id <id> --change-number <number> --artifact-class <class> --reason <text>", Description: "Authorize disclosure of one exact validated terminal assessment."},
+	{Name: "/disposition-finding", Usage: "/disposition-finding <exact-attempt-id> <exact-finding-id> --command-id <id> --decision <accepted|rejected|disputed> --reason <text>", Description: "Record an attributed decision for one exact terminal finding."},
 }
 
 func CanonicalCommand(value string) string {

@@ -27,6 +27,14 @@ type publicationCommandOptions struct {
 	command   review.AuthorizePublicationCommand
 }
 
+type findingDispositionOptions struct {
+	attemptID, findingID, commandID, reason, serverURL string
+	decision                                           review.FindingDecision
+	json                                               bool
+}
+
+const findingDispositionUsage = "7review disposition-finding <exact-attempt-id> <exact-finding-id> --command-id <id> --decision <accepted|rejected|disputed> --reason <text> [--server <url>] [--json]"
+
 const publicationCommandUsage = "7review authorize-publication <exact-attempt-id> --command-id <id> --expected-version <n> --revision <revision> --assessment-digest <sha256> --artifact-digest <sha256> --provider <provider> --host <host> --repository-id <id> --change-number <number> --artifact-class <class> --reason <text> [--server <url>] [--json]"
 
 func canonicalUsage(cancel bool) string {
@@ -237,6 +245,66 @@ func parsePublicationOptions(args []string) (publicationCommandOptions, error) {
 	return o, nil
 }
 
+func parseFindingDispositionOptions(args []string) (findingDispositionOptions, error) {
+	o := findingDispositionOptions{serverURL: "http://localhost:8080"}
+	if len(args) < 2 || strings.HasPrefix(args[0], "-") || strings.HasPrefix(args[1], "-") {
+		return o, fmt.Errorf("usage: %s", findingDispositionUsage)
+	}
+	o.attemptID, o.findingID = args[0], args[1]
+	if err := review.ValidateOperatorAttemptID(o.attemptID); err != nil {
+		return o, err
+	}
+	if err := review.ValidateOperatorFindingID(o.findingID); err != nil {
+		return o, err
+	}
+	fs := flag.NewFlagSet("disposition-finding", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	seen := map[string]bool{}
+	set := func(name, value string, target *string) error {
+		if seen[name] {
+			return fmt.Errorf("duplicate --%s", name)
+		}
+		seen[name], *target = true, value
+		return nil
+	}
+	fs.Func("command-id", "stable command identity", func(v string) error { return set("command-id", v, &o.commandID) })
+	fs.Func("decision", "finding decision", func(v string) error {
+		var value string
+		if err := set("decision", v, &value); err != nil {
+			return err
+		}
+		o.decision = review.FindingDecision(value)
+		return nil
+	})
+	fs.Func("reason", "decision audit reason", func(v string) error { return set("reason", v, &o.reason) })
+	fs.Func("server", "operator server URL", func(v string) error { return set("server", v, &o.serverURL) })
+	fs.BoolFunc("json", "emit JSON", func(v string) error {
+		if seen["json"] {
+			return errors.New("duplicate --json")
+		}
+		seen["json"] = true
+		parsed, err := strconv.ParseBool(v)
+		if err != nil {
+			return errors.New("invalid --json value")
+		}
+		o.json = parsed
+		return nil
+	})
+	if err := fs.Parse(args[2:]); err != nil || len(fs.Args()) != 0 {
+		return o, fmt.Errorf("invalid finding disposition flags; usage: %s", findingDispositionUsage)
+	}
+	for _, required := range []string{"command-id", "decision", "reason"} {
+		if !seen[required] {
+			return o, fmt.Errorf("--%s is required", required)
+		}
+	}
+	probe := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: o.commandID, AttemptID: o.attemptID, ExpectedVersion: 1, Revision: "probe", Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: o.findingID, FindingDigest: "sha256:" + strings.Repeat("0", 64), Decision: o.decision, Reason: o.reason}}
+	if err := probe.Validate(); err != nil {
+		return o, err
+	}
+	return o, nil
+}
+
 func runOperatorAttempt(args []string, out io.Writer, httpClient *http.Client) error {
 	return runOperatorAttemptContext(context.Background(), args, out, httpClient)
 }
@@ -303,6 +371,36 @@ func runAuthorizePublicationContext(ctx context.Context, args []string, out io.W
 	}
 	if err != nil {
 		return fmt.Errorf("publication authorization acknowledged for command %s but output failed: %w", r.CommandID, err)
+	}
+	return nil
+}
+
+func runDispositionFinding(args []string, out io.Writer, httpClient *http.Client) error {
+	return runDispositionFindingContext(context.Background(), args, out, httpClient)
+}
+
+func runDispositionFindingContext(ctx context.Context, args []string, out io.Writer, httpClient *http.Client) error {
+	o, err := parseFindingDispositionOptions(args)
+	if err != nil {
+		return err
+	}
+	client := operator.NewClient(o.serverURL, httpClient)
+	view, err := client.FindingDisposition(ctx, o.attemptID, o.findingID)
+	if err != nil {
+		return fmt.Errorf("finding %s: %w", o.findingID, err)
+	}
+	command := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: o.commandID, AttemptID: o.attemptID, ExpectedVersion: view.ControlVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: o.findingID, FindingDigest: view.FindingDigest, Decision: o.decision, Reason: o.reason}}
+	receipt, err := client.DispositionFinding(ctx, command)
+	if err != nil {
+		return fmt.Errorf("command %s: %w", command.CommandID, err)
+	}
+	if o.json {
+		err = json.NewEncoder(out).Encode(receipt)
+	} else {
+		_, err = fmt.Fprintf(out, "%s finding %s for %s\ncommand %s  actor %s  control version %d\n", receipt.Decision, receipt.FindingID, receipt.AttemptID, receipt.CommandID, receipt.ActorID, receipt.ControlVersion)
+	}
+	if err != nil {
+		return fmt.Errorf("finding disposition acknowledged for command %s but output failed: %w", receipt.CommandID, err)
 	}
 	return nil
 }

@@ -142,9 +142,10 @@ is not alpha readiness.
 Schema v24 records authenticated, exact terminal-finding dispositions as immutable
 history with a separate current head and no report mutation or publication effect.
 The canonical authenticated HTTP command endpoint and strict client now carry that
-exact command and validate its receipt without retry or retargeting; operator CLI,
-TUI and channels remain open. An exact repository-authorized finding read now
-provides the immutable subject digest and attributed current disposition.
+exact command and validate its receipt without retry or retargeting. An exact
+repository-authorized finding read provides the immutable subject digest and
+attributed current disposition; CLI and TUI commands fetch that authority before
+submitting one decision. Channel and native SCM routing remain open.
 The v8-to-v9 through v23-to-v24 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v24 before restart. No deployed database was changed.

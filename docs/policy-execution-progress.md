@@ -1555,8 +1555,10 @@ This is an incremental behavior ledger, not a completion declaration.
   A separate bounded GET projection revalidates terminal lineage and returns one
   immutable finding, canonical digest, control version and optional attributed
   current decision. The strict client rejects changed evidence and can construct
-  commands without locally rebuilding authority. CLI/TUI/channel routing remains
-  open; ceilings and alpha remain unfinished.
+  commands without locally rebuilding authority. Direct CLI and slash-command/TUI
+  flows accept only finding ID, decision, reason and stable command ID; they fetch
+  revision, version and digest, then issue one mutation without retargeting.
+  Channel/native SCM routing remains open; ceilings and alpha remain unfinished.
 
 ## Method File Example
 

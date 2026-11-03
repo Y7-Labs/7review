@@ -39,6 +39,25 @@ func cliPublicationResponse(c review.AuthorizePublicationCommand) string {
 	return string(raw)
 }
 
+func dispositionArgs() []string {
+	return []string{"attempt-1", "F-1", "--command-id", "finding-1", "--decision", "disputed", "--reason", "the cited branch is unreachable", "--server", "https://agent"}
+}
+
+func cliFindingView(t *testing.T) review.FindingDispositionView {
+	t.Helper()
+	finding := review.Finding{ID: "F-1", Severity: review.SeverityHigh, Title: "Authorization bypass", Description: "The guard is skipped.", Suggestion: "Enforce the guard.", Location: review.Location{Path: "service.go", Line: 7}, Confidence: 0.91}
+	digest, err := review.CanonicalFindingDigest(finding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return review.FindingDispositionView{SchemaVersion: 1, AttemptID: "attempt-1", Revision: "head", ControlVersion: 2, Finding: finding, FindingDigest: digest}
+}
+
+func cliFindingReceipt(c review.FindingDispositionCommand) string {
+	raw, _ := json.Marshal(review.FindingDispositionReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: "sha256:" + strings.Repeat("e", 64), AttemptID: c.AttemptID, ActorID: "alice", Kind: c.Kind, Revision: c.Revision, ControlVersion: c.ExpectedVersion + 1, FindingID: c.Payload.FindingID, FindingDigest: c.Payload.FindingDigest, Decision: c.Payload.Decision, State: "recorded", CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)})
+	return string(raw)
+}
+
 func TestCanonicalCLIShowsScopedStatusAndSubmitsOneExactCancellation(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	t.Setenv("REVIEW_API_TOKEN", "legacy-secret")
@@ -106,6 +125,64 @@ func TestCanonicalCLISubmitsOneExactPublicationAuthorizationWithoutLookup(t *tes
 	}
 	if calls != 1 || !strings.Contains(out.String(), "authorized publication for attempt-1") || !strings.Contains(out.String(), "publish-1") || !strings.Contains(out.String(), "github.com/org/repo change 7") {
 		t.Fatalf("unproven publication output/calls: %d %s", calls, out.String())
+	}
+}
+
+func TestCanonicalCLIFetchesAndDispositionsOneExactFinding(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	view := cliFindingView(t)
+	viewRaw, _ := json.Marshal(view)
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if calls == 1 {
+			if r.Method != http.MethodGet || r.URL.Path != "/operator/finding" || r.URL.Query().Get("attempt_id") != view.AttemptID || r.URL.Query().Get("finding_id") != view.Finding.ID {
+				t.Fatalf("CLI did not read exact finding: %s %s", r.Method, r.URL.String())
+			}
+			return jsonResponse(http.StatusOK, string(viewRaw)), nil
+		}
+		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.URL.RawQuery != "" {
+			t.Fatalf("CLI used wrong disposition transport: %s %s", r.Method, r.URL.String())
+		}
+		raw, _ := io.ReadAll(r.Body)
+		command, err := review.DecodeFindingDispositionCommand(raw)
+		if err != nil || command.CommandID != "finding-1" || command.AttemptID != view.AttemptID || command.ExpectedVersion != view.ControlVersion || command.Revision != view.Revision || command.Payload.FindingID != view.Finding.ID || command.Payload.FindingDigest != view.FindingDigest || command.Payload.Decision != review.FindingDisputed || command.Payload.Reason != "the cited branch is unreachable" {
+			t.Fatalf("CLI changed authoritative finding command: %+v %v", command, err)
+		}
+		return jsonResponse(http.StatusOK, cliFindingReceipt(command)), nil
+	})}
+	var out strings.Builder
+	if err := runDispositionFinding(dispositionArgs(), &out, client); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !strings.Contains(out.String(), "disputed finding F-1 for attempt-1") || !strings.Contains(out.String(), "finding-1") || !strings.Contains(out.String(), "control version 3") {
+		t.Fatalf("unproven finding output/calls: %d %s", calls, out.String())
+	}
+}
+
+func TestCanonicalFindingCLIRejectsImplicitBindingsBeforeIO(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return jsonResponse(http.StatusOK, "{}"), nil
+	})}
+	complete := dispositionArgs()
+	for _, args := range [][]string{
+		nil,
+		{"attempt-1", "F-1"},
+		append(append([]string(nil), complete...), "--expected-version", "2"),
+		append(append([]string(nil), complete...), "--finding-digest", "sha256:"+strings.Repeat("a", 64)),
+		append(append([]string(nil), complete...), "--decision", "suppressed"),
+		append(append([]string(nil), complete...), "extra"),
+	} {
+		var out strings.Builder
+		if err := runDispositionFinding(args, &out, client); err == nil || out.Len() != 0 {
+			t.Fatalf("unsafe disposition args accepted: %v", args)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("invalid disposition reached authority: %d", calls)
 	}
 }
 

@@ -121,6 +121,9 @@ run timeline, and
 sending that command to the model. `/memory` previews the approved MemPalace
 proposal. `/draft` prints the current draft report, and `/draft final.md` writes
 it to a local file for review or editing. HIL actions are explicit:
+`/disposition-finding <attempt-id> <finding-id> --command-id <id> --decision
+<accepted|rejected|disputed> --reason <text>` reads the exact canonical finding
+subject and records one attributed decision without rewriting the report.
 `/approve --report-file final.md` submits human approval and
 `/publish-final --report-file final.md` retries final publishing for an already
 approved run.
