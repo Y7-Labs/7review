@@ -1,13 +1,19 @@
 package channel
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+var operatorTokenEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
 
 type Config struct {
 	Name              string
@@ -50,17 +56,91 @@ type InboundMessage struct {
 }
 
 type InboundResult struct {
-	RunID       string `json:"run_id"`
-	Channel     string `json:"channel"`
-	Sender      string `json:"sender"`
-	Command     string `json:"command"`
-	Approved    bool   `json:"approved"`
-	Revised     bool   `json:"revised,omitempty"`
-	Suppressed  bool   `json:"suppressed,omitempty"`
-	FindingID   string `json:"finding_id,omitempty"`
-	Reason      string `json:"reason,omitempty"`
-	FinalReport string `json:"final_report,omitempty"`
-	Request     string `json:"request,omitempty"`
+	RunID         string `json:"run_id"`
+	Channel       string `json:"channel"`
+	Sender        string `json:"sender"`
+	Command       string `json:"command"`
+	Approved      bool   `json:"approved"`
+	Revised       bool   `json:"revised,omitempty"`
+	Suppressed    bool   `json:"suppressed,omitempty"`
+	FindingID     string `json:"finding_id,omitempty"`
+	Reason        string `json:"reason,omitempty"`
+	FinalReport   string `json:"final_report,omitempty"`
+	Request       string `json:"request,omitempty"`
+	AttemptID     string `json:"attempt_id,omitempty"`
+	CommandID     string `json:"command_id,omitempty"`
+	Decision      string `json:"decision,omitempty"`
+	Dispositioned bool   `json:"dispositioned,omitempty"`
+}
+
+func (m *Manager) OperatorTokenEnv(channelName string, msg InboundMessage) (string, error) {
+	if m == nil {
+		return "", fmt.Errorf("channels are not configured")
+	}
+	cfg, ok := m.configs[normalizeName(firstNonEmpty(channelName, msg.Channel))]
+	if !ok {
+		return "", fmt.Errorf("channel is not configured")
+	}
+	if !authorizedChannelSender(cfg, msg) {
+		return "", fmt.Errorf("sender is not authorized")
+	}
+	raw := Setting(cfg.Settings, "operator_token_env_by_sender")
+	bindings, err := decodeOperatorTokenEnvBindings(raw)
+	if err != nil {
+		return "", err
+	}
+	matches := map[string]bool{}
+	for _, sender := range []string{strings.TrimSpace(msg.SenderID), strings.TrimSpace(msg.SenderAddress)} {
+		if sender == "" {
+			continue
+		}
+		for configured, envName := range bindings {
+			if strings.EqualFold(configured, sender) {
+				matches[envName] = true
+			}
+		}
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("channel sender has no unambiguous operator binding")
+	}
+	for envName := range matches {
+		return envName, nil
+	}
+	return "", fmt.Errorf("channel sender has no operator binding")
+}
+
+func decodeOperatorTokenEnvBindings(data string) (map[string]string, error) {
+	if len(data) == 0 || len(data) > 16<<10 {
+		return nil, fmt.Errorf("operator sender bindings are required")
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, fmt.Errorf("invalid operator sender bindings")
+	}
+	out := map[string]string{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok || strings.TrimSpace(key) != key || key == "" || len(key) > 256 {
+			return nil, fmt.Errorf("invalid operator sender binding")
+		}
+		if _, exists := out[strings.ToLower(key)]; exists {
+			return nil, fmt.Errorf("duplicate operator sender binding")
+		}
+		var envName string
+		if err := decoder.Decode(&envName); err != nil || !operatorTokenEnvPattern.MatchString(envName) {
+			return nil, fmt.Errorf("invalid operator token environment binding")
+		}
+		out[strings.ToLower(key)] = envName
+	}
+	if token, err = decoder.Token(); err != nil || token != json.Delim('}') || len(out) == 0 {
+		return nil, fmt.Errorf("invalid operator sender bindings")
+	}
+	if token, err = decoder.Token(); err != io.EOF || token != nil {
+		return nil, fmt.Errorf("invalid operator sender bindings")
+	}
+	return out, nil
 }
 
 type NotificationChannel interface {
@@ -181,6 +261,13 @@ func (m *Manager) VerifyInbound(channelName string, token string, msg InboundMes
 	if cfg.Provider == "log" && (strings.TrimSpace(cfg.InboundToken) == "" || strings.TrimSpace(token) != strings.TrimSpace(cfg.InboundToken)) {
 		return Config{}, fmt.Errorf("invalid channel token")
 	}
+	if !authorizedChannelSender(cfg, msg) {
+		return Config{}, fmt.Errorf("sender is not authorized")
+	}
+	return cfg, nil
+}
+
+func authorizedChannelSender(cfg Config, msg InboundMessage) bool {
 	allowed := cfg.AuthorizedSenders
 	if cfg.Provider == "simplex" && len(allowed) == 0 {
 		allowed = cleanSenders([]string{firstNonEmpty(Setting(cfg.Settings, "contact_id"), Setting(cfg.Settings, "contact_name"))})
@@ -192,10 +279,7 @@ func (m *Manager) VerifyInbound(channelName string, token string, msg InboundMes
 	if cfg.Provider == "simplex" && Setting(cfg.Settings, "contact_id") != "" && len(cfg.AuthorizedSenders) == 0 {
 		sender.SenderAddress = ""
 	}
-	if (cfg.Provider != "log" && len(allowed) == 0) || !senderAllowed(allowed, sender) {
-		return Config{}, fmt.Errorf("sender is not authorized")
-	}
-	return cfg, nil
+	return (cfg.Provider == "log" || len(allowed) > 0) && senderAllowed(allowed, sender)
 }
 
 // AllowsGenericInbound limits the JSON bridge to explicitly authenticated log channels.

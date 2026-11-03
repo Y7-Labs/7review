@@ -85,6 +85,24 @@ within the running server's 24-hour deduplication window. Queue rejection releas
 the claim so the provider can retry. This is in-process protection, not durable
 exactly-once delivery across restarts.
 
+Canonical finding controls additionally require
+`settings.operator_token_env_by_sender`, a JSON object mapping each authorized
+provider sender identity to the environment-variable name containing that
+principal's operator credential. The environment variable must resolve through
+`REVIEW_OPERATOR_GRANTS_JSON` to repository-scoped roles. The profile stores the
+variable name, not the secret. Missing, duplicate, unauthorized or ambiguous
+mappings fail closed; sender allowlisting alone never creates an operator actor.
+
+The closed channel command is:
+
+```text
+/disposition-finding <attempt-id> <finding-id> <accepted|rejected|disputed> <command-id>
+<reason>
+```
+
+Parsing this command does not mutate a report or authorize publication. Durable
+accounting routing is required before the response can acknowledge a disposition.
+
 ### SimpleX
 
 Start `simplex-chat -p 5225` with the bot's existing chat database. Set

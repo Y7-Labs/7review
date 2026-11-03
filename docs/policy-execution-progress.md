@@ -1559,6 +1559,11 @@ This is an incremental behavior ledger, not a completion declaration.
   flows accept only finding ID, decision, reason and stable command ID; they fetch
   revision, version and digest, then issue one mutation without retargeting.
   Channel/native SCM routing remains open; ceilings and alpha remain unfinished.
+- Channel protocol groundwork parses one exact attempt/finding/decision/command
+  identity plus reason, and maps each already-authorized provider sender to an
+  operator credential environment name. Missing, duplicate, unauthorized or
+  ambiguous mappings fail closed. This contract performs no disposition; durable
+  app routing and canonical outbound identities remain open.
 
 ## Method File Example
 

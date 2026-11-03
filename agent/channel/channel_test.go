@@ -72,6 +72,48 @@ func TestEvaluateInboundSupportsDraftRevisionAndSuppressionCommands(t *testing.T
 	}
 }
 
+func TestEvaluateInboundParsesExactFindingDispositionWithoutRunAlias(t *testing.T) {
+	msg := InboundMessage{Channel: "operator_telegram", SenderID: "123", Text: "/disposition-finding attempt-1 F-1 disputed finding-42\nThe cited branch is unreachable"}
+	got := EvaluateInbound(msg)
+	if got.Command != "disposition-finding" || got.AttemptID != "attempt-1" || got.FindingID != "F-1" || got.Decision != "disputed" || got.CommandID != "finding-42" || got.Request != "The cited branch is unreachable" || got.RunID != "" || got.Dispositioned {
+		t.Fatalf("finding disposition command: %+v", got)
+	}
+	for _, text := range []string{
+		"/disposition-finding attempt-1 F-1 disputed",
+		"/disposition-finding attempt-1 F-1 suppressed finding-42\nreason",
+		"/disposition-finding attempt-1 F-1 disputed finding-42",
+		"/disposition-finding attempt-1 F-1 disputed finding-42 extra\nreason",
+	} {
+		got = EvaluateInbound(InboundMessage{Text: text})
+		if got.Command != "disposition-finding" || got.Reason == "" || got.Dispositioned {
+			t.Fatalf("ambiguous disposition accepted: %q %+v", text, got)
+		}
+	}
+}
+
+func TestManagerMapsVerifiedChannelSenderToOneOperatorTokenEnvironment(t *testing.T) {
+	m := NewManager([]Config{{Name: "ops", Provider: "telegram", Enabled: true, AuthorizedSenders: []string{"123", "456"}, Settings: map[string]string{"operator_token_env_by_sender": `{"123":"ALICE_TOKEN","456":"BOB_TOKEN"}`}}})
+	for sender, want := range map[string]string{"123": "ALICE_TOKEN", "456": "BOB_TOKEN"} {
+		msg := InboundMessage{Channel: "ops", SenderID: sender}
+		if _, err := m.VerifyInbound("ops", "", msg); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := m.OperatorTokenEnv("ops", msg); err != nil || got != want {
+			t.Fatalf("sender %s binding: %q %v", sender, got, err)
+		}
+	}
+	for _, raw := range []string{"", `{}`, `{"123":""}`, `{"123":"alice"}`, `{"123":"ALICE_TOKEN","123":"BOB_TOKEN"}`, `{"123":"ALICE_TOKEN"} {}`} {
+		broken := NewManager([]Config{{Name: "ops", Provider: "telegram", Enabled: true, AuthorizedSenders: []string{"123"}, Settings: map[string]string{"operator_token_env_by_sender": raw}}})
+		if env, err := broken.OperatorTokenEnv("ops", InboundMessage{SenderID: "123"}); err == nil || env != "" {
+			t.Fatalf("unsafe sender binding accepted: %q %q", raw, env)
+		}
+	}
+	unauthorized := NewManager([]Config{{Name: "ops", Provider: "telegram", Enabled: true, AuthorizedSenders: []string{"123"}, Settings: map[string]string{"operator_token_env_by_sender": `{"999":"MALLORY_TOKEN"}`}}})
+	if env, err := unauthorized.OperatorTokenEnv("ops", InboundMessage{SenderID: "999"}); err == nil || env != "" {
+		t.Fatalf("unauthorized mapped sender accepted: %q %v", env, err)
+	}
+}
+
 func TestVerifyTwilioSignature(t *testing.T) {
 	form := url.Values{}
 	form.Set("From", "whatsapp:+33600000000")
