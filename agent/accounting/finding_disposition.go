@@ -21,6 +21,60 @@ type storedFindingDispositionEnvelope struct {
 var ErrOperatorFindingNotFound = errors.New("operator finding not found")
 var ErrOperatorAttemptContext = errors.New("operator attempt does not match SCM comment context")
 
+func (a *Authority) PriorFindingDispositionCommand(ctx context.Context, actor review.OperatorActor, commandID, attemptID, findingID string, decision review.FindingDecision, reason string) (*review.FindingDispositionCommand, error) {
+	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
+		return nil, err
+	}
+	if !validID(commandID) || !validID(attemptID) || !validID(findingID) {
+		return nil, ErrOperatorAttemptInvalid
+	}
+	keyRaw, _ := json.Marshal([]string{a.cfg.BoundaryID, a.cfg.ProjectID, commandID})
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var raw []byte
+	var digest string
+	err = tx.QueryRowContext(ctx, `SELECT command,command_digest FROM budget_operator_commands WHERE id=$1 AND boundary_id=$2 AND project_id=$3`, hash(keyRaw), a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&raw, &digest)
+	if errors.Is(err, sql.ErrNoRows) {
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) > 16<<10 || hash(raw) != digest {
+		return nil, ErrIntegrity
+	}
+	var metadata struct {
+		BoundaryID string
+		ProjectID  string
+		ActorID    string
+		Command    struct{ Kind string }
+	}
+	if json.Unmarshal(raw, &metadata) != nil || metadata.BoundaryID != a.cfg.BoundaryID || metadata.ProjectID != a.cfg.ProjectID {
+		return nil, ErrIntegrity
+	}
+	if metadata.Command.Kind != "disposition_finding" {
+		return nil, ErrOperatorCommandConflict
+	}
+	var envelope storedFindingDispositionEnvelope
+	if json.Unmarshal(raw, &envelope) != nil || envelope.Command.Validate() != nil || envelope.ActorID != metadata.ActorID {
+		return nil, ErrIntegrity
+	}
+	c := envelope.Command
+	if envelope.ActorID != actor.PrincipalID() || c.CommandID != commandID || c.AttemptID != attemptID || c.Payload.FindingID != findingID || c.Payload.Decision != decision || c.Payload.Reason != reason {
+		return nil, ErrOperatorCommandConflict
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return &c, nil
+}
+
 func (a *Authority) DispositionFinding(ctx context.Context, actor review.OperatorActor, c review.FindingDispositionCommand) (*review.FindingDispositionReceipt, error) {
 	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
 		return nil, err

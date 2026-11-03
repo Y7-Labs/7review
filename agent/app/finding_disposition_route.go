@@ -29,13 +29,26 @@ func (s *Server) routeFindingDisposition(ctx context.Context, result channel.Inb
 	if err == nil {
 		expectedVersion := view.ControlVersion
 		decision := review.FindingDecision(result.Decision)
+		var command review.FindingDispositionCommand
+		if view.Current == nil || view.Current.CommandID != result.CommandID {
+			var prior *review.FindingDispositionCommand
+			prior, err = s.accountingRuntime.Authority.PriorFindingDispositionCommand(commandCtx, actor, result.CommandID, result.AttemptID, result.FindingID, decision, result.Request)
+			if err != nil {
+				return result, findingDispositionErrorStatus(err), err
+			}
+			if prior != nil {
+				command = *prior
+			}
+		}
 		if view.Current != nil && view.Current.CommandID == result.CommandID {
 			if view.Current.Decision != decision || view.Current.Reason != result.Request || view.Current.RecordedVersion < 2 {
 				return result, http.StatusConflict, errors.New("command ID already identifies a different finding disposition")
 			}
 			expectedVersion = view.Current.RecordedVersion - 1
 		}
-		command := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: result.CommandID, AttemptID: result.AttemptID, ExpectedVersion: expectedVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: result.FindingID, FindingDigest: view.FindingDigest, Decision: decision, Reason: result.Request}}
+		if command.CommandID == "" {
+			command = review.FindingDispositionCommand{SchemaVersion: 1, CommandID: result.CommandID, AttemptID: result.AttemptID, ExpectedVersion: expectedVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: result.FindingID, FindingDigest: view.FindingDigest, Decision: decision, Reason: result.Request}}
+		}
 		var receipt *review.FindingDispositionReceipt
 		receipt, err = s.accountingRuntime.Authority.DispositionFinding(commandCtx, actor, command)
 		if err == nil {
@@ -53,7 +66,7 @@ func findingDispositionErrorStatus(err error) int {
 	status := http.StatusServiceUnavailable
 	var conflict *accounting.OperatorCommandConflict
 	switch {
-	case errors.As(err, &conflict), errors.Is(err, accounting.ErrOperatorAttemptContext):
+	case errors.As(err, &conflict), errors.Is(err, accounting.ErrOperatorCommandConflict), errors.Is(err, accounting.ErrOperatorAttemptContext):
 		status = http.StatusConflict
 	case errors.Is(err, review.ErrOperatorUnauthorized):
 		status = http.StatusUnauthorized

@@ -50,7 +50,7 @@ func findingDispositionFixture(t *testing.T) (*Authority, orchestrator.DispatchI
 }
 
 func TestFindingDispositionPersistsExactTerminalSubjectAndReplaysAfterReplacement(t *testing.T) {
-	a, intent, actor, _, command, dsn := findingDispositionFixture(t)
+	a, intent, actor, participant, command, dsn := findingDispositionFixture(t)
 	ctx := context.Background()
 	receipt, err := a.DispositionFinding(ctx, actor, command)
 	if err != nil || receipt == nil || receipt.State != "recorded" || receipt.ControlVersion != 3 || receipt.FindingDigest != command.Payload.FindingDigest || receipt.Decision != review.FindingDisputed {
@@ -101,6 +101,19 @@ func TestFindingDispositionPersistsExactTerminalSubjectAndReplaysAfterReplacemen
 	changed.Payload.Reason = "different reason"
 	if got, err := restarted.DispositionFinding(ctx, actor, changed); !errors.Is(err, ErrOperatorCommandConflict) || got != nil {
 		t.Fatalf("command collision accepted: %#v %v", got, err)
+	}
+	prior, err := restarted.PriorFindingDispositionCommand(ctx, actor, command.CommandID, command.AttemptID, command.Payload.FindingID, command.Payload.Decision, command.Payload.Reason)
+	if err != nil || prior == nil || !reflect.DeepEqual(*prior, command) {
+		t.Fatalf("exact historical command lookup: %#v %v", prior, err)
+	}
+	if prior, err = restarted.PriorFindingDispositionCommand(ctx, actor, command.CommandID, command.AttemptID, command.Payload.FindingID, command.Payload.Decision, "changed reason"); !errors.Is(err, ErrOperatorCommandConflict) || prior != nil {
+		t.Fatalf("changed historical intent exposed command: %#v %v", prior, err)
+	}
+	if prior, err = restarted.PriorFindingDispositionCommand(ctx, participant, command.CommandID, command.AttemptID, command.Payload.FindingID, command.Payload.Decision, command.Payload.Reason); !errors.Is(err, ErrOperatorCommandConflict) || prior != nil {
+		t.Fatalf("other actor exposed historical command: %#v %v", prior, err)
+	}
+	if prior, err = restarted.PriorFindingDispositionCommand(ctx, actor, "missing-command", command.AttemptID, command.Payload.FindingID, command.Payload.Decision, command.Payload.Reason); err != nil || prior != nil {
+		t.Fatalf("missing historical command did not remain absent: %#v %v", prior, err)
 	}
 }
 

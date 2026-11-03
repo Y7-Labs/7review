@@ -314,6 +314,15 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 3 {
 		t.Fatalf("native SCM disposition history: %d %v", dispositions, err)
 	}
+	historicalRetry := channelMessage
+	historicalRetry.ExternalID = "update-canonical-3"
+	historical, status, err := s.routeChannelMessageContext(context.Background(), historicalRetry)
+	if err != nil || status != http.StatusOK || !historical.Dispositioned || historical.CommandID != "finding-channel" || historical.ControlVersion != channelResult.ControlVersion || historical.ActorID != "participant" {
+		t.Fatalf("historical exact channel replay after replacement: %+v status=%d err=%v", historical, status, err)
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 3 {
+		t.Fatalf("historical replay duplicated disposition: %d %v", dispositions, err)
+	}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "reviewer-secret")
 	view, err = client.Attempt(context.Background(), admission.AttemptID)
 	if err != nil || view.ControlVersion != nativeResult.ControlVersion {
