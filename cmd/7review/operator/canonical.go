@@ -162,6 +162,33 @@ func (c Client) DispositionFinding(ctx context.Context, command review.FindingDi
 	return r, nil
 }
 
+func (c Client) SettleUsage(ctx context.Context, command review.UsageSettlementCommand) (review.UsageSettlementReceipt, error) {
+	var empty review.UsageSettlementReceipt
+	if err := command.Validate(); err != nil {
+		return empty, err
+	}
+	payload, err := json.Marshal(command)
+	if err != nil {
+		return empty, err
+	}
+	if len(payload) > review.MaxOperatorCommandBytes {
+		return empty, errors.New("operator command exceeds transport bound")
+	}
+	_, raw, err := c.canonicalRequest(ctx, http.MethodPost, "commands", nil, payload)
+	if err != nil {
+		var failure *CanonicalRequestError
+		if errors.As(err, &failure) {
+			failure.CommandID = command.CommandID
+		}
+		return empty, err
+	}
+	r, err := review.DecodeUsageSettlementReceipt(raw, command)
+	if err != nil {
+		return empty, &CanonicalRequestError{StatusCode: http.StatusOK, MayHaveCommitted: true, CommandID: command.CommandID, message: "operator returned an unproven usage settlement receipt"}
+	}
+	return r, nil
+}
+
 func canonicalBaseURL(server string) (*url.URL, error) {
 	u, err := url.Parse(server)
 	invalid := errors.New("operator server requires HTTPS or loopback HTTP, without credentials, query or fragment")

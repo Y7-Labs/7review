@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -132,7 +133,7 @@ func TestCanonicalOperatorClientAuthenticatesAndReconcilesLostHTTPAcknowledgment
 
 func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedReviewer(t *testing.T) {
 	s, db, dsn := inboxServerDSN(t)
-	directory, err := review.DecodeOperatorDirectory([]byte(`{"schema_version":1,"principals":[{"id":"reviewer","token_env":"REVIEWER_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["reviewer"]}]},{"id":"participant","token_env":"PARTICIPANT_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["participant"]}]}]}`), func(name string) string { return strings.ToLower(strings.TrimSuffix(name, "_TOKEN")) + "-secret" })
+	directory, err := review.DecodeOperatorDirectory([]byte(`{"schema_version":1,"principals":[{"id":"reviewer","token_env":"REVIEWER_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["reviewer"]}]},{"id":"participant","token_env":"PARTICIPANT_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["participant"]}]},{"id":"settler","token_env":"SETTLER_TOKEN","grants":[{"boundary_id":"inbox-test","project_id":"team","provider":"github","host":"github.com","repository_id":"org/repo","roles":["operator"]}]}]}`), func(name string) string { return strings.ToLower(strings.TrimSuffix(name, "_TOKEN")) + "-secret" })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,6 +211,34 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatal(err)
 	}
 	beforeCalls := provider.calls.Load()
+	var actionID string
+	var actionCount int
+	if err = db.QueryRow(`SELECT min(id),count(*) FROM budget_actions WHERE attempt_id=$1`, admission.AttemptID).Scan(&actionID, &actionCount); err != nil || actionCount != 1 {
+		t.Fatalf("exact settlement action unavailable: %q count=%d err=%v", actionID, actionCount, err)
+	}
+	settlement := review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-http", ActionID: actionID, Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 10, OutputTokens: 2, MoneyMicro: 1, ActiveMS: 1, EvidenceID: "provider-invoice-http", Reason: "reconciled against provider invoice"}}
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
+	if _, err = client.SettleUsage(context.Background(), settlement); err == nil {
+		t.Fatal("participant settled model usage")
+	} else {
+		var failure *operator.CanonicalRequestError
+		if !errors.As(err, &failure) || failure.StatusCode != http.StatusForbidden {
+			t.Fatalf("participant settlement rejection: %v", err)
+		}
+	}
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "settler-secret")
+	settlementReceipt, err := client.SettleUsage(context.Background(), settlement)
+	if err != nil || settlementReceipt.ActorID != "settler" || settlementReceipt.Actual != settlement.Payload.Actual() || settlementReceipt.State != "settled" {
+		t.Fatalf("canonical usage settlement: %+v %v", settlementReceipt, err)
+	}
+	replayedSettlement, err := client.SettleUsage(context.Background(), settlement)
+	if err != nil || !reflect.DeepEqual(settlementReceipt, replayedSettlement) {
+		t.Fatalf("canonical usage settlement replay: %+v %v", replayedSettlement, err)
+	}
+	var actionSettled bool
+	if err = db.QueryRow(`SELECT settled FROM budget_actions WHERE id=$1`, actionID).Scan(&actionSettled); err != nil || !actionSettled || provider.calls.Load() != beforeCalls {
+		t.Fatalf("settlement side effects: settled=%v calls=%d/%d err=%v", actionSettled, provider.calls.Load(), beforeCalls, err)
+	}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
 	findingView, err := client.FindingDisposition(context.Background(), admission.AttemptID, projection.Source.Findings[0].ID)
 	if err != nil || findingView.Current != nil || findingView.ControlVersion != view.ControlVersion || findingView.Finding.ID != projection.Source.Findings[0].ID {

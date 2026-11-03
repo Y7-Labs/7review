@@ -42,6 +42,16 @@ func canonicalPublicationReceipt(c review.AuthorizePublicationCommand) string {
 	return string(raw)
 }
 
+func canonicalSettlementCommand() review.UsageSettlementCommand {
+	return review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-1", ActionID: "action-1", Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 10, OutputTokens: 2, MoneyMicro: 1, ActiveMS: 20, EvidenceID: "invoice-42", Reason: "reconciled provider invoice"}}
+}
+
+func canonicalSettlementReceipt(c review.UsageSettlementCommand) string {
+	digest, _ := review.CanonicalUsageSettlementCommandDigest(c)
+	raw, _ := json.Marshal(review.UsageSettlementReceipt{SchemaVersion: 1, CommandID: c.CommandID, CommandDigest: digest, ActionID: c.ActionID, ActorID: "alice", Kind: c.Kind, Actual: c.Payload.Actual(), EvidenceRef: "operator:alice:" + c.Payload.EvidenceID, State: "settled"})
+	return string(raw)
+}
+
 func canonicalFindingDispositionCommand() review.FindingDispositionCommand {
 	return review.FindingDispositionCommand{SchemaVersion: 1, CommandID: "finding-1", AttemptID: "attempt-1", ExpectedVersion: 2, Revision: "head", Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: "F-1", FindingDigest: "sha256:" + strings.Repeat("d", 64), Decision: review.FindingDisputed, Reason: "the branch is unreachable"}}
 }
@@ -150,6 +160,37 @@ func TestCanonicalClientSendsExactFindingDispositionAndRequiresExactReceipt(t *t
 		if !errors.As(err, &failure) || !failure.MayHaveCommitted || failure.CommandID != c.CommandID || calls != 1 {
 			t.Fatalf("unproven disposition acknowledged/retried: failure=%+v calls=%d err=%v", failure, calls, err)
 		}
+	}
+}
+
+func TestCanonicalClientSendsExactUsageSettlementAndRequiresExactReceipt(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	c := canonicalSettlementCommand()
+	calls := 0
+	client := NewClient("https://agent/prefix", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodPost || r.URL.Path != "/prefix/operator/commands" || r.URL.RawQuery != "" || r.Header.Get("Authorization") != "Bearer operator-secret" || r.Header.Get("Content-Type") != "application/json" {
+			t.Fatalf("wrong settlement transport: %s %s %#v", r.Method, r.URL.String(), r.Header)
+		}
+		raw, _ := io.ReadAll(r.Body)
+		got, err := review.DecodeUsageSettlementCommand(raw)
+		if err != nil || got != c || strings.Contains(string(raw), `"actor_id":`) || strings.Contains(string(raw), `"provider":`) || strings.Contains(string(raw), `"request_digest":`) {
+			t.Fatalf("settlement command changed or widened: %+v %v", got, err)
+		}
+		return jsonResponse(http.StatusOK, canonicalSettlementReceipt(c)), nil
+	})})
+	receipt, err := client.SettleUsage(context.Background(), c)
+	if err != nil || receipt.CommandID != c.CommandID || receipt.Actual != c.Payload.Actual() || calls != 1 {
+		t.Fatalf("usage settlement: %+v calls=%d err=%v", receipt, calls, err)
+	}
+	bad := strings.Replace(canonicalSettlementReceipt(c), `"output_tokens":2`, `"output_tokens":3`, 1)
+	client = NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, bad), nil
+	})})
+	_, err = client.SettleUsage(context.Background(), c)
+	var failure *CanonicalRequestError
+	if !errors.As(err, &failure) || !failure.MayHaveCommitted || failure.CommandID != c.CommandID {
+		t.Fatalf("unproven settlement acknowledged: %+v %v", failure, err)
 	}
 }
 
