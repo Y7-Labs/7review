@@ -147,6 +147,9 @@ func (s *Server) startInboxWorkers() {
 				if recoveryErr == nil {
 					_, recoveryErr = s.accountingRuntime.Authority.MaterializeAuthorizedPublications(recoveryCtx, 8)
 				}
+				if recoveryErr == nil {
+					_, recoveryErr = s.accountingRuntime.Authority.RecoverUncertainPublications(recoveryCtx, 8)
+				}
 				recoveryCancel()
 				if recoveryErr != nil {
 					if ctx.Err() == nil {

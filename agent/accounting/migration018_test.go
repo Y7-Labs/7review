@@ -56,7 +56,7 @@ func TestV18MigrationIsExplicitAtomicPreservesV17ProofAndInfersNoSupersession(t 
 	}
 	var cause string
 	var linked, inferred, publication int
-	if err = a.db.QueryRow(`SELECT version,(SELECT cause FROM budget_unused_releases WHERE action_id=$1),(SELECT count(*) FROM budget_attempts WHERE superseded_by_attempt_id IS NOT NULL OR supersession_intake_id IS NOT NULL),(SELECT count(*) FROM budget_unused_releases WHERE cause='superseded'),(SELECT count(*) FROM budget_jobs WHERE publication_authorization_id IS NOT NULL) FROM budget_schema`, prepared.ID).Scan(&version, &cause, &linked, &inferred, &publication); err != nil || version != 20 || cause != "cancelled" || linked != 0 || inferred != 0 || publication != 0 {
+	if err = a.db.QueryRow(`SELECT version,(SELECT cause FROM budget_unused_releases WHERE action_id=$1),(SELECT count(*) FROM budget_attempts WHERE superseded_by_attempt_id IS NOT NULL OR supersession_intake_id IS NOT NULL),(SELECT count(*) FROM budget_unused_releases WHERE cause='superseded'),(SELECT count(*) FROM budget_jobs WHERE publication_authorization_id IS NOT NULL) FROM budget_schema`, prepared.ID).Scan(&version, &cause, &linked, &inferred, &publication); err != nil || version != 21 || cause != "cancelled" || linked != 0 || inferred != 0 || publication != 0 {
 		t.Fatalf("v18/v19 inferred authority: %d %s %d %d %d %v", version, cause, linked, inferred, publication, err)
 	}
 	var after []byte

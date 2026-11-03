@@ -1491,11 +1491,15 @@ This is an incremental behavior ledger, not a completion declaration.
   operation; duplicate post-restart materializers commit one exact pending row.
   The service maintenance loop runs materialization before fresh inbox claims and
   blocks dispatch if the operation journal is unavailable or corrupt.
+- Schema v21 adds exclusive bounded pre-send claims, monotonic fences and an
+  atomic sending marker. Expired pre-send claims can be reclaimed with a higher
+  fence; sending is never reclaimed and expires to `uncertain`. Its migration
+  rehearsal infers no owner, fence, lease or sending authority.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;
-  fenced claim, provider delivery and uncertain-result reconciliation remain
-  open. Legacy `/approve` still is not canonical authority. Other operator commands,
+  Provider delivery and remote uncertain-result reconciliation remain open.
+  Legacy `/approve` still is not canonical authority. Other operator commands,
   incident adjustments and live provider qualification remain open. Ceilings and
   alpha remain unfinished.
 

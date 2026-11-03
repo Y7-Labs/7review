@@ -126,14 +126,15 @@ Exact terminal publication authorization now uses the same HTTP/client/CLI/TUI
 boundary with explicit assessment, artifact and destination identity. It records
 authority only. The schema v20 maintenance loop now materializes one exact pending
 or obsolete outbox operation after restart and obsoletes stale pending authority,
-failing closed before fresh inbox claims when that journal is unavailable. Fenced claim,
-provider delivery and uncertain-result reconciliation remain open. Compose forwards the
+failing closed before fresh inbox claims when that journal is unavailable. Schema
+v21 adds fenced pre-send claims and turns expired sending markers uncertain without
+reclaim. Provider delivery and remote reconciliation remain open. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v19-to-v20 migrations
+The v8-to-v9 through v20-to-v21 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v20 before restart. No deployed database was changed.
+explicit migration to schema v21 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is

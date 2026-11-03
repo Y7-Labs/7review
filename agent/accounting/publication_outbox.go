@@ -23,6 +23,10 @@ type PublicationOperation struct {
 	Payload                []byte
 	PayloadDigest          string
 	State                  review.DeliveryState
+	WorkerID               string
+	Fence                  uint64
+	LeaseUntil             time.Time
+	SendingAt              time.Time
 	CreatedAt, UpdatedAt   time.Time
 }
 
@@ -118,51 +122,19 @@ ORDER BY o.created_at,o.id FOR UPDATE OF o SKIP LOCKED LIMIT $3`, a.cfg.Boundary
 		if readErr != nil {
 			return readErr
 		}
-		result, updateErr := tx.ExecContext(ctx, `UPDATE budget_publication_operations SET state='obsolete',updated_at=clock_timestamp() WHERE id=$1 AND state='pending'`, op.ID)
-		if updateErr != nil {
+		if updateErr := a.obsoletePublicationTx(ctx, tx, op.ID); updateErr != nil {
 			return updateErr
-		}
-		if n, rowsErr := result.RowsAffected(); rowsErr != nil || n != 1 {
-			return ErrIntegrity
 		}
 	}
 	return nil
 }
 
 func (a *Authority) materializePublicationTx(ctx context.Context, tx *sql.Tx, candidate publicationCandidate) error {
-	if len(candidate.commandRaw) > 16<<10 || len(candidate.receiptRaw) > 16<<10 || len(candidate.bindingRaw) > 1<<20 || hash(candidate.commandRaw) != candidate.commandDigest || hash(candidate.receiptRaw) != candidate.receiptDigest || hash(candidate.bindingRaw) != candidate.bindingDigest {
-		return ErrIntegrity
-	}
-	var envelope struct {
-		BoundaryID string                             `json:"BoundaryID"`
-		ProjectID  string                             `json:"ProjectID"`
-		ActorID    string                             `json:"ActorID"`
-		Command    review.AuthorizePublicationCommand `json:"Command"`
-	}
-	if json.Unmarshal(candidate.commandRaw, &envelope) != nil || envelope.BoundaryID != a.cfg.BoundaryID || envelope.ProjectID != a.cfg.ProjectID || !validID(envelope.ActorID) || envelope.Command.AttemptID != candidate.attemptID {
-		return ErrIntegrity
-	}
-	receipt, err := review.DecodePublicationAuthorizationReceipt(candidate.receiptRaw, envelope.Command)
-	if err != nil || receipt.ActorID != envelope.ActorID || receipt.CommandDigest != candidate.commandDigest || receipt.ControlVersion > candidate.controlVersion {
-		return ErrIntegrity
-	}
-	var binding attemptBinding
-	if json.Unmarshal(candidate.bindingRaw, &binding) != nil || binding.ProjectID != a.cfg.ProjectID || binding.Attempt.AttemptID != candidate.attemptID {
-		return ErrIntegrity
-	}
-	aggregate, err := a.readAggregateTx(ctx, tx, candidate.runID)
+	receipt, artifact, err := a.authorizedPublicationArtifactTx(ctx, tx, candidate)
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(aggregate.Receipt.Attempt, binding.Attempt) || !reflect.DeepEqual(aggregate.Receipt.Execution, binding.Execution) {
-		return ErrIntegrity
-	}
-	record := operatorAttemptRecord{view: OperatorAttemptView{AttemptID: candidate.attemptID, RunID: candidate.runID, Active: candidate.active, Current: candidate.current, InboxState: candidate.inboxState, JobPhase: candidate.phase, ControlVersion: candidate.controlVersion, Revision: binding.Attempt.Snapshot.AnalysisRevision()}, binding: binding, bindingDigest: candidate.bindingDigest, tracking: candidate.tracking, cancelID: candidate.cancelID}
-	artifact, err := a.publicationTargetTx(ctx, tx, record, envelope.Command)
-	if err != nil {
-		return err
-	}
-	destinationRaw, err := json.Marshal(envelope.Command.Payload.Destination)
+	destinationRaw, err := json.Marshal(receipt.Destination)
 	if err != nil {
 		return err
 	}
@@ -174,6 +146,42 @@ func (a *Authority) materializePublicationTx(ctx context.Context, tx *sql.Tx, ca
 	keyRaw, _ := json.Marshal([]string{a.cfg.BoundaryID, a.cfg.ProjectID, "publication", candidate.authorizationKey})
 	_, err = tx.ExecContext(ctx, `INSERT INTO budget_publication_operations(id,boundary_id,project_id,authorization_id,command_id,run_id,attempt_id,assessment_digest,artifact_digest,destination,destination_digest,payload,payload_digest,state) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, hash(keyRaw), a.cfg.BoundaryID, a.cfg.ProjectID, candidate.authorizationKey, receipt.CommandID, candidate.runID, candidate.attemptID, receipt.AssessmentDigest, receipt.ArtifactDigest, destinationRaw, hash(destinationRaw), payload, hash(payload), state)
 	return err
+}
+
+func (a *Authority) authorizedPublicationArtifactTx(ctx context.Context, tx *sql.Tx, candidate publicationCandidate) (review.PublicationAuthorizationReceipt, review.ModelReduction, error) {
+	if len(candidate.commandRaw) > 16<<10 || len(candidate.receiptRaw) > 16<<10 || len(candidate.bindingRaw) > 1<<20 || hash(candidate.commandRaw) != candidate.commandDigest || hash(candidate.receiptRaw) != candidate.receiptDigest || hash(candidate.bindingRaw) != candidate.bindingDigest {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, ErrIntegrity
+	}
+	var envelope struct {
+		BoundaryID string                             `json:"BoundaryID"`
+		ProjectID  string                             `json:"ProjectID"`
+		ActorID    string                             `json:"ActorID"`
+		Command    review.AuthorizePublicationCommand `json:"Command"`
+	}
+	if json.Unmarshal(candidate.commandRaw, &envelope) != nil || envelope.BoundaryID != a.cfg.BoundaryID || envelope.ProjectID != a.cfg.ProjectID || !validID(envelope.ActorID) || envelope.Command.AttemptID != candidate.attemptID {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, ErrIntegrity
+	}
+	receipt, err := review.DecodePublicationAuthorizationReceipt(candidate.receiptRaw, envelope.Command)
+	if err != nil || receipt.ActorID != envelope.ActorID || receipt.CommandDigest != candidate.commandDigest || receipt.ControlVersion > candidate.controlVersion {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, ErrIntegrity
+	}
+	var binding attemptBinding
+	if json.Unmarshal(candidate.bindingRaw, &binding) != nil || binding.ProjectID != a.cfg.ProjectID || binding.Attempt.AttemptID != candidate.attemptID {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, ErrIntegrity
+	}
+	aggregate, err := a.readAggregateTx(ctx, tx, candidate.runID)
+	if err != nil {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, err
+	}
+	if !reflect.DeepEqual(aggregate.Receipt.Attempt, binding.Attempt) || !reflect.DeepEqual(aggregate.Receipt.Execution, binding.Execution) {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, ErrIntegrity
+	}
+	record := operatorAttemptRecord{view: OperatorAttemptView{AttemptID: candidate.attemptID, RunID: candidate.runID, Active: candidate.active, Current: candidate.current, InboxState: candidate.inboxState, JobPhase: candidate.phase, ControlVersion: candidate.controlVersion, Revision: binding.Attempt.Snapshot.AnalysisRevision()}, binding: binding, bindingDigest: candidate.bindingDigest, tracking: candidate.tracking, cancelID: candidate.cancelID}
+	artifact, err := a.publicationTargetTx(ctx, tx, record, envelope.Command)
+	if err != nil {
+		return review.PublicationAuthorizationReceipt{}, review.ModelReduction{}, err
+	}
+	return receipt, artifact, nil
 }
 
 func (a *Authority) LookupPublicationOperation(ctx context.Context, commandID string) (PublicationOperation, error) {
@@ -201,7 +209,9 @@ func (a *Authority) readPublicationOperationTx(ctx context.Context, tx *sql.Tx, 
 	var op PublicationOperation
 	var authorizationKey, destinationDigest string
 	var destinationRaw []byte
-	err := tx.QueryRowContext(ctx, `SELECT id,authorization_id,command_id,run_id,attempt_id,assessment_digest,artifact_digest,destination,destination_digest,payload,payload_digest,state,created_at,updated_at FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND command_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, commandID).Scan(&op.ID, &authorizationKey, &op.AuthorizationCommandID, &op.RunID, &op.AttemptID, &op.AssessmentDigest, &op.ArtifactDigest, &destinationRaw, &destinationDigest, &op.Payload, &op.PayloadDigest, &op.State, &op.CreatedAt, &op.UpdatedAt)
+	var worker sql.NullString
+	var leaseUntil, sendingAt sql.NullTime
+	err := tx.QueryRowContext(ctx, `SELECT id,authorization_id,command_id,run_id,attempt_id,assessment_digest,artifact_digest,destination,destination_digest,payload,payload_digest,state,worker_id,fence,lease_until,sending_at,created_at,updated_at FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND command_id=$3`, a.cfg.BoundaryID, a.cfg.ProjectID, commandID).Scan(&op.ID, &authorizationKey, &op.AuthorizationCommandID, &op.RunID, &op.AttemptID, &op.AssessmentDigest, &op.ArtifactDigest, &destinationRaw, &destinationDigest, &op.Payload, &op.PayloadDigest, &op.State, &worker, &op.Fence, &leaseUntil, &sendingAt, &op.CreatedAt, &op.UpdatedAt)
 	if err != nil {
 		return PublicationOperation{}, "", err
 	}
@@ -213,10 +223,30 @@ func (a *Authority) readPublicationOperationTx(ctx context.Context, tx *sql.Tx, 
 	if !bytes.Equal(canonicalDestination, destinationRaw) {
 		return PublicationOperation{}, "", ErrIntegrity
 	}
+	if worker.Valid {
+		op.WorkerID = worker.String
+	}
+	if leaseUntil.Valid {
+		op.LeaseUntil = leaseUntil.Time
+	}
+	if sendingAt.Valid {
+		op.SendingAt = sendingAt.Time
+	}
+	if (op.WorkerID == "") != op.LeaseUntil.IsZero() || (op.State == review.DeliveryPending && !op.SendingAt.IsZero()) || ((op.State == review.DeliverySending || op.State == review.DeliveryUncertain || op.State == review.DeliveryDelivered || op.State == review.DeliveryFailed) && (op.WorkerID == "" || op.Fence == 0 || op.LeaseUntil.IsZero() || op.SendingAt.IsZero())) {
+		return PublicationOperation{}, "", ErrIntegrity
+	}
 	return op, authorizationKey, nil
 }
 
 func checkPublicationOperationStorage(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, `SELECT o.id,o.boundary_id,o.project_id,o.authorization_id,o.command_id,o.run_id,o.attempt_id,o.assessment_digest,o.artifact_digest,o.destination,o.destination_digest,o.payload,o.payload_digest,o.state,o.worker_id,o.fence,o.lease_until,o.sending_at,o.created_at,o.updated_at FROM budget_publication_operations o LIMIT 0`)
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func checkPublicationOperationStorageV20(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT o.id,o.boundary_id,o.project_id,o.authorization_id,o.command_id,o.run_id,o.attempt_id,o.assessment_digest,o.artifact_digest,o.destination,o.destination_digest,o.payload,o.payload_digest,o.state,o.created_at,o.updated_at FROM budget_publication_operations o LIMIT 0`)
 	if err != nil {
 		return err

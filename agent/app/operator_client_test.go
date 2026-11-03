@@ -219,9 +219,28 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	restarted.Close()
 	if operationState != "pending" {
 		t.Fatalf("restart did not materialize authorized operation: %q %v", operationState, err)
+	}
+	claim, err := restarted.accountingRuntime.Authority.ClaimPublication(context.Background(), "publication-owner", time.Minute)
+	if err != nil || claim == nil {
+		t.Fatalf("claim materialized operation: %#v %v", claim, err)
+	}
+	if _, err = restarted.accountingRuntime.Authority.BeginPublication(context.Background(), *claim, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`UPDATE budget_publication_operations SET lease_until=clock_timestamp()-interval '1 second' WHERE command_id=$1`, command.CommandID); err != nil {
+		t.Fatal(err)
+	}
+	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
+		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil && operationState == "uncertain" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	restarted.Close()
+	if operationState != "uncertain" {
+		t.Fatalf("restart did not quarantine expired sending operation: %q %v", operationState, err)
 	}
 	if provider.calls.Load() != beforeCalls {
 		t.Fatalf("materialization replayed provider work: before=%d after=%d", beforeCalls, provider.calls.Load())

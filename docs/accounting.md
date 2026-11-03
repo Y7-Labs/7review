@@ -56,8 +56,9 @@ cancelled and superseded release authority, and adds the terminal `superseded`
 inbox disposition. Schema v19 adds the current exact publication-authorization
 pointer on a terminal validated job; it grants no delivery, merge or memory
 effect. Schema v20 adds immutable publication-operation payloads and lifecycle
-state; migration does not infer operations from existing authorizations. Worker
-runtime now requires v20; run explicit migration before restart.
+state; migration does not infer operations from existing authorizations. Schema
+v21 adds bounded pre-send leases, monotonic fences and a durable sending marker.
+Worker runtime now requires v21; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -103,6 +104,9 @@ The v19-to-v20 rehearsal preserves existing authorization and terminal evidence
 across deferred DDL failure and idempotent retry. It creates no publication
 operation; the materializer re-verifies the exact receipt and terminal lineage
 after migration. Runtime refuses an unmigrated v19 store.
+The v20-to-v21 rehearsal preserves pending operation bytes across deferred DDL
+failure and idempotent retry. It invents no worker, fence, lease or sending marker;
+the migrated operation remains claimable. Runtime refuses an unmigrated v20 store.
 
 ## Runtime Intake
 
