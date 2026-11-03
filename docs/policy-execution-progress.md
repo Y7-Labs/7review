@@ -1587,6 +1587,27 @@ This is an incremental behavior ledger, not a completion declaration.
   race test runs against disposable PostgreSQL. Hosted permission/API-version
   qualification remains open; this is not an alpha completion claim.
 
+### 78. Explicit Runtime Route Qualification
+
+- Red/green tests define a closed schema-v1 trusted-host document for exact
+  provider/model route bounds. It requires version, validity window, currency,
+  evidence reference, provider-enforced input/output limits, micro-prices,
+  all-output boundedness and active-time cap. Native tools require an explicit
+  per-route qualification bit.
+- Duplicate keys at any nesting level, unknown fields, trailing documents,
+  duplicate routes, empty catalogs, unsafe numbers and malformed validity windows
+  fail configuration. There are no built-in live prices, aliases or defaults.
+- `OpenRuntime` now consumes `ACCOUNTING_ROUTE_BOUNDS_JSON` only with the complete
+  database/boundary/project authority. Compose forwards it explicitly. Empty
+  configuration preserves the previous deny-all catalog, while a real-PostgreSQL
+  test proves that an explicit route retains its exact version and evidence bound.
+- This enables bounded reservation and fenced dispatch under an operator-supplied
+  contract; it is not provider-contract verification. The current provider API
+  still returns text without a trusted usage receipt, so outcomes retain the full
+  reservation. Production receipt adapters, live contract/currentness
+  qualification and authenticated settlement remain open. Ceilings and alpha are
+  not complete.
+
 ## Method File Example
 
 Policy selects `repo/backend`; commit this file at
