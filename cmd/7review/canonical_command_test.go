@@ -53,6 +53,11 @@ func cliSettlementResponse(c review.UsageSettlementCommand) string {
 	return string(raw)
 }
 
+func cliActionsResponse() string {
+	raw, _ := json.Marshal(review.OperatorActionsView{SchemaVersion: 1, AttemptID: "attempt-1", Actions: []review.OperatorActionView{{ActionID: "action-1", State: "result_recorded", Provider: "qualified", Model: "pinned-model", Role: "reasoner", Step: "review", Currency: "USD", RouteVersion: "contract-v1", Upper: review.ModelUsageActual{InputTokens: 100, OutputTokens: 20, MoneyMicro: 4, ActiveMS: 50}, Settled: true, Actual: &review.ModelUsageActual{InputTokens: 80, OutputTokens: 10, MoneyMicro: 3, ActiveMS: 40}, ReceiptID: "settle-1", EvidenceRef: "operator:alice:invoice-42", CreatedAt: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}})
+	return string(raw)
+}
+
 func cliFindingView(t *testing.T) review.FindingDispositionView {
 	t.Helper()
 	finding := review.Finding{ID: "F-1", Severity: review.SeverityHigh, Title: "Authorization bypass", Description: "The guard is skipped.", Suggestion: "Enforce the guard.", Location: review.Location{Path: "service.go", Line: 7}, Confidence: 0.91}
@@ -213,6 +218,39 @@ func TestCanonicalCLISettlesOneExactActionWithoutLookupOrDerivedClaims(t *testin
 	}
 	if len(requests) != 2 || requests[0] != requests[1] {
 		t.Fatal("manual settlement retry changed command identity or payload")
+	}
+}
+
+func TestCanonicalCLIReadsValidatedActionsForOneExactAttempt(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.String() != "https://agent/operator/actions?attempt_id=attempt-1" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Fatalf("actions CLI used wrong transport: %s %s", r.Method, r.URL.String())
+		}
+		return jsonResponse(http.StatusOK, cliActionsResponse()), nil
+	})}
+	var out strings.Builder
+	if err := runOperatorActions([]string{"attempt-1", "--server", "https://agent"}, &out, client); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"actions for attempt attempt-1  1", "action-1  result_recorded  qualified/pinned-model  settled", "upper input=100 output=20 money-micro=4 active-ms=50", "actual input=80 output=10 money-micro=3 active-ms=40", "receipt=settle-1", "evidence=operator:alice:invoice-42"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("actions output missing %q: %s", want, out.String())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("actions calls: %d", calls)
+	}
+	for _, args := range [][]string{nil, {"owner/repo!7"}, {"attempt-1", "extra"}, {"attempt-1", "--server", "https://agent", "--server", "https://other"}, {"attempt-1", "--unknown"}} {
+		out.Reset()
+		if err := runOperatorActions(args, &out, client); err == nil || out.Len() != 0 {
+			t.Fatalf("unsafe actions args accepted: %#v out=%q", args, out.String())
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("invalid actions reached network: %d", calls)
 	}
 }
 
@@ -420,6 +458,31 @@ func TestCanonicalTerminalSettlementRequiresExactActionAndPinnedServer(t *testin
 	}
 }
 
+func TestCanonicalTerminalActionsRequiresExactAttemptAndPinnedServer(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	calls := 0
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.URL.String() != "https://agent/operator/actions?attempt_id=attempt-1" {
+			t.Fatalf("terminal actions escaped pinned target: %s", r.URL.String())
+		}
+		return jsonResponse(http.StatusOK, cliActionsResponse()), nil
+	})}
+	handler := chatCommandHandlerWithClient("https://agent", "selected-run", client)
+	var out strings.Builder
+	for _, text := range []string{"/actions", "/actions --json", "/actions attempt-1 --server https://other"} {
+		if handled, err := handler(context.Background(), text, &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err == nil {
+			t.Fatalf("unsafe terminal actions accepted: %q %v", text, err)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("unsafe terminal actions reached authority: %d", calls)
+	}
+	if handled, err := handler(context.Background(), "/actions attempt-1", &out, ui.ChatContext{}, ui.ChatOptions{Plain: true}); !handled || err != nil || !strings.Contains(out.String(), "action-1") {
+		t.Fatalf("terminal actions: handled=%t err=%v out=%q", handled, err, out.String())
+	}
+}
+
 func TestCanonicalConsoleInterruptionKeepsOutcomeUnconfirmedUntilRequestReturns(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	started := make(chan struct{}, 1)
@@ -503,11 +566,39 @@ func TestCanonicalCLIExecutableChild(t *testing.T) {
 		command, args = "authorize-publication", publicationArgs()
 	case "settlement":
 		command, args = "settle-usage", settlementArgs()
+	case "actions":
+		command, args = "actions", []string{"attempt-1", "--server", "https://agent"}
 	}
 	os.Args = append([]string{"7review", command}, args...)
 	os.Args = append(os.Args[:len(os.Args)-2], "--server", server, "--json")
 	main()
 	os.Exit(0)
+}
+
+func TestCanonicalCLIExecutableDispatchesActionsAndEmitsValidatedJSON(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Method != http.MethodGet || r.URL.Path != "/operator/actions" || r.URL.Query().Get("attempt_id") != "attempt-1" || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Errorf("executable used wrong actions transport: %s %s", r.Method, r.URL.String())
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(cliActionsResponse()))
+	}))
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCanonicalCLIExecutableChild$")
+	child.Env = append(os.Environ(), "SEVENREVIEW_CANONICAL_CLI_TEST_SERVER="+server.URL, "SEVENREVIEW_CANONICAL_CLI_TEST_MODE=actions")
+	out, err := child.CombinedOutput()
+	if err != nil {
+		t.Fatalf("executable failed: %v %s", err, out)
+	}
+	var view review.OperatorActionsView
+	if err = json.Unmarshal(out, &view); err != nil || view.AttemptID != "attempt-1" || len(view.Actions) != 1 || view.Actions[0].ActionID != "action-1" || requests.Load() != 1 {
+		t.Fatalf("executable actions response: %+v requests=%d err=%v out=%s", view, requests.Load(), err, out)
+	}
 }
 
 func TestCanonicalCLIExecutableDispatchesUsageSettlementAndEmitsValidatedJSON(t *testing.T) {

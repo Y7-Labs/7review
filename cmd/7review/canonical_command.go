@@ -393,6 +393,46 @@ func runOperatorAttemptContext(ctx context.Context, args []string, out io.Writer
 	return err
 }
 
+func runOperatorActions(args []string, out io.Writer, httpClient *http.Client) error {
+	return runOperatorActionsContext(context.Background(), args, out, httpClient)
+}
+
+func runOperatorActionsContext(ctx context.Context, args []string, out io.Writer, httpClient *http.Client) error {
+	o, err := parseCanonicalOptions(args, false)
+	if err != nil {
+		return err
+	}
+	view, err := operator.NewClient(o.serverURL, httpClient).Actions(ctx, o.attemptID)
+	if err != nil {
+		return fmt.Errorf("attempt %s actions: %w", o.attemptID, err)
+	}
+	if o.json {
+		err = json.NewEncoder(out).Encode(view)
+	} else {
+		_, err = fmt.Fprintf(out, "actions for attempt %s  %d\n", view.AttemptID, len(view.Actions))
+		for _, action := range view.Actions {
+			if err != nil {
+				break
+			}
+			settlement := "unsettled"
+			if action.Settled {
+				settlement = "settled"
+			}
+			if action.IntegrityIncident {
+				settlement = "integrity-incident"
+			}
+			_, err = fmt.Fprintf(out, "%s  %s  %s/%s  %s\n  upper input=%d output=%d money-micro=%d active-ms=%d\n", action.ActionID, action.State, action.Provider, action.Model, settlement, action.Upper.InputTokens, action.Upper.OutputTokens, action.Upper.MoneyMicro, action.Upper.ActiveMS)
+			if err == nil && action.Actual != nil {
+				_, err = fmt.Fprintf(out, "  actual input=%d output=%d money-micro=%d active-ms=%d  receipt=%s  evidence=%s\n", action.Actual.InputTokens, action.Actual.OutputTokens, action.Actual.MoneyMicro, action.Actual.ActiveMS, action.ReceiptID, action.EvidenceRef)
+			}
+		}
+	}
+	if err != nil {
+		return fmt.Errorf("action projection received but output failed: %w", err)
+	}
+	return nil
+}
+
 func runCancelAttempt(args []string, out io.Writer, httpClient *http.Client) error {
 	return runCancelAttemptContext(context.Background(), args, out, httpClient)
 }

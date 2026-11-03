@@ -25,6 +25,7 @@ type operatorCommandHandler func(operatorCommandContext) error
 
 var operatorCommandHandlers = map[string]operatorCommandHandler{
 	"/attempt":               handleOperatorAttemptCommand,
+	"/actions":               handleOperatorActionsCommand,
 	"/cancel-attempt":        handleCancelAttemptCommand,
 	"/authorize-publication": handleAuthorizePublicationCommand,
 	"/disposition-finding":   handleDispositionFindingCommand,
@@ -77,6 +78,16 @@ func handleOperatorAttemptCommand(ctx operatorCommandContext) error {
 	var out strings.Builder
 	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
 	if err := runOperatorAttemptContext(ctx.Context, args, &out, ctx.Client); err != nil {
+		return err
+	}
+	writeAgentMessage(ctx, strings.TrimSpace(out.String()))
+	return nil
+}
+
+func handleOperatorActionsCommand(ctx operatorCommandContext) error {
+	var out strings.Builder
+	args := append(append([]string(nil), ctx.Fields[1:]...), "--server", ctx.ServerURL)
+	if err := runOperatorActionsContext(ctx.Context, args, &out, ctx.Client); err != nil {
 		return err
 	}
 	writeAgentMessage(ctx, strings.TrimSpace(out.String()))
