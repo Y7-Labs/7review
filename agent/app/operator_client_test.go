@@ -203,14 +203,13 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	if err != nil {
 		t.Fatal(err)
 	}
-	finding := projection.Source.Findings[0]
-	findingDigest, err := review.CanonicalFindingDigest(finding)
-	if err != nil {
-		t.Fatal(err)
-	}
-	disposition := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: "finding-http", AttemptID: admission.AttemptID, ExpectedVersion: view.ControlVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: finding.ID, FindingDigest: findingDigest, Decision: review.FindingDisputed, Reason: "the cited branch is unreachable"}}
 	beforeCalls := provider.calls.Load()
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
+	findingView, err := client.FindingDisposition(context.Background(), admission.AttemptID, projection.Source.Findings[0].ID)
+	if err != nil || findingView.Current != nil || findingView.ControlVersion != view.ControlVersion || findingView.Finding.ID != projection.Source.Findings[0].ID {
+		t.Fatalf("canonical finding subject: %+v %v", findingView, err)
+	}
+	disposition := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: "finding-http", AttemptID: admission.AttemptID, ExpectedVersion: findingView.ControlVersion, Revision: findingView.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: findingView.Finding.ID, FindingDigest: findingView.FindingDigest, Decision: review.FindingDisputed, Reason: "the cited branch is unreachable"}}
 	dispositionReceipt, err := client.DispositionFinding(context.Background(), disposition)
 	if err != nil || dispositionReceipt.ActorID != "participant" || dispositionReceipt.ControlVersion != view.ControlVersion+1 || dispositionReceipt.State != "recorded" {
 		t.Fatalf("finding disposition: %+v %v", dispositionReceipt, err)
@@ -231,6 +230,10 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	var dispositions int
 	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 1 {
 		t.Fatalf("finding disposition not durable: %d %v", dispositions, err)
+	}
+	findingView, err = client.FindingDisposition(context.Background(), admission.AttemptID, disposition.Payload.FindingID)
+	if err != nil || findingView.Current == nil || findingView.Current.CommandID != disposition.CommandID || findingView.Current.ActorID != "participant" || findingView.Current.Decision != disposition.Payload.Decision || findingView.Current.Reason != disposition.Payload.Reason || findingView.ControlVersion != dispositionReceipt.ControlVersion {
+		t.Fatalf("current finding disposition: %+v %v", findingView, err)
 	}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "reviewer-secret")
 	view, err = client.Attempt(context.Background(), admission.AttemptID)

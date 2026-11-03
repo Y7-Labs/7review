@@ -17,7 +17,7 @@ import (
 	"github.com/Y4NN777/7review/agent/review"
 )
 
-const maxCanonicalResponseBytes = 16384
+const maxCanonicalResponseBytes = review.MaxFindingDispositionViewBytes
 
 type CanonicalRequestError struct {
 	StatusCode       int
@@ -60,6 +60,25 @@ func (c Client) Attempt(ctx context.Context, id string) (review.OperatorAttemptV
 		return empty, &CanonicalRequestError{StatusCode: 200, message: "operator returned an unproven attempt response"}
 	}
 	return v, nil
+}
+
+func (c Client) FindingDisposition(ctx context.Context, attemptID, findingID string) (review.FindingDispositionView, error) {
+	var empty review.FindingDispositionView
+	if err := review.ValidateOperatorAttemptID(attemptID); err != nil {
+		return empty, err
+	}
+	if err := review.ValidateOperatorFindingID(findingID); err != nil {
+		return empty, err
+	}
+	_, raw, err := c.canonicalRequest(ctx, http.MethodGet, "finding", url.Values{"attempt_id": {attemptID}, "finding_id": {findingID}}, nil)
+	if err != nil {
+		return empty, err
+	}
+	view, err := review.DecodeFindingDispositionView(raw, attemptID, findingID)
+	if err != nil {
+		return empty, &CanonicalRequestError{StatusCode: http.StatusOK, message: "operator returned an unproven finding disposition view"}
+	}
+	return view, nil
 }
 
 func (c Client) CancelAttempt(ctx context.Context, command review.CancelAttemptCommand) (review.CancelAttemptReceipt, error) {

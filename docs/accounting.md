@@ -65,6 +65,9 @@ uncertain reconciliation reuses the monotonic worker fence and lease. Worker
 runtime now requires v24; run explicit migration before restart. Schema v24 adds
 immutable authenticated terminal-finding dispositions and a separate current-head
 projection. It does not rewrite findings or infer dispositions during migration.
+The canonical finding read revalidates terminal lineage and returns one bounded
+exact finding, digest, control version and optional attributed current decision;
+reviewer, operator and repository participant access remains repository-scoped.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or

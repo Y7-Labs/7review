@@ -18,6 +18,8 @@ type storedFindingDispositionEnvelope struct {
 	Command    review.FindingDispositionCommand
 }
 
+var ErrOperatorFindingNotFound = errors.New("operator finding not found")
+
 func (a *Authority) DispositionFinding(ctx context.Context, actor review.OperatorActor, c review.FindingDispositionCommand) (*review.FindingDispositionReceipt, error) {
 	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
 		return nil, err
@@ -174,7 +176,7 @@ func (a *Authority) terminalFindingSubjectTx(ctx context.Context, tx *sql.Tx, re
 		found = &candidate
 	}
 	if found == nil {
-		return review.Finding{}, "", errors.New("finding is not present in the terminal assessment")
+		return review.Finding{}, "", ErrOperatorFindingNotFound
 	}
 	digest, err := review.CanonicalFindingDigest(*found)
 	if err != nil {

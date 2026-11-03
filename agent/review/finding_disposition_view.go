@@ -29,10 +29,17 @@ type FindingDispositionView struct {
 	Current        *CurrentFindingDisposition `json:"current_disposition"`
 }
 
+func ValidateOperatorFindingID(id string) error {
+	if !operatorID.MatchString(id) {
+		return errors.New("exact finding ID required")
+	}
+	return nil
+}
+
 func DecodeFindingDispositionView(data []byte, attemptID, findingID string) (FindingDispositionView, error) {
 	var view FindingDispositionView
 	invalid := errors.New("invalid finding disposition view")
-	if ValidateOperatorAttemptID(attemptID) != nil || !operatorID.MatchString(findingID) || len(data) == 0 || len(data) > MaxFindingDispositionViewBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
+	if ValidateOperatorAttemptID(attemptID) != nil || ValidateOperatorFindingID(findingID) != nil || len(data) == 0 || len(data) > MaxFindingDispositionViewBytes || !utf8.Valid(data) || rejectDuplicateJSONKeys(data) != nil {
 		return view, invalid
 	}
 	var outer map[string]json.RawMessage

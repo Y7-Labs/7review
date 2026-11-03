@@ -102,6 +102,61 @@ func (s *Server) handleOperatorAttempt(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func (s *Server) handleOperatorFinding(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	actor, err := s.operatorActor(r)
+	if err != nil {
+		http.Error(w, "operator authentication required", http.StatusUnauthorized)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if len(r.URL.RawQuery) > 4096 {
+		http.Error(w, "operator query too large", http.StatusBadRequest)
+		return
+	}
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(query) != 2 || len(query["attempt_id"]) != 1 || len(query["finding_id"]) != 1 || query.Get("attempt_id") == "" || query.Get("finding_id") == "" {
+		http.Error(w, "exact attempt_id and finding_id query required", http.StatusBadRequest)
+		return
+	}
+	if r.Body != nil {
+		var probe [1]byte
+		n, readErr := io.ReadFull(r.Body, probe[:])
+		if n != 0 || (readErr != nil && readErr != io.EOF) {
+			http.Error(w, "request body is not allowed", http.StatusBadRequest)
+			return
+		}
+	}
+	if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
+		http.Error(w, "durable operator authority unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	view, err := s.accountingRuntime.Authority.FindingDisposition(ctx, actor, query.Get("attempt_id"), query.Get("finding_id"))
+	if err != nil {
+		status := http.StatusServiceUnavailable
+		switch {
+		case errors.Is(err, review.ErrOperatorUnauthorized):
+			status = http.StatusUnauthorized
+		case errors.Is(err, review.ErrOperatorForbidden):
+			status = http.StatusForbidden
+		case errors.Is(err, accounting.ErrOperatorAttemptNotFound), errors.Is(err, accounting.ErrOperatorFindingNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, accounting.ErrOperatorAttemptInvalid):
+			status = http.StatusBadRequest
+		}
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(view)
+}
+
 func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	actor, err := s.operatorActor(r)
@@ -182,6 +237,8 @@ func (s *Server) handleOperatorCommand(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, review.ErrOperatorForbidden):
 			status = http.StatusForbidden
 		case errors.Is(err, accounting.ErrOperatorAttemptNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, accounting.ErrOperatorFindingNotFound):
 			status = http.StatusNotFound
 		case errors.Is(err, accounting.ErrOperatorAttemptInvalid):
 			status = http.StatusBadRequest

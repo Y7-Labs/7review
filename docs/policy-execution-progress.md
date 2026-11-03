@@ -1552,8 +1552,11 @@ This is an incremental behavior ledger, not a completion declaration.
   the same closed command, and its strict client validates the exact receipt with
   no retry, redirect or retarget. A mapped participant can dispute but cannot use
   reviewer-only status reads or accept/reject findings; stale versions conflict.
-  Reading the current projection and CLI/TUI/channel routing remain open; ceilings
-  and alpha remain unfinished.
+  A separate bounded GET projection revalidates terminal lineage and returns one
+  immutable finding, canonical digest, control version and optional attributed
+  current decision. The strict client rejects changed evidence and can construct
+  commands without locally rebuilding authority. CLI/TUI/channel routing remains
+  open; ceilings and alpha remain unfinished.
 
 ## Method File Example
 

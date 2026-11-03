@@ -51,6 +51,16 @@ func canonicalFindingDispositionReceipt(c review.FindingDispositionCommand) stri
 	return string(raw)
 }
 
+func canonicalFindingDispositionView(t *testing.T) review.FindingDispositionView {
+	t.Helper()
+	finding := review.Finding{ID: "F-1", Severity: review.SeverityHigh, Title: "Authorization bypass", Description: "The guard is skipped.", Suggestion: "Enforce the guard.", Location: review.Location{Path: "service.go", Line: 7}, Confidence: 0.91}
+	digest, err := review.CanonicalFindingDigest(finding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return review.FindingDispositionView{SchemaVersion: 1, AttemptID: "attempt-1", Revision: "head", ControlVersion: 2, Finding: finding, FindingDigest: digest}
+}
+
 func TestCanonicalClientUsesOnlyMappedOperatorCredentialAndExactJSONCommand(t *testing.T) {
 	t.Setenv("REVIEW_API_TOKEN", "legacy-secret")
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
@@ -140,6 +150,36 @@ func TestCanonicalClientSendsExactFindingDispositionAndRequiresExactReceipt(t *t
 		if !errors.As(err, &failure) || !failure.MayHaveCommitted || failure.CommandID != c.CommandID || calls != 1 {
 			t.Fatalf("unproven disposition acknowledged/retried: failure=%+v calls=%d err=%v", failure, calls, err)
 		}
+	}
+}
+
+func TestCanonicalClientReadsExactFindingDispositionSubject(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	want := canonicalFindingDispositionView(t)
+	raw, _ := json.Marshal(want)
+	calls := 0
+	client := NewClient("https://agent/prefix", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.Path != "/prefix/operator/finding" || r.URL.Query().Get("attempt_id") != want.AttemptID || r.URL.Query().Get("finding_id") != want.Finding.ID || len(r.URL.Query()) != 2 || r.Body != nil || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Fatalf("wrong finding read transport: %s %s %#v", r.Method, r.URL.String(), r.Header)
+		}
+		return jsonResponse(http.StatusOK, string(raw)), nil
+	})})
+	got, err := client.FindingDisposition(context.Background(), want.AttemptID, want.Finding.ID)
+	if err != nil || got.FindingDigest != want.FindingDigest || calls != 1 {
+		t.Fatalf("finding view: %+v calls=%d err=%v", got, calls, err)
+	}
+	for _, invalid := range []string{"", " bad", "bad?id"} {
+		if _, err = client.FindingDisposition(context.Background(), want.AttemptID, invalid); err == nil || calls != 1 {
+			t.Fatalf("invalid finding ID reached transport: %q %v", invalid, err)
+		}
+	}
+	changed := strings.Replace(string(raw), `"Title":"Authorization bypass"`, `"Title":"changed"`, 1)
+	client = NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, changed), nil
+	})})
+	if _, err = client.FindingDisposition(context.Background(), want.AttemptID, want.Finding.ID); err == nil {
+		t.Fatal("client accepted finding bytes that do not match the authority digest")
 	}
 }
 
