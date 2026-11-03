@@ -224,6 +224,36 @@ func TestCanonicalClientReadsExactFindingDispositionSubject(t *testing.T) {
 	}
 }
 
+func TestCanonicalClientReadsExactBoundedActionProjection(t *testing.T) {
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
+	want := review.OperatorActionsView{SchemaVersion: 1, AttemptID: "attempt-1", Actions: []review.OperatorActionView{{ActionID: "action-1", State: "sending", Provider: "qualified", Model: "pinned-model", Role: "reasoner", Step: "review", Currency: "USD", RouteVersion: "contract-v1", Upper: review.ModelUsageActual{InputTokens: 100, OutputTokens: 20, MoneyMicro: 4, ActiveMS: 50}, CreatedAt: time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)}}}
+	raw, _ := json.Marshal(want)
+	calls := 0
+	client := NewClient("https://agent/prefix", &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.Path != "/prefix/operator/actions" || r.URL.Query().Get("attempt_id") != want.AttemptID || len(r.URL.Query()) != 1 || r.Body != nil || r.Header.Get("Authorization") != "Bearer operator-secret" {
+			t.Fatalf("wrong actions transport: %s %s %#v", r.Method, r.URL.String(), r.Header)
+		}
+		return jsonResponse(http.StatusOK, string(raw)), nil
+	})})
+	got, err := client.Actions(context.Background(), want.AttemptID)
+	if err != nil || len(got.Actions) != 1 || got.Actions[0].ActionID != "action-1" || calls != 1 {
+		t.Fatalf("actions view: %+v calls=%d err=%v", got, calls, err)
+	}
+	for _, invalid := range []string{"", " bad", "bad?id"} {
+		if _, err = client.Actions(context.Background(), invalid); err == nil || calls != 1 {
+			t.Fatalf("invalid attempt ID reached actions transport: %q %v", invalid, err)
+		}
+	}
+	changed := strings.Replace(string(raw), `"action_id":"action-1"`, `"action_id":"action-1","request_digest":"secret"`, 1)
+	client = NewClient("https://agent", &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(http.StatusOK, changed), nil
+	})})
+	if _, err = client.Actions(context.Background(), want.AttemptID); err == nil {
+		t.Fatal("client accepted widened action projection")
+	}
+}
+
 func TestCanonicalPublicationClientNeverRetriesRetargetsOrAcknowledgesUnprovenReceipt(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	c := canonicalPublicationCommand()

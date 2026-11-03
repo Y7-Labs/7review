@@ -73,6 +73,29 @@ func TestOperatorAttemptFailsClosedWithoutDurableAuthority(t *testing.T) {
 	}
 }
 
+func TestOperatorActionsRejectsClaimsBodiesAndMissingAuthority(t *testing.T) {
+	s := &Server{cfg: &config.Config{Operators: appOperators(t)}}
+	for _, tc := range []struct {
+		method, target, body string
+		status               int
+	}{
+		{http.MethodGet, "/operator/actions?attempt_id=attempt", "", http.StatusServiceUnavailable},
+		{http.MethodGet, "/operator/actions?attempt_id=attempt&actor=alice", "", http.StatusBadRequest},
+		{http.MethodGet, "/operator/actions?attempt_id=attempt&attempt_id=other", "", http.StatusBadRequest},
+		{http.MethodGet, "/operator/actions?attempt_id=%zz", "", http.StatusBadRequest},
+		{http.MethodGet, "/operator/actions?attempt_id=attempt", `{}`, http.StatusBadRequest},
+		{http.MethodPost, "/operator/actions?attempt_id=attempt", "", http.StatusMethodNotAllowed},
+	} {
+		r := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+		r.Header.Set("Authorization", "Bearer ALICE_TOKEN-secret")
+		w := httptest.NewRecorder()
+		s.handleOperatorActions(w, r)
+		if w.Code != tc.status {
+			t.Fatalf("%s %s: got %d want %d: %s", tc.method, tc.target, w.Code, tc.status, w.Body.String())
+		}
+	}
+}
+
 func TestOperatorAttemptReadsOnlyAuthenticatedDurableRepository(t *testing.T) {
 	s, _, dsn := inboxServerDSN(t)
 	s.cfg.Operators = appOperators(t)

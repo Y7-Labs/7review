@@ -211,11 +211,19 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatal(err)
 	}
 	beforeCalls := provider.calls.Load()
-	var actionID string
-	var actionCount int
-	if err = db.QueryRow(`SELECT min(id),count(*) FROM budget_actions WHERE attempt_id=$1`, admission.AttemptID).Scan(&actionID, &actionCount); err != nil || actionCount != 1 {
-		t.Fatalf("exact settlement action unavailable: %q count=%d err=%v", actionID, actionCount, err)
+	if _, err = client.Actions(context.Background(), admission.AttemptID); err == nil {
+		t.Fatal("reviewer read operator-only action accounting")
 	}
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
+	if _, err = client.Actions(context.Background(), admission.AttemptID); err == nil {
+		t.Fatal("participant read operator-only action accounting")
+	}
+	t.Setenv("REVIEW_OPERATOR_TOKEN", "settler-secret")
+	actions, err := client.Actions(context.Background(), admission.AttemptID)
+	if err != nil || len(actions.Actions) != 1 || actions.Actions[0].Settled || actions.Actions[0].ActionID == "" || actions.Actions[0].Provider != provider.Name() || actions.Actions[0].Upper.OutputTokens == 0 {
+		t.Fatalf("exact settlement action unavailable: %+v err=%v", actions, err)
+	}
+	actionID := actions.Actions[0].ActionID
 	settlement := review.UsageSettlementCommand{SchemaVersion: 1, CommandID: "settle-http", ActionID: actionID, Kind: "settle_model_usage", Payload: review.UsageSettlementPayload{InputTokens: 10, OutputTokens: 2, MoneyMicro: 1, ActiveMS: 1, EvidenceID: "provider-invoice-http", Reason: "reconciled against provider invoice"}}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "participant-secret")
 	if _, err = client.SettleUsage(context.Background(), settlement); err == nil {
@@ -234,6 +242,10 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	replayedSettlement, err := client.SettleUsage(context.Background(), settlement)
 	if err != nil || !reflect.DeepEqual(settlementReceipt, replayedSettlement) {
 		t.Fatalf("canonical usage settlement replay: %+v %v", replayedSettlement, err)
+	}
+	actions, err = client.Actions(context.Background(), admission.AttemptID)
+	if err != nil || len(actions.Actions) != 1 || !actions.Actions[0].Settled || actions.Actions[0].Actual == nil || *actions.Actions[0].Actual != settlement.Payload.Actual() || actions.Actions[0].ReceiptID != settlement.CommandID || actions.Actions[0].EvidenceRef != "operator:settler:provider-invoice-http" {
+		t.Fatalf("settled action projection: %+v err=%v", actions, err)
 	}
 	var actionSettled bool
 	if err = db.QueryRow(`SELECT settled FROM budget_actions WHERE id=$1`, actionID).Scan(&actionSettled); err != nil || !actionSettled || provider.calls.Load() != beforeCalls {

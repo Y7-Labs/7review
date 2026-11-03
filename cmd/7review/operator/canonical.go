@@ -62,6 +62,22 @@ func (c Client) Attempt(ctx context.Context, id string) (review.OperatorAttemptV
 	return v, nil
 }
 
+func (c Client) Actions(ctx context.Context, attemptID string) (review.OperatorActionsView, error) {
+	var empty review.OperatorActionsView
+	if err := review.ValidateOperatorAttemptID(attemptID); err != nil {
+		return empty, err
+	}
+	_, raw, err := c.canonicalRequest(ctx, http.MethodGet, "actions", url.Values{"attempt_id": {attemptID}}, nil)
+	if err != nil {
+		return empty, err
+	}
+	view, err := review.DecodeOperatorActionsView(raw, attemptID)
+	if err != nil {
+		return empty, &CanonicalRequestError{StatusCode: http.StatusOK, message: "operator returned an unproven action projection"}
+	}
+	return view, nil
+}
+
 func (c Client) FindingDisposition(ctx context.Context, attemptID, findingID string) (review.FindingDispositionView, error) {
 	var empty review.FindingDispositionView
 	if err := review.ValidateOperatorAttemptID(attemptID); err != nil {
