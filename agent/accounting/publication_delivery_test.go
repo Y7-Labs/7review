@@ -269,3 +269,99 @@ func TestPublicationCompletionCommitFailureRemainsUncertainNotDelivered(t *testi
 		t.Fatalf("interrupted completion was not uncertain: %#v %v", loaded, err)
 	}
 }
+
+func TestUncertainPublicationReconciliationIsExactAndConcurrentSafe(t *testing.T) {
+	a, command, op, dsn := publicationOperationFixture(t)
+	ctx := context.Background()
+	claim, err := a.ClaimPublication(ctx, "uncertain-owner", time.Minute)
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %#v %v", claim, err)
+	}
+	if _, err = a.BeginPublication(ctx, *claim, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.db.Exec(`UPDATE budget_publication_operations SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := a.RecoverUncertainPublications(ctx, 8); err != nil || n != 1 {
+		t.Fatalf("recover uncertain: %d %v", n, err)
+	}
+	restartedDB, err := OpenDatabase(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restartedDB.Close()
+	restarted, err := NewAuthority(restartedDB, a.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uncertain, err := restarted.ListUncertainPublications(ctx, 8)
+	if err != nil || len(uncertain) != 1 || uncertain[0].ID != op.ID || string(uncertain[0].Payload) != string(op.Payload) {
+		t.Fatalf("restart uncertain listing: %#v %v", uncertain, err)
+	}
+	receipt := PublicationDeliveryReceipt{Provider: op.Destination.Provider, RemoteID: "comment-42", RemoteURL: "https://provider.test/comment/42", PayloadDigest: op.PayloadDigest}
+	changed := receipt
+	changed.PayloadDigest = "sha256:" + string64("f")
+	if completed, err := restarted.ReconcilePublication(ctx, op.ID, changed); err == nil || completed != nil {
+		t.Fatalf("mismatched remote proof reconciled: %#v %v", completed, err)
+	}
+	const workers = 8
+	results := make(chan *PublicationOperation, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			completed, reconcileErr := restarted.ReconcilePublication(ctx, op.ID, receipt)
+			results <- completed
+			errs <- reconcileErr
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+	for reconcileErr := range errs {
+		if reconcileErr != nil {
+			t.Fatal(reconcileErr)
+		}
+	}
+	for completed := range results {
+		if completed == nil || completed.State != review.DeliveryDelivered || completed.DeliveryReceipt != receipt {
+			t.Fatalf("duplicate reconciliation result: %#v", completed)
+		}
+	}
+	if uncertain, err = restarted.ListUncertainPublications(ctx, 8); err != nil || len(uncertain) != 0 {
+		t.Fatalf("delivered operation remained uncertain: %#v %v", uncertain, err)
+	}
+	loaded, err := restarted.LookupPublicationOperation(ctx, command.CommandID)
+	if err != nil || loaded.State != review.DeliveryDelivered || loaded.DeliveryReceipt != receipt {
+		t.Fatalf("reconciled operation: %#v %v", loaded, err)
+	}
+}
+
+func TestUncertainReconciliationCommitFailureRemainsUncertain(t *testing.T) {
+	a, _, op, _ := publicationOperationFixture(t)
+	ctx := context.Background()
+	claim, err := a.ClaimPublication(ctx, "uncertain-commit-owner", time.Minute)
+	if err != nil || claim == nil {
+		t.Fatalf("claim: %#v %v", claim, err)
+	}
+	if _, err = a.BeginPublication(ctx, *claim, time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.db.Exec(`UPDATE budget_publication_operations SET state='uncertain' WHERE id=$1`, op.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.db.Exec(`CREATE FUNCTION fail_publication_reconcile() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.state='uncertain' AND NEW.state='delivered' THEN RAISE EXCEPTION 'injected reconciliation failure'; END IF; RETURN NEW; END $$; CREATE CONSTRAINT TRIGGER fail_publication_reconcile AFTER UPDATE ON budget_publication_operations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_publication_reconcile()`); err != nil {
+		t.Fatal(err)
+	}
+	receipt := PublicationDeliveryReceipt{Provider: op.Destination.Provider, RemoteID: "comment-42", PayloadDigest: op.PayloadDigest}
+	if completed, err := a.ReconcilePublication(ctx, op.ID, receipt); err == nil || completed != nil {
+		t.Fatalf("failed reconciliation acknowledged: %#v %v", completed, err)
+	}
+	loaded, err := a.LookupPublicationOperation(ctx, op.AuthorizationCommandID)
+	if err != nil || loaded.State != review.DeliveryUncertain || loaded.DeliveryReceipt != (PublicationDeliveryReceipt{}) || !loaded.CompletedAt.IsZero() {
+		t.Fatalf("failed reconciliation partially committed: %#v %v", loaded, err)
+	}
+}

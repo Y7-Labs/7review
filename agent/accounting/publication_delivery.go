@@ -249,6 +249,101 @@ func (a *Authority) CompletePublication(ctx context.Context, permit PublicationP
 	return &op, nil
 }
 
+func (a *Authority) ListUncertainPublications(ctx context.Context, limit int) ([]PublicationOperation, error) {
+	if limit <= 0 || limit > 128 {
+		return nil, errors.New("publication reconciliation limit must be between 1 and 128")
+	}
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND state='uncertain' ORDER BY sending_at,id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
+	if err != nil {
+		return nil, err
+	}
+	var commandIDs []string
+	for rows.Next() {
+		var commandID string
+		if err = rows.Scan(&commandID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		commandIDs = append(commandIDs, commandID)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	operations := make([]PublicationOperation, 0, len(commandIDs))
+	for _, commandID := range commandIDs {
+		op, _, readErr := a.readPublicationOperationTx(ctx, tx, commandID)
+		if readErr != nil {
+			return nil, readErr
+		}
+		op.Payload = append([]byte(nil), op.Payload...)
+		operations = append(operations, op)
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return operations, nil
+}
+
+func (a *Authority) ReconcilePublication(ctx context.Context, operationID string, receipt PublicationDeliveryReceipt) (*PublicationOperation, error) {
+	if !validID(operationID) {
+		return nil, errors.New("exact publication operation ID required")
+	}
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var commandID string
+	if err = tx.QueryRowContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE id=$1 AND boundary_id=$2 AND project_id=$3 FOR UPDATE`, operationID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&commandID); err != nil {
+		return nil, err
+	}
+	op, _, err := a.readPublicationOperationTx(ctx, tx, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if receipt.validate(op.Destination.Provider, op.PayloadDigest) != nil {
+		return nil, errors.New("publication reconciliation receipt is invalid")
+	}
+	if op.State == review.DeliveryDelivered {
+		if op.DeliveryReceipt != receipt {
+			return nil, errors.New("publication reconciliation conflicts with durable receipt")
+		}
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+		op.Payload = append([]byte(nil), op.Payload...)
+		return &op, nil
+	}
+	if op.State != review.DeliveryUncertain {
+		return nil, errors.New("publication is not uncertain")
+	}
+	receiptRaw, err := json.Marshal(receipt)
+	if err != nil {
+		return nil, err
+	}
+	var completedAt time.Time
+	if err = tx.QueryRowContext(ctx, `UPDATE budget_publication_operations SET state='delivered',delivery_receipt=$2,delivery_receipt_digest=$3,completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='uncertain' RETURNING completed_at`, op.ID, receiptRaw, hash(receiptRaw)).Scan(&completedAt); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	op.State = review.DeliveryDelivered
+	op.DeliveryReceipt = receipt
+	op.CompletedAt = completedAt
+	op.Payload = append([]byte(nil), op.Payload...)
+	return &op, nil
+}
+
 func (a *Authority) obsoletePublicationTx(ctx context.Context, tx *sql.Tx, operationID string) error {
 	result, err := tx.ExecContext(ctx, `UPDATE budget_publication_operations SET state='obsolete',worker_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE id=$1 AND state='pending'`, operationID)
 	if err != nil {

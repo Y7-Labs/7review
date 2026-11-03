@@ -1502,6 +1502,10 @@ This is an incremental behavior ledger, not a completion declaration.
 - GitHub and GitLab canonical publishers now write a byte-exact operation and
   payload marker, return stable comment/note identity, and can look up only that
   exact remote body. Similar or changed remote content is not reconciliation proof.
+- Uncertain publication operations are restart-visible and can transition to
+  delivered only from an exact provider lookup receipt. Concurrent duplicate
+  reconcilers are idempotent; conflicting proof and interrupted commits leave the
+  operation uncertain and never make it resendable.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;

@@ -131,7 +131,8 @@ v21 adds fenced pre-send claims and turns expired sending markers uncertain with
 reclaim. Schema v22 adds exact fenced provider-receipt completion and refuses to
 invent receipts for legacy delivered rows. Provider invocation and remote
 reconciliation scheduling remain open. GitHub and GitLab now expose an exact
-operation/payload-marked publish-and-lookup contract for that worker. Compose forwards the
+operation/payload-marked publish-and-lookup contract for that worker, and exact
+lookup receipts can resolve durable uncertain rows without resend. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.
