@@ -22,19 +22,21 @@ import (
 
 // Server wires HTTP routes to the review pipeline.
 type Server struct {
-	cfg               *config.Config
-	pipeline          *pipeline.Pipeline
-	mux               *http.ServeMux
-	work              chan workItem
-	seenMu            sync.Mutex
-	seen              map[string]time.Time
-	activeMu          sync.Mutex
-	active            map[string]bool
-	stats             workerStats
-	channelCancel     context.CancelFunc
-	accountingRuntime *accounting.Runtime
-	inboxCancel       context.CancelFunc
-	inboxWorkers      sync.WaitGroup
+	cfg                  *config.Config
+	pipeline             *pipeline.Pipeline
+	mux                  *http.ServeMux
+	work                 chan workItem
+	seenMu               sync.Mutex
+	seen                 map[string]time.Time
+	activeMu             sync.Mutex
+	active               map[string]bool
+	stats                workerStats
+	channelCancel        context.CancelFunc
+	accountingRuntime    *accounting.Runtime
+	inboxCancel          context.CancelFunc
+	inboxWorkers         sync.WaitGroup
+	publicationPublisher tools.AuthorizedPublisher
+	publicationWorkerID  string
 }
 
 const defaultWebhookJobTimeout = 15 * time.Minute
@@ -124,6 +126,13 @@ func newServer(cfg *config.Config) (*Server, error) {
 			"gitlab": gitlab,
 			"github": github,
 		},
+	}
+	s.publicationPublisher = router
+	if runtime != nil {
+		s.publicationWorkerID, err = review.NewOpaqueID("publication-worker-")
+		if err != nil {
+			return nil, fmt.Errorf("publication worker identity: %w", err)
+		}
 	}
 	s.pipeline.SCM = router
 	s.pipeline.SCMPublisher = router

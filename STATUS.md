@@ -130,7 +130,8 @@ failing closed before fresh inbox claims when that journal is unavailable. Schem
 v21 adds fenced pre-send claims and turns expired sending markers uncertain without
 reclaim. Schema v22 adds exact fenced provider-receipt completion and refuses to
 invent receipts for legacy delivered rows. Provider invocation and remote
-reconciliation scheduling remain open. GitHub and GitLab now expose an exact
+The service now schedules one fenced provider invocation and lookup-only remote
+reconciliation. GitHub and GitLab expose an exact
 operation/payload-marked publish-and-lookup contract for that worker, and exact
 lookup receipts can resolve durable uncertain rows without resend. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and

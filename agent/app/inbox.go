@@ -145,10 +145,7 @@ func (s *Server) startInboxWorkers() {
 					_, recoveryErr = s.accountingRuntime.Authority.CompletePendingModelJobs(recoveryCtx, 8)
 				}
 				if recoveryErr == nil {
-					_, recoveryErr = s.accountingRuntime.Authority.MaterializeAuthorizedPublications(recoveryCtx, 8)
-				}
-				if recoveryErr == nil {
-					_, recoveryErr = s.accountingRuntime.Authority.RecoverUncertainPublications(recoveryCtx, 8)
+					recoveryErr = s.maintainPublications(recoveryCtx)
 				}
 				recoveryCancel()
 				if recoveryErr != nil {

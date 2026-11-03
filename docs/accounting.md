@@ -115,6 +115,12 @@ failure and idempotent retry. It invents no delivery receipt or completion time;
 runtime refuses an unmigrated v21 store and migration rejects an unproven legacy
 `delivered` state.
 
+The service maintenance loop materializes authority, quarantines expired sending
+effects, performs read-only reconciliation of uncertain operations, and then
+claims at most one pending publication. A provider call occurs only after the
+fenced `sending` marker commits. Provider or completion errors remain sending and
+can only become uncertain; they are never republished automatically.
+
 ## Runtime Intake
 
 Set all of `ACCOUNTING_DATABASE_URL`, `ACCOUNTING_BOUNDARY_ID` and

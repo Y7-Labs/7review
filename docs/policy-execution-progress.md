@@ -1506,10 +1506,15 @@ This is an incremental behavior ledger, not a completion declaration.
   delivered only from an exact provider lookup receipt. Concurrent duplicate
   reconcilers are idempotent; conflicting proof and interrupted commits leave the
   operation uncertain and never make it resendable.
+- The service maintenance loop now invokes at most one newly fenced publication
+  after its sending marker commits. Lost provider acknowledgments and failed
+  completion commits remain sending, expire to uncertain, and use lookup-only
+  reconciliation. The loop never calls publish for sending or uncertain rows and
+  never replays the model job.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;
-  Service-side provider invocation and uncertain-result reconciliation scheduling
+  Live provider qualification and the remaining canonical operator command surface
   remain open.
   Legacy `/approve` still is not canonical authority. Other operator commands,
   incident adjustments and live provider qualification remain open. Ceilings and

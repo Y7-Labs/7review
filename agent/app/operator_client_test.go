@@ -16,8 +16,30 @@ import (
 	"github.com/Y4NN777/7review/agent/accounting"
 	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
+	"github.com/Y4NN777/7review/agent/tools"
 	"github.com/Y4NN777/7review/cmd/7review/operator"
 )
+
+type lostAcknowledgmentPublisher struct {
+	publishes atomic.Int32
+	lookups   atomic.Int32
+	receipt   tools.AuthorizedPublicationReceipt
+}
+
+func (p *lostAcknowledgmentPublisher) PublishAuthorized(_ context.Context, req tools.AuthorizedPublicationRequest) (tools.AuthorizedPublicationReceipt, error) {
+	p.publishes.Add(1)
+	p.receipt = tools.AuthorizedPublicationReceipt{Provider: req.Destination.Provider, RemoteID: "remote-comment-42", RemoteURL: "https://provider.test/comment/42", PayloadDigest: req.PayloadDigest}
+	return tools.AuthorizedPublicationReceipt{}, errors.New("provider acknowledgment lost after remote write")
+}
+
+func (p *lostAcknowledgmentPublisher) LookupAuthorized(_ context.Context, req tools.AuthorizedPublicationRequest) (*tools.AuthorizedPublicationReceipt, error) {
+	p.lookups.Add(1)
+	if p.receipt.PayloadDigest != req.PayloadDigest {
+		return nil, nil
+	}
+	receipt := p.receipt
+	return &receipt, nil
+}
 
 func TestCanonicalOperatorClientAuthenticatesAndReconcilesLostHTTPAcknowledgment(t *testing.T) {
 	s, db, dsn := inboxServerDSN(t)
@@ -211,36 +233,37 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatalf("authorization dispatched provider I/O: before=%d after=%d", beforeCalls, provider.calls.Load())
 	}
 	restarted := newInboxServer(t, dsn)
+	publicationProvider := &lostAcknowledgmentPublisher{}
+	restarted.publicationPublisher = publicationProvider
+	restarted.publicationWorkerID = "restart-publication-worker"
 	restarted.startInboxWorkers()
 	operationState := ""
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
 		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil {
-			break
+			if operationState == "sending" {
+				break
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if operationState != "pending" {
-		t.Fatalf("restart did not materialize authorized operation: %q %v", operationState, err)
-	}
-	claim, err := restarted.accountingRuntime.Authority.ClaimPublication(context.Background(), "publication-owner", time.Minute)
-	if err != nil || claim == nil {
-		t.Fatalf("claim materialized operation: %#v %v", claim, err)
-	}
-	if _, err = restarted.accountingRuntime.Authority.BeginPublication(context.Background(), *claim, time.Minute); err != nil {
-		t.Fatal(err)
+	if operationState != "sending" || publicationProvider.publishes.Load() != 1 {
+		t.Fatalf("restart did not perform one fenced publication: state=%q publishes=%d err=%v", operationState, publicationProvider.publishes.Load(), err)
 	}
 	if _, err = db.Exec(`UPDATE budget_publication_operations SET lease_until=clock_timestamp()-interval '1 second' WHERE command_id=$1`, command.CommandID); err != nil {
 		t.Fatal(err)
 	}
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
 		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil && operationState == "uncertain" {
+			// The lookup and durable completion may happen in the same maintenance pass.
+		}
+		if err == nil && operationState == "delivered" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	restarted.Close()
-	if operationState != "uncertain" {
-		t.Fatalf("restart did not quarantine expired sending operation: %q %v", operationState, err)
+	if operationState != "delivered" || publicationProvider.publishes.Load() != 1 || publicationProvider.lookups.Load() == 0 {
+		t.Fatalf("lost acknowledgment was not lookup-reconciled without resend: state=%q publishes=%d lookups=%d err=%v", operationState, publicationProvider.publishes.Load(), publicationProvider.lookups.Load(), err)
 	}
 	if provider.calls.Load() != beforeCalls {
 		t.Fatalf("materialization replayed provider work: before=%d after=%d", beforeCalls, provider.calls.Load())
