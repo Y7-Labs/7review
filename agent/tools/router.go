@@ -74,6 +74,30 @@ func (r ProviderRouter) PublishFinal(ctx context.Context, source *review.SCMCont
 	return tool.PublishFinal(ctx, source, report)
 }
 
+func (r ProviderRouter) PublishAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (AuthorizedPublicationReceipt, error) {
+	tool, ok := r.Publishers[strings.ToLower(req.Destination.Provider)]
+	if !ok || tool == nil {
+		return AuthorizedPublicationReceipt{}, fmt.Errorf("tools: no publisher configured for provider %q", req.Destination.Provider)
+	}
+	authorized, ok := tool.(AuthorizedPublisher)
+	if !ok {
+		return AuthorizedPublicationReceipt{}, fmt.Errorf("tools: provider %q does not support authorized publication", req.Destination.Provider)
+	}
+	return authorized.PublishAuthorized(ctx, req)
+}
+
+func (r ProviderRouter) LookupAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (*AuthorizedPublicationReceipt, error) {
+	tool, ok := r.Publishers[strings.ToLower(req.Destination.Provider)]
+	if !ok || tool == nil {
+		return nil, fmt.Errorf("tools: no publisher configured for provider %q", req.Destination.Provider)
+	}
+	authorized, ok := tool.(AuthorizedPublisher)
+	if !ok {
+		return nil, fmt.Errorf("tools: provider %q does not support authorized publication", req.Destination.Provider)
+	}
+	return authorized.LookupAuthorized(ctx, req)
+}
+
 func (r ProviderRouter) PublishInlineDraft(ctx context.Context, source *review.SCMContext, comment review.InlineComment) (review.InlineComment, error) {
 	if source == nil {
 		comment.Status = "skipped"

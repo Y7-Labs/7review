@@ -331,8 +331,9 @@ type gitHubCommit struct {
 }
 
 type gitHubComment struct {
-	ID   int64  `json:"id"`
-	Body string `json:"body"`
+	ID      int64  `json:"id"`
+	Body    string `json:"body"`
+	HTMLURL string `json:"html_url"`
 }
 
 type gitHubReviewComment struct {
