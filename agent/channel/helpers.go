@@ -3,11 +3,29 @@ package channel
 import (
 	"fmt"
 	"strings"
+
+	"github.com/Y4NN777/7review/agent/review"
 )
 
 func draftBody(title string, msg DraftMessage) string {
-	return fmt.Sprintf("%s\nrun: %s\nrepository: %s\nchange: %s\nurl: %s\nsummary: %s\n\n%s\n\nReply with /approve %s, /revise %s, or /suppress %s <finding_id>.",
+	body := fmt.Sprintf("%s\nrun: %s\nrepository: %s\nchange: %s\nurl: %s\nsummary: %s\n\n%s\n\nReply with /approve %s, /revise %s, or /suppress %s <finding_id>.",
 		title, msg.RunID, msg.Repository, msg.ChangeID, msg.WebURL, msg.Summary, msg.DraftReport, msg.RunID, msg.RunID, msg.RunID)
+	if review.ValidateOperatorAttemptID(msg.AttemptID) != nil {
+		return body
+	}
+	seen := map[string]bool{}
+	findings := make([]string, 0, len(msg.FindingIDs))
+	for _, findingID := range msg.FindingIDs {
+		if review.ValidateOperatorFindingID(findingID) != nil || seen[findingID] {
+			continue
+		}
+		seen[findingID] = true
+		findings = append(findings, findingID)
+	}
+	if len(findings) == 0 {
+		return body
+	}
+	return body + fmt.Sprintf("\n\nCanonical attempt: %s\nCanonical findings: %s\nTo record an attributed decision, reply:\n/disposition-finding %s <finding-id> <accepted|rejected|disputed> <unique-command-id>\n<reason>", msg.AttemptID, strings.Join(findings, ", "), msg.AttemptID)
 }
 
 func firstSender(senders []string) string {

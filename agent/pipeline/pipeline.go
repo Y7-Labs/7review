@@ -1040,8 +1040,14 @@ func (p *Pipeline) notifyDraft(ctx context.Context, runID string, scm *review.SC
 	}
 	msg := channel.DraftMessage{
 		RunID:       runID,
+		AttemptID:   rc.Source.Attempt.AttemptID,
 		DraftReport: rc.Source.Report.Draft,
 		Summary:     reviewSummary(rc),
+	}
+	for _, finding := range rc.Source.Findings {
+		if strings.TrimSpace(finding.ID) != "" {
+			msg.FindingIDs = append(msg.FindingIDs, finding.ID)
+		}
 	}
 	if scm != nil {
 		msg.Provider = scm.Provider

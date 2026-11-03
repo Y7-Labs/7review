@@ -146,8 +146,8 @@ exact command and validate its receipt without retry or retargeting. An exact
 repository-authorized finding read provides the immutable subject digest and
 attributed current disposition; CLI and TUI commands fetch that authority before
 submitting one decision. Authenticated channel commands now commit through the same
-authority without legacy suppression or job replay; canonical identities in
-outbound drafts and native SCM routing remain open.
+authority without legacy suppression or job replay. Outbound drafts include
+validated canonical attempt/finding identities; native SCM routing remains open.
 The v8-to-v9 through v23-to-v24 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
 explicit migration to schema v24 before restart. No deployed database was changed.

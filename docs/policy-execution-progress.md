@@ -1565,7 +1565,9 @@ This is an incremental behavior ledger, not a completion declaration.
   ambiguous mappings fail closed. Durable app routing reads the terminal subject
   and commits synchronously without report mutation, legacy suppression, queueing,
   job replay or provider I/O. New-delivery retries replay the same current command;
-  changed reuse conflicts. Canonical identities in outbound drafts remain open.
+  changed reuse conflicts. Outbound drafts now carry the validated canonical
+  attempt and deduplicated finding IDs plus the closed reply template, while
+  omitting credentials and digests. Native SCM routing remains open.
 
 ## Method File Example
 

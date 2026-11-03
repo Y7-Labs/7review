@@ -26,12 +26,14 @@ type Config struct {
 
 type DraftMessage struct {
 	RunID       string
+	AttemptID   string
 	Provider    string
 	Repository  string
 	ChangeID    string
 	WebURL      string
 	Summary     string
 	DraftReport string
+	FindingIDs  []string
 }
 
 type FinalConfirmationMessage struct {

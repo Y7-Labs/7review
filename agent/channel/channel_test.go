@@ -206,3 +206,20 @@ func TestParseSimpleXInbound(t *testing.T) {
 		t.Fatalf("simplex inbound not parsed: %#v", msg)
 	}
 }
+
+func TestDraftBodyCarriesCanonicalAttemptAndFindingIdentities(t *testing.T) {
+	body := draftBody("Review ready", DraftMessage{RunID: "owner/repo!7", AttemptID: "attempt-1", FindingIDs: []string{"F-1", "F-1", "bad finding", "F-2"}, DraftReport: "report"})
+	for _, want := range []string{"Canonical attempt: attempt-1", "Canonical findings: F-1, F-2", "/disposition-finding attempt-1 <finding-id> <accepted|rejected|disputed> <unique-command-id>", "<reason>"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("canonical channel instruction missing %q: %s", want, body)
+		}
+	}
+	legacy := draftBody("Review ready", DraftMessage{RunID: "owner/repo!7", DraftReport: "report"})
+	if strings.Contains(legacy, "/disposition-finding") || strings.Contains(legacy, "Canonical attempt") {
+		t.Fatalf("draft invented absent canonical identity: %s", legacy)
+	}
+	unsafe := draftBody("Review ready", DraftMessage{AttemptID: "bad attempt", FindingIDs: []string{"F-1"}})
+	if strings.Contains(unsafe, "/disposition-finding") {
+		t.Fatalf("draft rendered unsafe canonical identity: %s", unsafe)
+	}
+}

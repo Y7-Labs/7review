@@ -105,6 +105,10 @@ durable authority, and commits the attributed disposition before acknowledging t
 response. It does not mutate a report, enqueue legacy suppression, replay a job or
 authorize publication. A retry with a new provider delivery ID replays the same
 durable command when its ID, decision and reason match.
+Draft notifications include the canonical attempt ID and validated, deduplicated
+finding IDs when that authority exists. Invalid or absent identities never produce
+a canonical reply template; credentials and finding digests are not sent through
+the channel.
 
 ### SimpleX
 
