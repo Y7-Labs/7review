@@ -19,6 +19,7 @@ type storedFindingDispositionEnvelope struct {
 }
 
 var ErrOperatorFindingNotFound = errors.New("operator finding not found")
+var ErrOperatorAttemptContext = errors.New("operator attempt does not match SCM comment context")
 
 func (a *Authority) DispositionFinding(ctx context.Context, actor review.OperatorActor, c review.FindingDispositionCommand) (*review.FindingDispositionReceipt, error) {
 	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
@@ -186,6 +187,17 @@ func (a *Authority) terminalFindingSubjectTx(ctx context.Context, tx *sql.Tx, re
 }
 
 func (a *Authority) FindingDisposition(ctx context.Context, actor review.OperatorActor, attemptID, findingID string) (*review.FindingDispositionView, error) {
+	return a.findingDisposition(ctx, actor, attemptID, findingID, nil)
+}
+
+func (a *Authority) FindingDispositionInChange(ctx context.Context, actor review.OperatorActor, attemptID, findingID string, change review.ChangeKey) (*review.FindingDispositionView, error) {
+	if err := change.Validate(); err != nil || change.Provider == "local" {
+		return nil, ErrOperatorAttemptContext
+	}
+	return a.findingDisposition(ctx, actor, attemptID, findingID, &change)
+}
+
+func (a *Authority) findingDisposition(ctx context.Context, actor review.OperatorActor, attemptID, findingID string, expectedChange *review.ChangeKey) (*review.FindingDispositionView, error) {
 	if err := a.cfg.Operators.ValidateActor(actor); err != nil {
 		return nil, err
 	}
@@ -200,6 +212,9 @@ func (a *Authority) FindingDisposition(ctx context.Context, actor review.Operato
 	record, err := a.operatorAttemptForRolesTx(ctx, tx, actor, attemptID, false, review.OperatorRoleReviewer, review.OperatorRoleOperator, review.OperatorRoleParticipant)
 	if err != nil {
 		return nil, err
+	}
+	if expectedChange != nil && !reflect.DeepEqual(record.binding.Attempt.Change, *expectedChange) {
+		return nil, ErrOperatorAttemptContext
 	}
 	finding, digest, err := a.terminalFindingSubjectTx(ctx, tx, record, findingID)
 	if err != nil {

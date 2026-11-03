@@ -223,3 +223,25 @@ func TestFindingDispositionViewRevalidatesTerminalSubjectAndCurrentAttribution(t
 		t.Fatalf("restart finding view: %#v %v", replayed, err)
 	}
 }
+
+func TestFindingDispositionViewBindsExactSCMCommentContext(t *testing.T) {
+	a, intent, _, participant, command, _ := findingDispositionFixture(t)
+	ctx := context.Background()
+	change := intent.Attempt.Change
+	view, err := a.FindingDispositionInChange(ctx, participant, command.AttemptID, command.Payload.FindingID, change)
+	if err != nil || view.AttemptID != command.AttemptID {
+		t.Fatalf("exact SCM context rejected: %#v %v", view, err)
+	}
+	for _, mutate := range []func(*review.ChangeKey){
+		func(c *review.ChangeKey) { c.Provider = "gitlab" },
+		func(c *review.ChangeKey) { c.Host = "github.example.com" },
+		func(c *review.ChangeKey) { c.RepositoryID = "org/other" },
+		func(c *review.ChangeKey) { c.ChangeNumber = "999" },
+	} {
+		wrong := change
+		mutate(&wrong)
+		if got, err := a.FindingDispositionInChange(ctx, participant, command.AttemptID, command.Payload.FindingID, wrong); !errors.Is(err, ErrOperatorAttemptContext) || got != nil {
+			t.Fatalf("mismatched SCM context accepted: %+v %#v %v", wrong, got, err)
+		}
+	}
+}
