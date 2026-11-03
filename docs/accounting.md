@@ -879,6 +879,7 @@ obtaining final usage from an external bill or other qualified evidence:
 
 ```sh
 export REVIEW_OPERATOR_TOKEN="$ALICE_OPERATOR_TOKEN"
+7review actions <exact-attempt-id> --server http://localhost:8080 --json
 7review settle-usage <exact-action-id> --command-id <stable-command-id> --input-tokens <final-input> --output-tokens <final-output> --money-micro <final-cost> --active-ms <final-active-time> --evidence-id <stable-evidence-id> --reason "reconciled provider invoice" --server http://localhost:8080 --json
 ```
 
@@ -899,9 +900,20 @@ integrity incident, then blocks further spending; it is not silently clipped.
 This control does not cancel an in-flight provider request, prove that a prepared
 action was unsent, or create a refund. Those release paths require their own
 durable evidence. It is also not a production receipt-verifier adapter: the
-operator remains responsible for qualifying the external evidence. Exact action
-IDs currently require operational database/API inspection; a bounded
-repository-scoped action projection is still required for a complete workflow.
+operator remains responsible for qualifying the external evidence.
+
+`GET /operator/actions?attempt_id=<exact-attempt-id>`, the `actions` CLI command,
+and `/actions` in the TUI expose the discovery path. They require the exact
+repository `operator` role; reviewer and participant roles are insufficient. The
+closed response is capped at 256 actions and contains lifecycle state,
+provider/model/role/step, route version/currency, reserved upper usage, optional
+validated actual usage/receipt/evidence, integrity status and creation time. It
+revalidates the canonical attempt binding, request and route digests, exact upper
+bound, final receipt and any `not_executed` release proof before returning the
+whole list. Overflow or corruption fails closed instead of returning a partial
+view. Payloads, prompts, request digests, job/claim tokens, workers, leases and
+fences are never exposed. This projection is status only and grants no dispatch,
+settlement, cancellation or refund authority.
 
 ## Verification
 
@@ -923,8 +935,8 @@ holds, database outage, incompatible schema and actual guarded provider dispatch
 ## Still Required
 
 - Production receipt-verifier adapters and live provider evidence qualification;
-  authenticated exact-action settlement exists, but bounded action discovery is
-  still required for the operator workflow.
+  authenticated exact-action discovery and settlement exist, but they do not
+  qualify external evidence automatically.
 - Live recovery-adapter qualification, prepared cancellation, validated continuation and provider currentness
   end to end; prospective authority reconfiguration currently fails closed.
 - Complete stable-provider-ID/alias migration and rename qualification, including

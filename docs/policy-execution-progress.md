@@ -1627,10 +1627,18 @@ This is an incremental behavior ledger, not a completion declaration.
   identical-command reconciliation. Subprocess and race tests exercise the real
   dispatch path.
 - This is operator-attested reconciliation, not a production provider receipt
-  adapter, cancellation proof or refund. A bounded repository-scoped projection
-  for discovering unsettled actions is still missing, as are live evidence
-  qualification and the remaining continuation/recovery exits. Ceilings and alpha
-  remain unfinished.
+  adapter, cancellation proof or refund. The follow-up bounded projection lists
+  at most 256 exact actions only for a repository operator. It revalidates the
+  attempt binding, immutable request and route, upper bound, final receipt and
+  unused-release proof, and exposes no prompt, payload, digest, claim, lease or
+  fence. Corruption and overflow fail the whole read closed.
+- `GET /operator/actions`, its strict client, `7review actions` and `/actions`
+  provide exact action discovery without database access. Reviewer/participant
+  roles are denied; CLI/TUI commands require an explicit attempt and cannot
+  override the pinned terminal server or infer the selected run. Real PostgreSQL,
+  HTTP, subprocess and race tests cover unsettled-to-settled rereads.
+- Live evidence qualification and the remaining continuation/recovery exits stay
+  open. Ceilings and alpha remain unfinished.
 
 ## Method File Example
 

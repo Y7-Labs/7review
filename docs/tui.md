@@ -42,6 +42,7 @@ Canonical accounting controls are separate from those legacy run commands:
 
 ```sh
 7review attempt <exact-attempt-id> --server http://localhost:8080 --json
+7review actions <exact-attempt-id> --server http://localhost:8080 --json
 7review cancel-attempt <exact-attempt-id> --command-id <stable-id> --expected-version <version> --revision <revision> --reason "operator stop" --server http://localhost:8080
 7review authorize-publication <exact-attempt-id> --command-id <stable-id> --expected-version <version> --revision <revision> --assessment-digest <sha256> --artifact-digest <sha256> --provider github --host github.com --repository-id <owner/repo> --change-number <number> --artifact-class assessment --reason "reviewed exact assessment" --server http://localhost:8080
 7review settle-usage <exact-action-id> --command-id <stable-id> --input-tokens <n> --output-tokens <n> --money-micro <n> --active-ms <n> --evidence-id <id> --reason "reconciled provider invoice" --server http://localhost:8080
@@ -61,11 +62,12 @@ fixed composer at the bottom. Type slash commands directly in the composer:
 `/draft`, `/memory`, `/approve --report-file final.md`, and
 `/publish-final --report-file final.md`. Type a normal message when a run is
 active to stream model chat through the running agent's `/chat/stream` endpoint.
-`/attempt <exact-attempt-id>`, `/cancel-attempt ...`,
+`/attempt <exact-attempt-id>`, `/actions <exact-attempt-id>`, `/cancel-attempt ...`,
 `/authorize-publication ...`, and `/settle-usage <exact-action-id> ...` are also
 available without a selected run. Their flags match the CLI except that the TUI's
-server is pinned. Usage settlement requires an exact action ID and never derives
-one from the selected run.
+server is pinned. `/actions` provides the bounded operator-only action IDs and
+reservation/settlement state needed by usage settlement. Both commands require
+exact identifiers and never derive one from the selected run.
 Interrupting these requests cancels the HTTP context, not an already-committed
 server action; an unknown outcome is reported for exact-command reconciliation.
 Press `r` to refresh immediately, `?` to show or hide command help, and `q`,
