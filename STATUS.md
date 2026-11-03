@@ -129,8 +129,8 @@ or obsolete outbox operation after restart and obsoletes stale pending authority
 failing closed before fresh inbox claims when that journal is unavailable. Schema
 v21 adds fenced pre-send claims and turns expired sending markers uncertain without
 reclaim. Schema v22 adds exact fenced provider-receipt completion and refuses to
-invent receipts for legacy delivered rows. Provider invocation and remote
-The service now schedules one fenced provider invocation and lookup-only remote
+invent receipts for legacy delivered rows. The service now schedules one fenced
+provider invocation and lookup-only remote
 reconciliation. GitHub and GitLab expose an exact
 operation/payload-marked publish-and-lookup contract for that worker, and exact
 lookup receipts can resolve durable uncertain rows without resend. Compose forwards the
