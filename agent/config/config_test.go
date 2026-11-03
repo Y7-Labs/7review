@@ -39,6 +39,29 @@ func TestLoadConfigOperatorDirectoryIsExplicitAndRejectsInvalidGrants(t *testing
 	}
 }
 
+func TestLoadConfigSCMOperatorBindingsRequireImmutableActorIDsAndTokenEnvs(t *testing.T) {
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "service-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("POLICY_V2_MODE", "legacy")
+	t.Setenv("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON", `{"github:123":"ALICE_TOKEN","gitlab:456":"BOB_TOKEN"}`)
+	t.Setenv("GITHUB_BOT_LOGIN", "seven-review[bot]")
+	t.Setenv("GITLAB_BOT_USERNAME", "seven-review-bot")
+	c, err := LoadConfig()
+	if err != nil || c.SCMOperatorTokenEnvs["github:123"] != "ALICE_TOKEN" || c.SCMOperatorTokenEnvs["gitlab:456"] != "BOB_TOKEN" || c.GitHubBotLogin != "seven-review[bot]" || c.GitLabBotUsername != "seven-review-bot" {
+		t.Fatalf("SCM actor bindings: %#v %v", c, err)
+	}
+	for _, raw := range []string{"{}", `{"github:alice":"ALICE_TOKEN"}`, `{"github:0":"ALICE_TOKEN"}`, `{"github:123":"alice"}`, `{"github:123":"ALICE_TOKEN","github:123":"BOB_TOKEN"}`, `{"github:123":"ALICE_TOKEN"} {}`} {
+		t.Setenv("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON", raw)
+		if _, err = LoadConfig(); err == nil || !strings.Contains(err.Error(), "REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON") {
+			t.Fatalf("unsafe SCM actor binding accepted: %s %v", raw, err)
+		}
+	}
+}
+
 func TestEnforcedRuntimeRequiresValidOperatorCeilings(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "token")
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")

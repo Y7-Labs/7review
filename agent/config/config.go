@@ -1,8 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,6 +32,9 @@ type Config struct {
 	IdleTimeout                 int
 	APIToken                    string
 	Operators                   *review.OperatorDirectory
+	SCMOperatorTokenEnvs        map[string]string
+	GitHubBotLogin              string
+	GitLabBotUsername           string
 	WebhookWorkers              int
 	WebhookQueueSize            int
 	WebhookJobTimeout           int
@@ -107,6 +114,8 @@ func LoadConfig() (*Config, error) {
 		WriteTimeout:                getEnvInt("HTTP_WRITE_TIMEOUT_MS", 120000),
 		IdleTimeout:                 getEnvInt("HTTP_IDLE_TIMEOUT_MS", 120000),
 		APIToken:                    os.Getenv("REVIEW_API_TOKEN"),
+		GitHubBotLogin:              strings.TrimSpace(os.Getenv("GITHUB_BOT_LOGIN")),
+		GitLabBotUsername:           strings.TrimSpace(os.Getenv("GITLAB_BOT_USERNAME")),
 		WebhookWorkers:              getEnvInt("WEBHOOK_WORKERS", 4),
 		WebhookQueueSize:            getEnvInt("WEBHOOK_QUEUE_SIZE", 128),
 		WebhookJobTimeout:           getEnvInt("WEBHOOK_JOB_TIMEOUT_MS", 15*60*1000),
@@ -168,6 +177,13 @@ func LoadConfig() (*Config, error) {
 			return nil, fmt.Errorf("REVIEW_OPERATOR_GRANTS_JSON: %w", err)
 		}
 		c.Operators = directory
+	}
+	if raw := strings.TrimSpace(os.Getenv("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON")); raw != "" {
+		bindings, err := decodeSCMOperatorTokenEnvs(raw)
+		if err != nil {
+			return nil, fmt.Errorf("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON: %w", err)
+		}
+		c.SCMOperatorTokenEnvs = bindings
 	}
 	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {
 		limits, err := policy.DecodeOperatorCeilings([]byte(raw))
@@ -253,6 +269,40 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return c, nil
+}
+
+var scmActorBindingPattern = regexp.MustCompile(`^(github|gitlab):[1-9][0-9]{0,19}$`)
+var scmTokenEnvPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
+
+func decodeSCMOperatorTokenEnvs(data string) (map[string]string, error) {
+	if len(data) == 0 || len(data) > 16<<10 {
+		return nil, fmt.Errorf("invalid SCM operator bindings")
+	}
+	decoder := json.NewDecoder(bytes.NewBufferString(data))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return nil, fmt.Errorf("invalid SCM operator bindings")
+	}
+	out := map[string]string{}
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		key, ok := keyToken.(string)
+		if err != nil || !ok || !scmActorBindingPattern.MatchString(key) || out[key] != "" {
+			return nil, fmt.Errorf("invalid or duplicate SCM actor binding")
+		}
+		var envName string
+		if err := decoder.Decode(&envName); err != nil || !scmTokenEnvPattern.MatchString(envName) {
+			return nil, fmt.Errorf("invalid SCM operator credential environment")
+		}
+		out[key] = envName
+	}
+	if token, err = decoder.Token(); err != nil || token != json.Delim('}') || len(out) == 0 {
+		return nil, fmt.Errorf("invalid SCM operator bindings")
+	}
+	if token, err = decoder.Token(); err != io.EOF || token != nil {
+		return nil, fmt.Errorf("invalid SCM operator bindings")
+	}
+	return out, nil
 }
 
 func defaultBaseURL(provider string) string {
