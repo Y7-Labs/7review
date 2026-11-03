@@ -110,6 +110,39 @@ finding IDs when that authority exists. Invalid or absent identities never produ
 a canonical reply template; credentials and finding digests are not sent through
 the channel.
 
+### Native SCM Finding Controls
+
+Signed GitHub `issue_comment` events on pull requests and authenticated GitLab
+`note` events on merge requests can submit the same canonical finding disposition
+without a separate chat channel. Configure the bot login used in the leading
+mention and map immutable provider user IDs to operator credential environment
+names:
+
+```sh
+GITHUB_BOT_LOGIN='seven-review[bot]'
+GITLAB_BOT_USERNAME='seven-review-bot'
+REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON='{"github:123456":"ALICE_OPERATOR_TOKEN","gitlab:987654":"BOB_OPERATOR_TOKEN"}'
+```
+
+The mapped credential must also be declared in `REVIEW_OPERATOR_GRANTS_JSON`.
+Usernames never establish authority, mappings without the corresponding bot
+identity fail startup, and self-authored bot comments are ignored. The exact
+comment form is:
+
+```text
+@seven-review[bot] disposition-finding <attempt-id> <finding-id> <accepted|rejected|disputed> <command-id>
+<reason>
+```
+
+The mention must be the first token. Prose, embedded mentions, issue comments,
+non-MR notes and unknown commands do not execute. The signed comment's provider,
+trusted host, repository/project ID and PR/MR number must exactly match the
+attempt's immutable change binding. A valid repository role on a different change
+does not suffice. `participant` may record `disputed`; `accepted` and `rejected`
+remain limited to reviewer/operator authority. Duplicate webhook deliveries are
+suppressed in process, while a new delivery carrying the same unchanged command
+ID replays the durable receipt without model, tool or publication work.
+
 ### SimpleX
 
 Start `simplex-chat -p 5225` with the bot's existing chat database. Set

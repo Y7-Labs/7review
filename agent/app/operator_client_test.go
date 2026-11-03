@@ -137,6 +137,11 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatal(err)
 	}
 	s.cfg.Operators = directory
+	s.cfg.GitHubAPIURL = "https://api.github.com"
+	s.cfg.GitHubToken = "github-token"
+	s.cfg.GitHubWebhookSecret = "github-webhook-secret"
+	s.cfg.GitHubBotLogin = "seven-review[bot]"
+	s.cfg.SCMOperatorTokenEnvs = map[string]string{"github:12345": "PARTICIPANT_TOKEN"}
 	accepted := inboxWebhook(t, s, inboxBody, "publication-client")
 	if accepted.Code != http.StatusAccepted {
 		t.Fatalf("accept: %d %s", accepted.Code, accepted.Body.String())
@@ -266,9 +271,52 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	if err != nil || findingView.Current == nil || findingView.Current.CommandID != "finding-channel" || findingView.Current.ActorID != "participant" || findingView.Current.Reason != "The cited branch remains unreachable" || findingView.ControlVersion != channelResult.ControlVersion {
 		t.Fatalf("channel current disposition: %+v %v", findingView, err)
 	}
+	nativeComment := func(delivery, commentID, actorID, actorName, repository, change, commandID string) *httptest.ResponseRecorder {
+		text := "@seven-review[bot] disposition-finding " + admission.AttemptID + " " + disposition.Payload.FindingID + " disputed " + commandID + "\nThe native SCM evidence keeps the dispute open"
+		body := fmt.Sprintf(`{"action":"created","repository":{"full_name":%q},"issue":{"number":%s,"pull_request":{"url":"https://api.github.com/pull"}},"sender":{"id":%s,"login":%q},"comment":{"id":%s,"body":%q}}`, repository, change, actorID, actorName, commentID, text)
+		req := httptest.NewRequest(http.MethodPost, "/webhook/github", strings.NewReader(body))
+		req.Header.Set("X-GitHub-Event", "issue_comment")
+		req.Header.Set("X-GitHub-Delivery", delivery)
+		req.Header.Set("X-Hub-Signature-256", githubSignature(s.cfg.GitHubWebhookSecret, body))
+		rec := httptest.NewRecorder()
+		s.mux.ServeHTTP(rec, req)
+		return rec
+	}
+	native := nativeComment("native-delivery-1", "9001", "12345", "participant", "org/repo", "7", "finding-native")
+	if native.Code != http.StatusOK {
+		t.Fatalf("native SCM disposition: %d %s", native.Code, native.Body.String())
+	}
+	var nativeResult channel.InboundResult
+	if err = json.Unmarshal(native.Body.Bytes(), &nativeResult); err != nil || !nativeResult.Dispositioned || nativeResult.ActorID != "participant" || nativeResult.ControlVersion != channelResult.ControlVersion+1 {
+		t.Fatalf("native SCM disposition result: %+v %v", nativeResult, err)
+	}
+	nativeReplay := nativeComment("native-delivery-2", "9002", "12345", "participant", "org/repo", "7", "finding-native")
+	var replayResult channel.InboundResult
+	if nativeReplay.Code != http.StatusOK || json.Unmarshal(nativeReplay.Body.Bytes(), &replayResult) != nil || replayResult.ControlVersion != nativeResult.ControlVersion || replayResult.ActorID != nativeResult.ActorID {
+		t.Fatalf("durable native SCM replay: %d %s", nativeReplay.Code, nativeReplay.Body.String())
+	}
+	nativeDuplicate := nativeComment("native-delivery-2", "9002", "12345", "participant", "org/repo", "7", "finding-native")
+	if nativeDuplicate.Code != http.StatusAccepted || !strings.Contains(nativeDuplicate.Body.String(), "duplicate SCM comment delivery") {
+		t.Fatalf("duplicate native delivery: %d %s", nativeDuplicate.Code, nativeDuplicate.Body.String())
+	}
+	if wrong := nativeComment("native-wrong-change", "9003", "12345", "participant", "org/repo", "8", "finding-native-wrong"); wrong.Code != http.StatusConflict {
+		t.Fatalf("wrong PR context accepted: %d %s", wrong.Code, wrong.Body.String())
+	}
+	if unknown := nativeComment("native-unknown", "9004", "99999", "participant", "org/repo", "7", "finding-native-unknown"); unknown.Code != http.StatusUnauthorized {
+		t.Fatalf("unknown native actor accepted: %d %s", unknown.Code, unknown.Body.String())
+	}
+	if self := nativeComment("native-self", "9005", "12345", "seven-review[bot]", "org/repo", "7", "finding-native-self"); self.Code != http.StatusAccepted {
+		t.Fatalf("bot self-comment not ignored: %d %s", self.Code, self.Body.String())
+	}
+	if provider.calls.Load() != beforeCalls {
+		t.Fatalf("native SCM disposition dispatched provider I/O: before=%d after=%d", beforeCalls, provider.calls.Load())
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 3 {
+		t.Fatalf("native SCM disposition history: %d %v", dispositions, err)
+	}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "reviewer-secret")
 	view, err = client.Attempt(context.Background(), admission.AttemptID)
-	if err != nil || view.ControlVersion != channelResult.ControlVersion {
+	if err != nil || view.ControlVersion != nativeResult.ControlVersion {
 		t.Fatalf("updated attempt view: %+v %v", view, err)
 	}
 	draftDigest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(projection.Source.Report.Draft)))

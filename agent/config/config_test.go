@@ -62,6 +62,29 @@ func TestLoadConfigSCMOperatorBindingsRequireImmutableActorIDsAndTokenEnvs(t *te
 	}
 }
 
+func TestLoadConfigSCMOperatorBindingsRequireProviderBotIdentity(t *testing.T) {
+	t.Setenv("OLLAMA_BASE_URL", "http://ollama:11434")
+	t.Setenv("GITHUB_TOKEN", "token")
+	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")
+	t.Setenv("REVIEW_API_TOKEN", "service-token")
+	t.Setenv("HEADROOM_URL", "http://headroom")
+	t.Setenv("MEMPALACE_URL", "http://mempalace")
+	t.Setenv("POLICY_V2_MODE", "legacy")
+	for _, tc := range []struct {
+		bindings, githubBot, gitlabBot string
+	}{
+		{bindings: `{"github:123":"ALICE_TOKEN"}`},
+		{bindings: `{"gitlab:456":"BOB_TOKEN"}`, githubBot: "seven-review[bot]"},
+	} {
+		t.Setenv("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON", tc.bindings)
+		t.Setenv("GITHUB_BOT_LOGIN", tc.githubBot)
+		t.Setenv("GITLAB_BOT_USERNAME", tc.gitlabBot)
+		if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "bot identity") {
+			t.Fatalf("mapping without provider bot identity accepted: %+v %v", tc, err)
+		}
+	}
+}
+
 func TestEnforcedRuntimeRequiresValidOperatorCeilings(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "token")
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "secret")

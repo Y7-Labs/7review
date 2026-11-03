@@ -24,6 +24,30 @@ type nativeSCMComment struct {
 
 type nativeSCMCommentHandler func(context.Context, nativeSCMComment) (channel.InboundResult, int, error)
 
+func nativeSCMDispositionMessage(botName string, comment nativeSCMComment) (channel.InboundMessage, bool, error) {
+	botName = strings.TrimSpace(strings.TrimPrefix(botName, "@"))
+	text := strings.TrimSpace(comment.Text)
+	lines := strings.Split(text, "\n")
+	fields := strings.Fields(lines[0])
+	if botName == "" || len(fields) == 0 || !strings.EqualFold(fields[0], "@"+botName) {
+		return channel.InboundMessage{}, false, nil
+	}
+	if len(fields) < 2 || !strings.EqualFold(fields[1], "disposition-finding") {
+		return channel.InboundMessage{}, true, errors.New("explicit bot mention requires a disposition-finding command")
+	}
+	firstLine := "/" + strings.Join(fields[1:], " ")
+	if len(lines) > 1 {
+		firstLine += "\n" + strings.Join(lines[1:], "\n")
+	}
+	return channel.InboundMessage{
+		Channel:       "scm_" + comment.Provider,
+		ExternalID:    comment.CommentID,
+		SenderID:      comment.ActorID,
+		SenderAddress: comment.ActorName,
+		Text:          firstLine,
+	}, true, nil
+}
+
 func handleGitHubIssueComment(w http.ResponseWriter, r *http.Request, body []byte, handlers []nativeSCMCommentHandler) {
 	var event struct {
 		Action     string `json:"action"`

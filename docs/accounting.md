@@ -178,6 +178,15 @@ between principals. Duplicate/unknown fields, duplicate grants, missing secrets
 and ambiguous credential mappings fail configuration loading. The document is
 bounded to 64 KiB and is not repository policy.
 
+Native GitHub/GitLab comment controls use a second trusted mapping,
+`REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON`, from immutable provider numeric user IDs
+(`github:<id>` or `gitlab:<id>`) to the same credential environment names. The
+webhook signature/token authenticates the provider delivery; it does not grant an
+operator role. The mapped secret is authenticated by this directory, then the
+ledger atomically verifies the exact provider, trusted host, repository and change
+number before exposing the finding subject. Bot usernames are mention and
+self-loop identities only and are never authorization identities.
+
 `GET /operator/attempt?attempt_id=<exact-attempt-id>` requires `operator` or
 `reviewer` for that repository. Supply the mapped principal's credential in
 `Authorization: Bearer <secret>` (or `X-7review-Token`). Identical values in both

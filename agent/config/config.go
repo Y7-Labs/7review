@@ -183,6 +183,14 @@ func LoadConfig() (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON: %w", err)
 		}
+		for actor := range bindings {
+			switch {
+			case strings.HasPrefix(actor, "github:") && c.GitHubBotLogin == "":
+				return nil, fmt.Errorf("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON: github bot identity is required")
+			case strings.HasPrefix(actor, "gitlab:") && c.GitLabBotUsername == "":
+				return nil, fmt.Errorf("REVIEW_SCM_OPERATOR_TOKEN_ENVS_JSON: gitlab bot identity is required")
+			}
+		}
 		c.SCMOperatorTokenEnvs = bindings
 	}
 	if raw := strings.TrimSpace(os.Getenv("POLICY_RUNTIME_CEILINGS_JSON")); raw != "" {

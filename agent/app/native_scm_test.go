@@ -6,8 +6,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Y4NN777/7review/agent/channel"
+	"github.com/Y4NN777/7review/agent/config"
 	"github.com/Y4NN777/7review/agent/review"
 )
 
@@ -117,5 +119,61 @@ func TestGitLabWebhookRejectsConflictingActorIDs(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest || called {
 		t.Fatalf("conflicting actor IDs must fail closed: status=%d called=%v", rec.Code, called)
+	}
+}
+
+func TestNativeSCMDispositionRequiresExactLeadingBotMention(t *testing.T) {
+	comment := nativeSCMComment{Provider: "github", ActorID: "123", ActorName: "alice", Text: "@seven-review[bot] disposition-finding attempt-1 finding-1 disputed command-1\nThe evidence is stale."}
+	msg, mentioned, err := nativeSCMDispositionMessage("seven-review[bot]", comment)
+	if err != nil || !mentioned || msg.SenderID != "123" || msg.Channel != "scm_github" || !strings.HasPrefix(msg.Text, "/disposition-finding ") {
+		t.Fatalf("exact mention not normalized: %#v mentioned=%v err=%v", msg, mentioned, err)
+	}
+	result := channel.EvaluateInbound(msg)
+	if result.Command != "disposition-finding" || result.AttemptID != "attempt-1" || result.FindingID != "finding-1" || result.CommandID != "command-1" || result.Request != "The evidence is stale." {
+		t.Fatalf("canonical command not preserved: %#v", result)
+	}
+	for _, text := range []string{
+		"disposition-finding attempt-1 finding-1 disputed command-1\nreason",
+		"please @seven-review[bot] disposition-finding attempt-1 finding-1 disputed command-1\nreason",
+		"@other disposition-finding attempt-1 finding-1 disputed command-1\nreason",
+	} {
+		comment.Text = text
+		if _, mentioned, err = nativeSCMDispositionMessage("seven-review[bot]", comment); err != nil || mentioned {
+			t.Fatalf("non-leading mention became a command: %q mentioned=%v err=%v", text, mentioned, err)
+		}
+	}
+	comment.Text = "@seven-review[bot] please review this"
+	if _, mentioned, err = nativeSCMDispositionMessage("seven-review[bot]", comment); err == nil || !mentioned {
+		t.Fatalf("ambiguous explicit bot mention accepted: mentioned=%v err=%v", mentioned, err)
+	}
+}
+
+func TestNativeSCMCommentFailsClosedBeforeLedgerExecution(t *testing.T) {
+	t.Setenv("ALICE_TOKEN", "ALICE_TOKEN-secret")
+	s := &Server{
+		cfg:  &config.Config{Operators: appOperators(t), GitHubBotLogin: "seven-review[bot]", SCMOperatorTokenEnvs: map[string]string{"github:123": "ALICE_TOKEN"}},
+		seen: map[string]time.Time{},
+	}
+	valid := nativeSCMComment{Provider: "github", ActorID: "123", ActorName: "alice", ProjectID: "org/repo", ChangeID: "7", CommentID: "99", Text: "@seven-review[bot] disposition-finding attempt-1 finding-1 disputed command-1\nReason"}
+	if _, status, err := s.handleNativeSCMComment(context.Background(), valid); status != http.StatusServiceUnavailable || err == nil {
+		t.Fatalf("missing durable authority did not fail closed: status=%d err=%v", status, err)
+	}
+	unknown := valid
+	unknown.ActorID = "456"
+	unknown.CommentID = "100"
+	if _, status, err := s.handleNativeSCMComment(context.Background(), unknown); status != http.StatusUnauthorized || err == nil {
+		t.Fatalf("unmapped immutable actor accepted: status=%d err=%v", status, err)
+	}
+	self := valid
+	self.ActorName = "seven-review[bot]"
+	self.CommentID = "101"
+	if result, status, err := s.handleNativeSCMComment(context.Background(), self); status != http.StatusAccepted || err != nil || result.Dispositioned {
+		t.Fatalf("self-authored comment was executed: %#v status=%d err=%v", result, status, err)
+	}
+	prose := valid
+	prose.CommentID = "102"
+	prose.Text = "please review this finding"
+	if result, status, err := s.handleNativeSCMComment(context.Background(), prose); status != http.StatusAccepted || err != nil || result.Dispositioned {
+		t.Fatalf("unmentioned prose was executed: %#v status=%d err=%v", result, status, err)
 	}
 }
