@@ -133,7 +133,8 @@ invent receipts for legacy delivered rows. The service now schedules one fenced
 provider invocation and lookup-only remote
 reconciliation. GitHub and GitLab expose an exact
 operation/payload-marked publish-and-lookup contract for that worker, and exact
-lookup receipts can resolve durable uncertain rows without resend. Compose forwards the
+lookup receipts can resolve durable uncertain rows without resend. Changed provider
+endpoint hosts fail before publish or lookup. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.

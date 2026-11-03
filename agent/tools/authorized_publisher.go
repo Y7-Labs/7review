@@ -49,6 +49,18 @@ func (r AuthorizedPublicationRequest) validate(provider string) (int, error) {
 	return change, nil
 }
 
+func (r AuthorizedPublicationRequest) validateEndpoint(provider, endpoint string) (int, error) {
+	change, err := r.validate(provider)
+	if err != nil {
+		return 0, err
+	}
+	host, err := review.ProviderHost(provider, endpoint)
+	if err != nil || host != r.Destination.Host {
+		return 0, errors.New("tools: authorized publication endpoint host changed")
+	}
+	return change, nil
+}
+
 func authorizedPublicationBody(r AuthorizedPublicationRequest) string {
 	marker := fmt.Sprintf("%s kind=final operation=%s payload=%s -->", botMarkerPrefix, r.OperationID, r.PayloadDigest)
 	if r.Payload == "" {
@@ -62,12 +74,12 @@ func authorizedReceipt(provider, remoteID, remoteURL string, r AuthorizedPublica
 }
 
 func (c *GitHubClient) PublishAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (AuthorizedPublicationReceipt, error) {
-	change, err := req.validate("github")
-	if err != nil {
-		return AuthorizedPublicationReceipt{}, err
-	}
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return AuthorizedPublicationReceipt{}, errors.New("github: authorized publisher is not configured")
+	}
+	change, err := req.validateEndpoint("github", c.BaseURL)
+	if err != nil {
+		return AuthorizedPublicationReceipt{}, err
 	}
 	path := fmt.Sprintf("/repos/%s/issues/%d/comments", repoPath(req.Destination.RepositoryID), change)
 	var comments []gitHubComment
@@ -103,12 +115,12 @@ func (c *GitHubClient) PublishAuthorized(ctx context.Context, req AuthorizedPubl
 }
 
 func (c *GitHubClient) LookupAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (*AuthorizedPublicationReceipt, error) {
-	change, err := req.validate("github")
-	if err != nil {
-		return nil, err
-	}
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return nil, errors.New("github: authorized publisher is not configured")
+	}
+	change, err := req.validateEndpoint("github", c.BaseURL)
+	if err != nil {
+		return nil, err
 	}
 	path := fmt.Sprintf("/repos/%s/issues/%d/comments", repoPath(req.Destination.RepositoryID), change)
 	var comments []gitHubComment
@@ -130,12 +142,12 @@ func (c *GitHubClient) LookupAuthorized(ctx context.Context, req AuthorizedPubli
 }
 
 func (c *GitLabClient) PublishAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (AuthorizedPublicationReceipt, error) {
-	change, err := req.validate("gitlab")
-	if err != nil {
-		return AuthorizedPublicationReceipt{}, err
-	}
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return AuthorizedPublicationReceipt{}, errors.New("gitlab: authorized publisher is not configured")
+	}
+	change, err := req.validateEndpoint("gitlab", c.BaseURL)
+	if err != nil {
+		return AuthorizedPublicationReceipt{}, err
 	}
 	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%d/notes", url.PathEscape(req.Destination.RepositoryID), change)
 	var notes []gitLabNote
@@ -171,12 +183,12 @@ func (c *GitLabClient) PublishAuthorized(ctx context.Context, req AuthorizedPubl
 }
 
 func (c *GitLabClient) LookupAuthorized(ctx context.Context, req AuthorizedPublicationRequest) (*AuthorizedPublicationReceipt, error) {
-	change, err := req.validate("gitlab")
-	if err != nil {
-		return nil, err
-	}
 	if c == nil || c.BaseURL == "" || c.Token == "" {
 		return nil, errors.New("gitlab: authorized publisher is not configured")
+	}
+	change, err := req.validateEndpoint("gitlab", c.BaseURL)
+	if err != nil {
+		return nil, err
 	}
 	path := fmt.Sprintf("/api/v4/projects/%s/merge_requests/%d/notes", url.PathEscape(req.Destination.RepositoryID), change)
 	var notes []gitLabNote

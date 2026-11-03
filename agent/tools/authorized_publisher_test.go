@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Y4NN777/7review/agent/review"
@@ -11,7 +12,7 @@ import (
 
 func TestGitHubAuthorizedPublicationReturnsAndReconcilesExactRemoteReceipt(t *testing.T) {
 	client := NewGitHubClient("http://agent.test", "token")
-	req := AuthorizedPublicationRequest{OperationID: "operation-1", PayloadDigest: digestText("exact report"), Destination: review.PublicationDestination{Provider: "github", Host: "github.com", RepositoryID: "o/r", ChangeNumber: "7", ArtifactClass: "assessment"}, Payload: "exact report"}
+	req := AuthorizedPublicationRequest{OperationID: "operation-1", PayloadDigest: digestText("exact report"), Destination: review.PublicationDestination{Provider: "github", Host: "agent.test", RepositoryID: "o/r", ChangeNumber: "7", ArtifactClass: "assessment"}, Payload: "exact report"}
 	created := false
 	client.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
@@ -44,7 +45,7 @@ func TestGitHubAuthorizedPublicationReturnsAndReconcilesExactRemoteReceipt(t *te
 
 func TestGitLabAuthorizedPublicationUpdatesFinalAndRequiresExactPayload(t *testing.T) {
 	client := NewGitLabClient("http://agent.test", "token")
-	req := AuthorizedPublicationRequest{OperationID: "operation-2", PayloadDigest: digestText("exact report"), Destination: review.PublicationDestination{Provider: "gitlab", Host: "gitlab.test", RepositoryID: "group/project", ChangeNumber: "9", ArtifactClass: "assessment"}, Payload: "exact report"}
+	req := AuthorizedPublicationRequest{OperationID: "operation-2", PayloadDigest: digestText("exact report"), Destination: review.PublicationDestination{Provider: "gitlab", Host: "agent.test", RepositoryID: "group/project", ChangeNumber: "9", ArtifactClass: "assessment"}, Payload: "exact report"}
 	updated := false
 	client.HTTPClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
@@ -68,5 +69,41 @@ func TestGitLabAuthorizedPublicationUpdatesFinalAndRequiresExactPayload(t *testi
 	found, err := client.LookupAuthorized(context.Background(), req)
 	if err != nil || found != nil {
 		t.Fatalf("changed remote payload reconciled as exact: %#v %v", found, err)
+	}
+}
+
+func TestAuthorizedPublicationRejectsEndpointHostDriftBeforeProviderIO(t *testing.T) {
+	githubCalls, gitlabCalls := &atomic.Int32{}, &atomic.Int32{}
+	github := NewGitHubClient("https://api.github.example", "token")
+	github.HTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		githubCalls.Add(1)
+		return testResponse(http.StatusInternalServerError, "unexpected"), nil
+	})}
+	gitlab := NewGitLabClient("https://gitlab.example", "token")
+	gitlab.HTTPClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		gitlabCalls.Add(1)
+		return testResponse(http.StatusInternalServerError, "unexpected"), nil
+	})}
+	for _, tc := range []struct {
+		name      string
+		publisher AuthorizedPublisher
+		provider  string
+		calls     *atomic.Int32
+	}{
+		{name: "github", publisher: github, provider: "github", calls: githubCalls},
+		{name: "gitlab", publisher: gitlab, provider: "gitlab", calls: gitlabCalls},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := AuthorizedPublicationRequest{OperationID: "operation-host", PayloadDigest: digestText("report"), Destination: review.PublicationDestination{Provider: tc.provider, Host: "authorized.example", RepositoryID: "o/r", ChangeNumber: "7", ArtifactClass: "assessment"}, Payload: "report"}
+			if receipt, err := tc.publisher.PublishAuthorized(context.Background(), req); err == nil || receipt != (AuthorizedPublicationReceipt{}) {
+				t.Fatalf("host drift reached publish: %#v %v", receipt, err)
+			}
+			if receipt, err := tc.publisher.LookupAuthorized(context.Background(), req); err == nil || receipt != nil {
+				t.Fatalf("host drift reached lookup: %#v %v", receipt, err)
+			}
+			if tc.calls.Load() != 0 {
+				t.Fatalf("host drift performed %d provider requests", tc.calls.Load())
+			}
+		})
 	}
 }
