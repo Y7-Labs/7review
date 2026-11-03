@@ -33,7 +33,9 @@ func (p *lostAcknowledgmentPublisher) PublishAuthorized(_ context.Context, req t
 }
 
 func (p *lostAcknowledgmentPublisher) LookupAuthorized(_ context.Context, req tools.AuthorizedPublicationRequest) (*tools.AuthorizedPublicationReceipt, error) {
-	p.lookups.Add(1)
+	if p.lookups.Add(1) == 1 {
+		return nil, nil
+	}
 	if p.receipt.PayloadDigest != req.PayloadDigest {
 		return nil, nil
 	}
@@ -253,10 +255,23 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 		t.Fatal(err)
 	}
 	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
-		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil && operationState == "uncertain" {
-			// The lookup and durable completion may happen in the same maintenance pass.
+		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil && operationState == "uncertain" && publicationProvider.lookups.Load() == 1 {
+			break
 		}
-		if err == nil && operationState == "delivered" {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if operationState != "uncertain" || publicationProvider.lookups.Load() != 1 {
+		t.Fatalf("missing remote effect was not durably deferred: state=%q lookups=%d err=%v", operationState, publicationProvider.lookups.Load(), err)
+	}
+	time.Sleep(600 * time.Millisecond)
+	if publicationProvider.lookups.Load() != 1 {
+		t.Fatalf("deferred uncertain operation was hot-polled: lookups=%d", publicationProvider.lookups.Load())
+	}
+	if _, err = db.Exec(`UPDATE budget_publication_operations SET reconcile_after=clock_timestamp()-interval '1 second' WHERE command_id=$1`, command.CommandID); err != nil {
+		t.Fatal(err)
+	}
+	for until := time.Now().Add(5 * time.Second); time.Now().Before(until); {
+		if err = db.QueryRow(`SELECT state FROM budget_publication_operations WHERE command_id=$1`, command.CommandID).Scan(&operationState); err == nil && operationState == "delivered" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)

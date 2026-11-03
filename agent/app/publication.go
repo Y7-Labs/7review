@@ -11,6 +11,7 @@ import (
 )
 
 const publicationLease = 30 * time.Second
+const publicationReconcileDelay = 30 * time.Second
 
 func (s *Server) maintainPublications(ctx context.Context) error {
 	if s == nil || s.accountingRuntime == nil || s.accountingRuntime.Authority == nil {
@@ -26,21 +27,27 @@ func (s *Server) maintainPublications(ctx context.Context) error {
 	if s.publicationPublisher == nil || s.publicationWorkerID == "" {
 		return nil
 	}
-	uncertain, err := authority.ListUncertainPublications(ctx, 8)
-	if err != nil {
-		return err
-	}
-	for _, operation := range uncertain {
-		request := authorizedPublicationRequest(operation)
+	for range 8 {
+		claim, err := authority.ClaimUncertainPublication(ctx, s.publicationWorkerID, publicationLease)
+		if err != nil {
+			return err
+		}
+		if claim == nil {
+			break
+		}
+		request := authorizedPublicationRequest(claim.Operation)
 		receipt, lookupErr := s.publicationPublisher.LookupAuthorized(ctx, request)
 		if lookupErr != nil {
-			return fmt.Errorf("publication %s reconciliation lookup: %w", operation.ID, lookupErr)
+			return fmt.Errorf("publication %s reconciliation lookup: %w", claim.Operation.ID, lookupErr)
 		}
 		if receipt == nil {
+			if deferErr := authority.DeferPublicationReconciliation(ctx, *claim, publicationReconcileDelay); deferErr != nil {
+				return fmt.Errorf("publication %s reconciliation deferral: %w", claim.Operation.ID, deferErr)
+			}
 			continue
 		}
-		if _, reconcileErr := authority.ReconcilePublication(ctx, operation.ID, accountingPublicationReceipt(*receipt)); reconcileErr != nil {
-			return fmt.Errorf("publication %s reconciliation commit: %w", operation.ID, reconcileErr)
+		if _, reconcileErr := authority.ReconcilePublication(ctx, *claim, accountingPublicationReceipt(*receipt)); reconcileErr != nil {
+			return fmt.Errorf("publication %s reconciliation commit: %w", claim.Operation.ID, reconcileErr)
 		}
 	}
 	claim, err := authority.ClaimPublication(ctx, s.publicationWorkerID, publicationLease)

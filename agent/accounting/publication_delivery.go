@@ -44,6 +44,13 @@ type PublicationPermit struct {
 	SendingAt     time.Time
 }
 
+type PublicationReconciliationClaim struct {
+	Operation  PublicationOperation
+	WorkerID   string
+	Fence      uint64
+	LeaseUntil time.Time
+}
+
 func validPublicationLease(worker string, lease time.Duration) error {
 	if !validID(worker) || lease < time.Millisecond || lease > 10*time.Minute {
 		return errors.New("publication worker and bounded lease are required")
@@ -184,7 +191,7 @@ func (a *Authority) RecoverUncertainPublications(ctx context.Context, limit int)
 		if readErr != nil {
 			return 0, readErr
 		}
-		result, updateErr := tx.ExecContext(ctx, `UPDATE budget_publication_operations SET state='uncertain',updated_at=clock_timestamp() WHERE id=$1 AND state='sending'`, op.ID)
+		result, updateErr := tx.ExecContext(ctx, `UPDATE budget_publication_operations SET state='uncertain',reconcile_after=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='sending'`, op.ID)
 		if updateErr != nil {
 			return 0, updateErr
 		}
@@ -249,53 +256,9 @@ func (a *Authority) CompletePublication(ctx context.Context, permit PublicationP
 	return &op, nil
 }
 
-func (a *Authority) ListUncertainPublications(ctx context.Context, limit int) ([]PublicationOperation, error) {
-	if limit <= 0 || limit > 128 {
-		return nil, errors.New("publication reconciliation limit must be between 1 and 128")
-	}
-	tx, err := a.begin(ctx)
-	if err != nil {
+func (a *Authority) ClaimUncertainPublication(ctx context.Context, worker string, lease time.Duration) (*PublicationReconciliationClaim, error) {
+	if err := validPublicationLease(worker, lease); err != nil {
 		return nil, err
-	}
-	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND state='uncertain' ORDER BY sending_at,id LIMIT $3`, a.cfg.BoundaryID, a.cfg.ProjectID, limit)
-	if err != nil {
-		return nil, err
-	}
-	var commandIDs []string
-	for rows.Next() {
-		var commandID string
-		if err = rows.Scan(&commandID); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		commandIDs = append(commandIDs, commandID)
-	}
-	if err = rows.Err(); err != nil {
-		rows.Close()
-		return nil, err
-	}
-	if err = rows.Close(); err != nil {
-		return nil, err
-	}
-	operations := make([]PublicationOperation, 0, len(commandIDs))
-	for _, commandID := range commandIDs {
-		op, _, readErr := a.readPublicationOperationTx(ctx, tx, commandID)
-		if readErr != nil {
-			return nil, readErr
-		}
-		op.Payload = append([]byte(nil), op.Payload...)
-		operations = append(operations, op)
-	}
-	if err = tx.Commit(); err != nil {
-		return nil, err
-	}
-	return operations, nil
-}
-
-func (a *Authority) ReconcilePublication(ctx context.Context, operationID string, receipt PublicationDeliveryReceipt) (*PublicationOperation, error) {
-	if !validID(operationID) {
-		return nil, errors.New("exact publication operation ID required")
 	}
 	tx, err := a.begin(ctx)
 	if err != nil {
@@ -303,14 +266,70 @@ func (a *Authority) ReconcilePublication(ctx context.Context, operationID string
 	}
 	defer tx.Rollback()
 	var commandID string
-	if err = tx.QueryRowContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE id=$1 AND boundary_id=$2 AND project_id=$3 FOR UPDATE`, operationID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&commandID); err != nil {
+	err = tx.QueryRowContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE boundary_id=$1 AND project_id=$2 AND state='uncertain' AND reconcile_after<=clock_timestamp() AND lease_until<=clock_timestamp() ORDER BY reconcile_after,sending_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&commandID)
+	if errors.Is(err, sql.ErrNoRows) {
+		if err = tx.Commit(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	if err != nil {
 		return nil, err
 	}
 	op, _, err := a.readPublicationOperationTx(ctx, tx, commandID)
 	if err != nil {
 		return nil, err
 	}
-	if receipt.validate(op.Destination.Provider, op.PayloadDigest) != nil {
+	var fence uint64
+	var leaseUntil time.Time
+	if err = tx.QueryRowContext(ctx, `UPDATE budget_publication_operations SET worker_id=$2,fence=fence+1,lease_until=clock_timestamp()+($3::bigint*interval '1 millisecond'),updated_at=clock_timestamp() WHERE id=$1 AND state='uncertain' RETURNING fence,lease_until`, op.ID, worker, lease.Milliseconds()).Scan(&fence, &leaseUntil); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	op.WorkerID, op.Fence, op.LeaseUntil = worker, fence, leaseUntil
+	op.Payload = append([]byte(nil), op.Payload...)
+	return &PublicationReconciliationClaim{Operation: op, WorkerID: worker, Fence: fence, LeaseUntil: leaseUntil}, nil
+}
+
+func (a *Authority) DeferPublicationReconciliation(ctx context.Context, claim PublicationReconciliationClaim, delay time.Duration) error {
+	if !validID(claim.Operation.ID) || !validID(claim.WorkerID) || claim.Fence == 0 || delay < time.Second || delay > time.Hour {
+		return errors.New("valid fenced reconciliation claim and bounded delay required")
+	}
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE budget_publication_operations SET reconcile_after=clock_timestamp()+($4::bigint*interval '1 millisecond'),lease_until=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='uncertain' AND worker_id=$2 AND fence=$3`, claim.Operation.ID, claim.WorkerID, claim.Fence, delay.Milliseconds())
+	if err != nil {
+		return err
+	}
+	if n, rowsErr := result.RowsAffected(); rowsErr != nil || n != 1 {
+		return errors.New("publication reconciliation claim is stale")
+	}
+	return tx.Commit()
+}
+
+func (a *Authority) ReconcilePublication(ctx context.Context, claim PublicationReconciliationClaim, receipt PublicationDeliveryReceipt) (*PublicationOperation, error) {
+	if !validID(claim.Operation.ID) || !validID(claim.WorkerID) || claim.Fence == 0 {
+		return nil, errors.New("valid fenced reconciliation claim required")
+	}
+	tx, err := a.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var commandID string
+	if err = tx.QueryRowContext(ctx, `SELECT command_id FROM budget_publication_operations WHERE id=$1 AND boundary_id=$2 AND project_id=$3 FOR UPDATE`, claim.Operation.ID, a.cfg.BoundaryID, a.cfg.ProjectID).Scan(&commandID); err != nil {
+		return nil, err
+	}
+	op, _, err := a.readPublicationOperationTx(ctx, tx, commandID)
+	if err != nil {
+		return nil, err
+	}
+	if op.WorkerID != claim.WorkerID || op.Fence != claim.Fence || op.ID != claim.Operation.ID || op.PayloadDigest != claim.Operation.PayloadDigest || receipt.validate(op.Destination.Provider, op.PayloadDigest) != nil {
 		return nil, errors.New("publication reconciliation receipt is invalid")
 	}
 	if op.State == review.DeliveryDelivered {
@@ -331,7 +350,7 @@ func (a *Authority) ReconcilePublication(ctx context.Context, operationID string
 		return nil, err
 	}
 	var completedAt time.Time
-	if err = tx.QueryRowContext(ctx, `UPDATE budget_publication_operations SET state='delivered',delivery_receipt=$2,delivery_receipt_digest=$3,completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=$1 AND state='uncertain' RETURNING completed_at`, op.ID, receiptRaw, hash(receiptRaw)).Scan(&completedAt); err != nil {
+	if err = tx.QueryRowContext(ctx, `UPDATE budget_publication_operations SET state='delivered',delivery_receipt=$4,delivery_receipt_digest=$5,completed_at=clock_timestamp(),reconcile_after=NULL,updated_at=clock_timestamp() WHERE id=$1 AND state='uncertain' AND worker_id=$2 AND fence=$3 RETURNING completed_at`, op.ID, claim.WorkerID, claim.Fence, receiptRaw, hash(receiptRaw)).Scan(&completedAt); err != nil {
 		return nil, err
 	}
 	if err = tx.Commit(); err != nil {

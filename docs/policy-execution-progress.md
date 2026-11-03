@@ -1514,6 +1514,11 @@ This is an incremental behavior ledger, not a completion declaration.
   completion commits remain sending, expire to uncertain, and use lookup-only
   reconciliation. The loop never calls publish for sending or uncertain rows and
   never replays the model job.
+- Schema v23 gives uncertain lookups bounded leases, monotonic fences and durable
+  `reconcile_after` pacing. Duplicate workers perform one lookup, stale owners
+  cannot commit remote proof, and a confirmed missing marker is not hot-polled.
+  Its rollback/retry rehearsal preserves existing uncertain evidence and grants no
+  publication authority.
 - HTTP/client/CLI/TUI exposure now uses the mapped principal, exact closed
   command and validated receipt without retries, redirects, refetch or retarget.
   Exact outbox materialization and stale-pending obsolescence are implemented;

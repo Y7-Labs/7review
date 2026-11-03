@@ -60,8 +60,9 @@ state; migration does not infer operations from existing authorizations. Schema
 v21 adds bounded pre-send leases, monotonic fences and a durable sending marker.
 Schema v22 adds an immutable provider receipt and completion timestamp bound to
 the exact fenced operation. It refuses unreceipted legacy `delivered` rows rather
-than inferring an external effect. Worker runtime now requires v22; run explicit
-migration before restart.
+than inferring an external effect. Schema v23 adds durable lookup eligibility;
+uncertain reconciliation reuses the monotonic worker fence and lease. Worker
+runtime now requires v23; run explicit migration before restart.
 Schema v7 commits complete accepted aggregates on top of v6 action-result
 recovery, v5 owned jobs, v4 inboxes and v3 generation fencing. Holds are not reset.
 A missing or
@@ -114,12 +115,17 @@ The v21-to-v22 rehearsal preserves operation and job authority across deferred D
 failure and idempotent retry. It invents no delivery receipt or completion time;
 runtime refuses an unmigrated v21 store and migration rejects an unproven legacy
 `delivered` state.
+The v22-to-v23 rehearsal preserves an existing uncertain operation across deferred
+DDL failure and idempotent retry, then makes it immediately eligible for one
+fenced lookup owner. Runtime refuses an unmigrated v22 store.
 
 The service maintenance loop materializes authority, quarantines expired sending
 effects, performs read-only reconciliation of uncertain operations, and then
 claims at most one pending publication. A provider call occurs only after the
 fenced `sending` marker commits. Provider or completion errors remain sending and
-can only become uncertain; they are never republished automatically.
+can only become uncertain; they are never republished automatically. Missing
+remote effects are durably deferred for 30 seconds, and duplicate service workers
+cannot hold the same live reconciliation lease.
 
 ## Runtime Intake
 

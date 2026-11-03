@@ -129,7 +129,8 @@ or obsolete outbox operation after restart and obsoletes stale pending authority
 failing closed before fresh inbox claims when that journal is unavailable. Schema
 v21 adds fenced pre-send claims and turns expired sending markers uncertain without
 reclaim. Schema v22 adds exact fenced provider-receipt completion and refuses to
-invent receipts for legacy delivered rows. The service now schedules one fenced
+invent receipts for legacy delivered rows. Schema v23 adds durable, fenced and
+paced uncertain-result lookup ownership. The service now schedules one fenced
 provider invocation and lookup-only remote
 reconciliation. GitHub and GitLab expose an exact
 operation/payload-marked publish-and-lookup contract for that worker, and exact
@@ -138,9 +139,9 @@ endpoint hosts fail before publish or lookup. Compose forwards the
 mapping and dedicated credential explicitly. Other canonical commands and
 qualification remain open; this
 is not alpha readiness.
-The v8-to-v9 through v21-to-v22 migrations
+The v8-to-v9 through v22-to-v23 migrations
 have populated PostgreSQL rollback/retry rehearsals; current runtime requires
-explicit migration to schema v22 before restart. No deployed database was changed.
+explicit migration to schema v23 before restart. No deployed database was changed.
 
 Local alpha update (2026-10-28): channel protocol/authentication hardening and
 retried-callback deduplication are implemented. The isolated Docker stack is
