@@ -1562,8 +1562,10 @@ This is an incremental behavior ledger, not a completion declaration.
 - Channel protocol groundwork parses one exact attempt/finding/decision/command
   identity plus reason, and maps each already-authorized provider sender to an
   operator credential environment name. Missing, duplicate, unauthorized or
-  ambiguous mappings fail closed. This contract performs no disposition; durable
-  app routing and canonical outbound identities remain open.
+  ambiguous mappings fail closed. Durable app routing reads the terminal subject
+  and commits synchronously without report mutation, legacy suppression, queueing,
+  job replay or provider I/O. New-delivery retries replay the same current command;
+  changed reuse conflicts. Canonical identities in outbound drafts remain open.
 
 ## Method File Example
 

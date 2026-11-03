@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Y4NN777/7review/agent/accounting"
+	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/orchestrator"
 	"github.com/Y4NN777/7review/agent/review"
 	"github.com/Y4NN777/7review/agent/tools"
@@ -235,9 +236,39 @@ func TestCanonicalPublicationAuthorizationHTTPUsesTerminalEvidenceAndMappedRevie
 	if err != nil || findingView.Current == nil || findingView.Current.CommandID != disposition.CommandID || findingView.Current.ActorID != "participant" || findingView.Current.Decision != disposition.Payload.Decision || findingView.Current.Reason != disposition.Payload.Reason || findingView.ControlVersion != dispositionReceipt.ControlVersion {
 		t.Fatalf("current finding disposition: %+v %v", findingView, err)
 	}
+	t.Setenv("PARTICIPANT_TOKEN", "participant-secret")
+	s.pipeline.Channels = channel.NewManager([]channel.Config{{Name: "operator_telegram", Provider: "telegram", Enabled: true, AuthorizedSenders: []string{"12345"}, Settings: map[string]string{"operator_token_env_by_sender": `{"12345":"PARTICIPANT_TOKEN"}`}}})
+	channelMessage := channel.InboundMessage{Channel: "operator_telegram", ExternalID: "update-canonical-1", SenderID: "12345", Text: "/disposition-finding " + admission.AttemptID + " " + disposition.Payload.FindingID + " disputed finding-channel\nThe cited branch remains unreachable"}
+	if _, err = s.pipeline.Channels.VerifyInbound(channelMessage.Channel, "", channelMessage); err != nil {
+		t.Fatal(err)
+	}
+	channelResult, status, err := s.routeChannelMessageContext(context.Background(), channelMessage)
+	if err != nil || status != http.StatusOK || !channelResult.Dispositioned || channelResult.ActorID != "participant" || channelResult.CommandID != "finding-channel" || channelResult.ControlVersion != dispositionReceipt.ControlVersion+1 {
+		t.Fatalf("canonical channel disposition: %+v status=%d err=%v", channelResult, status, err)
+	}
+	retryMessage := channelMessage
+	retryMessage.ExternalID = "update-canonical-2"
+	replayed, status, err := s.routeChannelMessageContext(context.Background(), retryMessage)
+	if err != nil || status != http.StatusOK || !replayed.Dispositioned || replayed.ControlVersion != channelResult.ControlVersion || replayed.ActorID != channelResult.ActorID {
+		t.Fatalf("durable canonical channel replay: %+v status=%d err=%v", replayed, status, err)
+	}
+	duplicate, status, err := s.routeChannelMessageContext(context.Background(), retryMessage)
+	if err != nil || status != http.StatusAccepted || duplicate.Dispositioned || duplicate.Reason != "duplicate channel delivery" {
+		t.Fatalf("duplicate canonical channel delivery: %+v status=%d err=%v", duplicate, status, err)
+	}
+	if provider.calls.Load() != beforeCalls {
+		t.Fatalf("channel disposition dispatched provider I/O: before=%d after=%d", beforeCalls, provider.calls.Load())
+	}
+	if err = db.QueryRow(`SELECT count(*) FROM budget_finding_dispositions WHERE attempt_id=$1`, admission.AttemptID).Scan(&dispositions); err != nil || dispositions != 2 {
+		t.Fatalf("channel disposition history: %d %v", dispositions, err)
+	}
+	findingView, err = client.FindingDisposition(context.Background(), admission.AttemptID, disposition.Payload.FindingID)
+	if err != nil || findingView.Current == nil || findingView.Current.CommandID != "finding-channel" || findingView.Current.ActorID != "participant" || findingView.Current.Reason != "The cited branch remains unreachable" || findingView.ControlVersion != channelResult.ControlVersion {
+		t.Fatalf("channel current disposition: %+v %v", findingView, err)
+	}
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "reviewer-secret")
 	view, err = client.Attempt(context.Background(), admission.AttemptID)
-	if err != nil || view.ControlVersion != dispositionReceipt.ControlVersion {
+	if err != nil || view.ControlVersion != channelResult.ControlVersion {
 		t.Fatalf("updated attempt view: %+v %v", view, err)
 	}
 	draftDigest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(projection.Source.Report.Draft)))

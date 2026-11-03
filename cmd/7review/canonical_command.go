@@ -389,7 +389,14 @@ func runDispositionFindingContext(ctx context.Context, args []string, out io.Wri
 	if err != nil {
 		return fmt.Errorf("finding %s: %w", o.findingID, err)
 	}
-	command := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: o.commandID, AttemptID: o.attemptID, ExpectedVersion: view.ControlVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: o.findingID, FindingDigest: view.FindingDigest, Decision: o.decision, Reason: o.reason}}
+	expectedVersion := view.ControlVersion
+	if view.Current != nil && view.Current.CommandID == o.commandID {
+		if view.Current.Decision != o.decision || view.Current.Reason != o.reason || view.Current.RecordedVersion < 2 {
+			return fmt.Errorf("command %s already identifies a different finding disposition", o.commandID)
+		}
+		expectedVersion = view.Current.RecordedVersion - 1
+	}
+	command := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: o.commandID, AttemptID: o.attemptID, ExpectedVersion: expectedVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: o.findingID, FindingDigest: view.FindingDigest, Decision: o.decision, Reason: o.reason}}
 	receipt, err := client.DispositionFinding(ctx, command)
 	if err != nil {
 		return fmt.Errorf("command %s: %w", command.CommandID, err)

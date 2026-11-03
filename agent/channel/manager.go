@@ -56,21 +56,23 @@ type InboundMessage struct {
 }
 
 type InboundResult struct {
-	RunID         string `json:"run_id"`
-	Channel       string `json:"channel"`
-	Sender        string `json:"sender"`
-	Command       string `json:"command"`
-	Approved      bool   `json:"approved"`
-	Revised       bool   `json:"revised,omitempty"`
-	Suppressed    bool   `json:"suppressed,omitempty"`
-	FindingID     string `json:"finding_id,omitempty"`
-	Reason        string `json:"reason,omitempty"`
-	FinalReport   string `json:"final_report,omitempty"`
-	Request       string `json:"request,omitempty"`
-	AttemptID     string `json:"attempt_id,omitempty"`
-	CommandID     string `json:"command_id,omitempty"`
-	Decision      string `json:"decision,omitempty"`
-	Dispositioned bool   `json:"dispositioned,omitempty"`
+	RunID          string `json:"run_id"`
+	Channel        string `json:"channel"`
+	Sender         string `json:"sender"`
+	Command        string `json:"command"`
+	Approved       bool   `json:"approved"`
+	Revised        bool   `json:"revised,omitempty"`
+	Suppressed     bool   `json:"suppressed,omitempty"`
+	FindingID      string `json:"finding_id,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	FinalReport    string `json:"final_report,omitempty"`
+	Request        string `json:"request,omitempty"`
+	AttemptID      string `json:"attempt_id,omitempty"`
+	CommandID      string `json:"command_id,omitempty"`
+	Decision       string `json:"decision,omitempty"`
+	Dispositioned  bool   `json:"dispositioned,omitempty"`
+	ActorID        string `json:"actor_id,omitempty"`
+	ControlVersion uint64 `json:"control_version,omitempty"`
 }
 
 func (m *Manager) OperatorTokenEnv(channelName string, msg InboundMessage) (string, error) {

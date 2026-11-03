@@ -3,14 +3,17 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Y4NN777/7review/agent/accounting"
 	"github.com/Y4NN777/7review/agent/channel"
 	"github.com/Y4NN777/7review/agent/pipeline"
 	"github.com/Y4NN777/7review/agent/review"
@@ -166,14 +169,17 @@ func (s *Server) routeChannelMessage(w http.ResponseWriter, r *http.Request, msg
 
 func (s *Server) routeChannelMessageContext(ctx context.Context, msg channel.InboundMessage) (channel.InboundResult, int, error) {
 	result := channel.EvaluateInbound(msg)
-	if result.RunID == "" {
+	if result.Command == "disposition-finding" && result.Reason != "" {
+		return result, http.StatusBadRequest, fmt.Errorf("%s", result.Reason)
+	}
+	if result.Command != "disposition-finding" && result.RunID == "" {
 		return result, http.StatusBadRequest, fmt.Errorf("%s", result.Reason)
 	}
 	deliveryKey := ""
 	if msg.ExternalID != "" {
 		deliveryKey = fmt.Sprintf("channel:%q:%q", msg.Channel, msg.ExternalID)
 		if !s.claimDelivery(deliveryKey) {
-			result.Approved, result.Revised, result.Suppressed = false, false, false
+			result.Approved, result.Revised, result.Suppressed, result.Dispositioned = false, false, false, false
 			result.Reason = "duplicate channel delivery"
 			return result, http.StatusAccepted, nil
 		}
@@ -184,6 +190,62 @@ func (s *Server) routeChannelMessageContext(ctx context.Context, msg channel.Inb
 			s.releaseDelivery(deliveryKey)
 		}
 	}()
+	if result.Command == "disposition-finding" {
+		if s.accountingRuntime == nil || s.accountingRuntime.Authority == nil || s.cfg == nil || s.cfg.Operators == nil {
+			return result, http.StatusServiceUnavailable, errors.New("durable operator authority unavailable")
+		}
+		envName, err := s.pipeline.Channels.OperatorTokenEnv(msg.Channel, msg)
+		if err != nil {
+			return result, http.StatusUnauthorized, err
+		}
+		credential, ok := os.LookupEnv(envName)
+		if !ok || credential == "" {
+			return result, http.StatusUnauthorized, errors.New("mapped operator credential unavailable")
+		}
+		actor, err := s.cfg.Operators.Authenticate(credential)
+		if err != nil {
+			return result, http.StatusUnauthorized, err
+		}
+		commandCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		view, err := s.accountingRuntime.Authority.FindingDisposition(commandCtx, actor, result.AttemptID, result.FindingID)
+		if err == nil {
+			expectedVersion := view.ControlVersion
+			decision := review.FindingDecision(result.Decision)
+			if view.Current != nil && view.Current.CommandID == result.CommandID {
+				if view.Current.Decision != decision || view.Current.Reason != result.Request || view.Current.RecordedVersion < 2 {
+					return result, http.StatusConflict, errors.New("command ID already identifies a different finding disposition")
+				}
+				expectedVersion = view.Current.RecordedVersion - 1
+			}
+			command := review.FindingDispositionCommand{SchemaVersion: 1, CommandID: result.CommandID, AttemptID: result.AttemptID, ExpectedVersion: expectedVersion, Revision: view.Revision, Kind: "disposition_finding", Payload: review.FindingDispositionPayload{FindingID: result.FindingID, FindingDigest: view.FindingDigest, Decision: decision, Reason: result.Request}}
+			var receipt *review.FindingDispositionReceipt
+			receipt, err = s.accountingRuntime.Authority.DispositionFinding(commandCtx, actor, command)
+			if err == nil {
+				result.Dispositioned = true
+				result.ActorID = receipt.ActorID
+				result.ControlVersion = receipt.ControlVersion
+				result.Reason = ""
+				accepted = true
+				return result, http.StatusOK, nil
+			}
+		}
+		status := http.StatusServiceUnavailable
+		var conflict *accounting.OperatorCommandConflict
+		switch {
+		case errors.As(err, &conflict):
+			status = http.StatusConflict
+		case errors.Is(err, review.ErrOperatorUnauthorized):
+			status = http.StatusUnauthorized
+		case errors.Is(err, review.ErrOperatorForbidden):
+			status = http.StatusForbidden
+		case errors.Is(err, accounting.ErrOperatorAttemptNotFound), errors.Is(err, accounting.ErrOperatorFindingNotFound):
+			status = http.StatusNotFound
+		case errors.Is(err, accounting.ErrOperatorAttemptInvalid):
+			status = http.StatusBadRequest
+		}
+		return result, status, err
+	}
 	if err := s.pipeline.Jobs.AppendEvent(ctx, result.RunID, pipeline.RunEvent{
 		Type:    "channel_message_received",
 		Status:  "",

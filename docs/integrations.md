@@ -100,8 +100,11 @@ The closed channel command is:
 <reason>
 ```
 
-Parsing this command does not mutate a report or authorize publication. Durable
-accounting routing is required before the response can acknowledge a disposition.
+The app authenticates the mapped principal, reads the exact terminal finding from
+durable authority, and commits the attributed disposition before acknowledging the
+response. It does not mutate a report, enqueue legacy suppression, replay a job or
+authorize publication. A retry with a new provider delivery ID replays the same
+durable command when its ID, decision and reason match.
 
 ### SimpleX
 

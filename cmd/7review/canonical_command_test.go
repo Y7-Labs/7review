@@ -131,14 +131,20 @@ func TestCanonicalCLISubmitsOneExactPublicationAuthorizationWithoutLookup(t *tes
 func TestCanonicalCLIFetchesAndDispositionsOneExactFinding(t *testing.T) {
 	t.Setenv("REVIEW_OPERATOR_TOKEN", "operator-secret")
 	view := cliFindingView(t)
-	viewRaw, _ := json.Marshal(view)
 	calls := 0
+	committed := false
+	var commands []review.FindingDispositionCommand
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		calls++
-		if calls == 1 {
+		if r.Method == http.MethodGet {
 			if r.Method != http.MethodGet || r.URL.Path != "/operator/finding" || r.URL.Query().Get("attempt_id") != view.AttemptID || r.URL.Query().Get("finding_id") != view.Finding.ID {
 				t.Fatalf("CLI did not read exact finding: %s %s", r.Method, r.URL.String())
 			}
+			if committed {
+				view.ControlVersion = 3
+				view.Current = &review.CurrentFindingDisposition{CommandID: "finding-1", ActorID: "alice", Decision: review.FindingDisputed, Reason: "the cited branch is unreachable", RecordedVersion: 3, CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+			}
+			viewRaw, _ := json.Marshal(view)
 			return jsonResponse(http.StatusOK, string(viewRaw)), nil
 		}
 		if r.Method != http.MethodPost || r.URL.Path != "/operator/commands" || r.URL.RawQuery != "" {
@@ -146,16 +152,21 @@ func TestCanonicalCLIFetchesAndDispositionsOneExactFinding(t *testing.T) {
 		}
 		raw, _ := io.ReadAll(r.Body)
 		command, err := review.DecodeFindingDispositionCommand(raw)
-		if err != nil || command.CommandID != "finding-1" || command.AttemptID != view.AttemptID || command.ExpectedVersion != view.ControlVersion || command.Revision != view.Revision || command.Payload.FindingID != view.Finding.ID || command.Payload.FindingDigest != view.FindingDigest || command.Payload.Decision != review.FindingDisputed || command.Payload.Reason != "the cited branch is unreachable" {
+		if err != nil || command.CommandID != "finding-1" || command.AttemptID != view.AttemptID || command.ExpectedVersion != 2 || command.Revision != view.Revision || command.Payload.FindingID != view.Finding.ID || command.Payload.FindingDigest != view.FindingDigest || command.Payload.Decision != review.FindingDisputed || command.Payload.Reason != "the cited branch is unreachable" {
 			t.Fatalf("CLI changed authoritative finding command: %+v %v", command, err)
 		}
+		commands = append(commands, command)
+		committed = true
 		return jsonResponse(http.StatusOK, cliFindingReceipt(command)), nil
 	})}
 	var out strings.Builder
-	if err := runDispositionFinding(dispositionArgs(), &out, client); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		out.Reset()
+		if err := runDispositionFinding(dispositionArgs(), &out, client); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if calls != 2 || !strings.Contains(out.String(), "disputed finding F-1 for attempt-1") || !strings.Contains(out.String(), "finding-1") || !strings.Contains(out.String(), "control version 3") {
+	if calls != 4 || len(commands) != 2 || commands[0] != commands[1] || !strings.Contains(out.String(), "disputed finding F-1 for attempt-1") || !strings.Contains(out.String(), "finding-1") || !strings.Contains(out.String(), "control version 3") {
 		t.Fatalf("unproven finding output/calls: %d %s", calls, out.String())
 	}
 }
