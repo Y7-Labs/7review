@@ -1,12 +1,23 @@
 package review
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"math"
 	"time"
 	"unicode/utf8"
 )
+
+func CanonicalFindingDigest(f Finding) (string, error) {
+	raw, err := json.Marshal(f)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:]), nil
+}
 
 type FindingDecision string
 

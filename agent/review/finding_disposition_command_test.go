@@ -2,10 +2,34 @@ package review
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCanonicalFindingDigestBindsCompleteFinding(t *testing.T) {
+	finding := Finding{ID: "F-1", Severity: SeverityHigh, Title: "Authorization bypass", Description: "The guard is skipped.", Suggestion: "Enforce the guard.", Location: Location{Path: "auth.go", Line: 42}, Confidence: 0.91, FindingType: "correctness", Strength: "must", EvidenceAuthority: "policy", Citations: []EvidenceCitation{{Source: "auth.go", Rule: "AUTH-1", Violation: "guard skipped"}}, ValidationStatus: "validated", ValidationReason: "direct branch evidence"}
+	first, err := CanonicalFindingDigest(finding)
+	if err != nil || !canonicalDigestPattern.MatchString(first) {
+		t.Fatalf("canonical digest: %q %v", first, err)
+	}
+	second, err := CanonicalFindingDigest(finding)
+	if err != nil || second != first {
+		t.Fatalf("identical finding digest drifted: %q %q %v", first, second, err)
+	}
+	changed := finding
+	changed.Citations = append([]EvidenceCitation(nil), finding.Citations...)
+	changed.Citations[0].Violation = "different evidence"
+	if digest, err := CanonicalFindingDigest(changed); err != nil || digest == first {
+		t.Fatalf("changed evidence retained subject digest: %q %v", digest, err)
+	}
+	invalid := finding
+	invalid.Confidence = math.NaN()
+	if digest, err := CanonicalFindingDigest(invalid); err == nil || digest != "" {
+		t.Fatalf("non-canonical finding produced digest: %q %v", digest, err)
+	}
+}
 
 const findingDispositionFixture = `{"schema_version":1,"command_id":"finding-1","attempt_id":"attempt-1","expected_version":3,"revision":"head","kind":"disposition_finding","payload":{"finding_id":"F-1","finding_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","decision":"disputed","reason":"the cited branch is unreachable"}}`
 
